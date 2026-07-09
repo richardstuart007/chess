@@ -1,0 +1,40 @@
+{
+  "name": "chess",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "locallocal": "copy /Y .env.locallocal .env && next dev --turbopack --port 3030",
+    "localdev": "copy /Y .env.localdev .env && next dev --turbopack --port 3031",
+    "localprod": "copy /Y .env.localprod .env && next dev --turbopack --port 3032"
+  },
+  "dependencies": {
+    "@heroicons/react": "2.2.0",
+    "@neondatabase/serverless": "1.1.0",
+    "chess.js": "1.4.0",
+    "dotenv": "17.4.2",
+    "next": "16.2.9",
+    "nextjs-shared": "github:richardstuart007/nextjs-shared",
+    "pg": "8.21.0",
+    "react": "19.2.7",
+    "react-chessboard": "5.10.0",
+    "react-dom": "19.2.7",
+    "react-is": "19.2.7",
+    "recharts": "3.8.1",
+    "stockfish": "18.0.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.1",
+    "@types/node": "25.9.3",
+    "@types/pg": "8.20.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.1",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
+  }
+}
