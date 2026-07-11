@@ -1,1 +1,4 @@
 # Project-specific ignores only — common patterns in ~/.gitignore_global
+
+.vercel
+.env*.local

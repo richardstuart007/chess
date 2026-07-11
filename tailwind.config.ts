@@ -6,7 +6,12 @@ const config: Config = {
     './node_modules/nextjs-shared/src/**/*.{js,ts,jsx,tsx}'
   ],
   theme: {
-    extend: {}
+    extend: {
+      fontSize: {
+        xxs: '0.625rem',
+        xxx: '0.5rem'
+      }
+    }
   }
 }
 
