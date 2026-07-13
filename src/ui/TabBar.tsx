@@ -8,8 +8,7 @@ const TABS = [
   { key: 'graph',    label: 'Graph',    href: '/?tab=graph' },
   { key: 'openings', label: 'Openings', href: '/?tab=openings' },
   { key: 'endings',  label: 'Endings',  href: '/?tab=endings' },
-  { key: 'habits',   label: 'Habits',   href: '/habits' },
-  { key: 'quiz',     label: 'Quiz',     href: '/quiz' }
+  { key: 'habits',   label: 'Habits',   href: '/habits' }
 ] as const
 
 export default function TabBar() {
@@ -18,7 +17,6 @@ export default function TabBar() {
 
   const activeKey =
     pathname === '/habits' ? 'habits' :
-    pathname === '/quiz'   ? 'quiz'   :
     (searchParams.get('tab') ?? 'games')
 
   return (

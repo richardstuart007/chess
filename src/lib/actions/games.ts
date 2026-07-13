@@ -248,8 +248,7 @@ export async function getDeconGameCount(playerUsername: string): Promise<number>
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import type { Filter } from 'nextjs-shared/structures'
-
-const ITEMS_PER_PAGE = 25
+import { GAMES_ITEMS_PER_PAGE } from '../constants'
 
 export type GameFilters = {
   opponent?: string
@@ -320,7 +319,7 @@ export async function fetchFilteredGames(
   usernames: string[],
   filters: GameFilters,
   page: number,
-  itemsPerPage: number = ITEMS_PER_PAGE
+  itemsPerPage: number = GAMES_ITEMS_PER_PAGE
 ) {
   const filterArray = buildFilters(usernames, filters)
   const offset = (page - 1) * itemsPerPage
@@ -341,7 +340,7 @@ export async function fetchFilteredGames(
 export async function getGamesPageCount(
   usernames: string[],
   filters: GameFilters,
-  itemsPerPage: number = ITEMS_PER_PAGE
+  itemsPerPage: number = GAMES_ITEMS_PER_PAGE
 ): Promise<number> {
   const filterArray = buildFilters(usernames, filters)
   return fetchTotalPages({
@@ -475,7 +474,6 @@ export async function backfillOpeningMoves(
     query: `SELECT gd_gdid, gd_pgn FROM tgd_gamesdecon
             WHERE gd_player = $1
               AND gd_opening_moves IS NULL
-              AND gd_pgn IS NOT NULL
             LIMIT $2`,
     params: [username.toLowerCase(), batchSize],
     functionName: 'backfillOpeningMoves'

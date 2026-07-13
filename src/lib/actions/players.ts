@@ -4,16 +4,20 @@ import { table_fetch }  from 'nextjs-shared/table_fetch'
 import { table_write }  from 'nextjs-shared/table_write'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_upsert } from 'nextjs-shared/table_upsert'
+import { logStart, logEnd } from '../logStep'
 import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES } from '../constants'
 
 const TABLE        = 'tpl_players'
 const RATINGS_TABLE = 'tplr_player_ratings'
 
-export async function getPlayer(username: string) {
+export async function getPlayer(username: string, skipCache = false, level = 1, severity = 'I') {
   const rows = await table_fetch({
     caller: 'getPlayer',
     table: TABLE,
-    whereColumnValuePairs: [{ column: 'pl_player', value: username.toLowerCase() }]
+    whereColumnValuePairs: [{ column: 'pl_player', value: username.toLowerCase() }],
+    skipCache,
+    level,
+    severity
   })
   return rows[0] ?? null
 }
@@ -64,7 +68,10 @@ export async function upsertPlayer(data: {
 export async function upsertPlayerRating(
   username: string,
   timeClass: string,
-  rating: number
+  rating: number,
+  skipCache = false,
+  level = 1,
+  severity = 'I'
 ): Promise<void> {
   await table_upsert({
     caller: 'upsertPlayerRating',
@@ -74,7 +81,10 @@ export async function upsertPlayerRating(
       { column: 'plr_time_class', value: timeClass },
       { column: 'plr_rating',     value: rating }
     ],
-    conflictColumns: ['plr_player', 'plr_time_class']
+    conflictColumns: ['plr_player', 'plr_time_class'],
+    skipCache,
+    level,
+    severity
   })
 }
 
@@ -98,8 +108,10 @@ export async function getPlayerRatings(username: string): Promise<Record<string,
 //  updatePlayerRating — called from cron; saves latest game rating per time class
 //----------------------------------------------------------------------------------
 export async function updatePlayerRating(username: string): Promise<void> {
+  await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${username}`, 2)
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
+  let updated = 0
   for (const timeClass of INCLUDED_TIME_CLASSES) {
     const result = await db.query({
       caller: 'updatePlayerRating',
@@ -108,12 +120,17 @@ export async function updatePlayerRating(username: string): Promise<void> {
               WHERE gd_player = $1 AND gd_time_class = $2
               ORDER BY gd_end_time DESC LIMIT 1`,
       params: [username.toLowerCase(), timeClass],
-      functionName: 'updatePlayerRating'
+      functionName: 'updatePlayerRating',
+      table: 'tgd_gamesdecon',
+      level: 2,
+      severity: 'D'
     })
     if (result.rows.length > 0) {
-      await upsertPlayerRating(username, timeClass, Number(result.rows[0].rating))
+      await upsertPlayerRating(username, timeClass, Number(result.rows[0].rating), true, 2, 'D')
+      updated++
     }
   }
+  await logEnd('updatePlayerRating', 'gameSyncPipeline', `${updated} time classes updated`, 2)
 }
 
 //----------------------------------------------------------------------------------
@@ -126,7 +143,10 @@ export async function getPlayerLastSyncedEndTime(username: string): Promise<numb
     caller: 'getPlayerLastSyncedEndTime',
     table: TABLE,
     whereColumnValuePairs: [{ column: 'pl_player', value: username.toLowerCase() }],
-    columns: ['pl_last_synced_end_time']
+    columns: ['pl_last_synced_end_time'],
+    skipCache: true,
+    level: 2,
+    severity: 'D'
   })
   return rows[0]?.pl_last_synced_end_time ?? null
 }
@@ -136,21 +156,32 @@ export async function getPlayerLastSyncedEndTime(username: string): Promise<numb
 //  after a successful sync run completes
 //----------------------------------------------------------------------------------
 export async function markPlayerSynced(username: string, endTime: number): Promise<void> {
-  const existing = await getPlayer(username)
-  if (!existing) return
+  await logStart('markPlayerSynced', 'gameSyncPipeline', `stamping sync cutoff for ${username}`, 2)
+  const existing = await getPlayer(username, true, 2, 'D')
+  if (!existing) {
+    await logEnd('markPlayerSynced', 'gameSyncPipeline', `${username}: player not found, skipped`, 2)
+    return
+  }
   await table_update({
     caller: 'markPlayerSynced',
     table: TABLE,
     columnValuePairs: [{ column: 'pl_last_synced_end_time', value: endTime }],
-    whereColumnValuePairs: [{ column: 'pl_plid', value: existing.pl_plid }]
+    whereColumnValuePairs: [{ column: 'pl_plid', value: existing.pl_plid }],
+    skipCache: true,
+    level: 2,
+    severity: 'D'
   })
+  await logEnd('markPlayerSynced', 'gameSyncPipeline', `pl_last_synced_end_time set to ${endTime}`, 2)
 }
 
-export async function getPlayers(): Promise<{ username: string; display_name: string | null }[]> {
+export async function getPlayers(skipCache = false, level = 1, severity = 'I'): Promise<{ username: string; display_name: string | null }[]> {
   const rows = await table_fetch({
     caller: 'getPlayers',
     table: TABLE,
-    orderBy: 'pl_player ASC'
+    orderBy: 'pl_player ASC',
+    skipCache,
+    level,
+    severity
   })
   const mapped = rows.map((r: any) => ({
     username: r.pl_player,

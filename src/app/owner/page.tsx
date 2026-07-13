@@ -5,6 +5,7 @@ const TOOLS = [
   { href: '/owner/cache', label: 'Cache', description: 'Inspect and manage server-side cache entries.', step: '🗄' },
   { href: '/owner/cron', label: 'Cron', description: 'Manually trigger the game sync and analysis pipeline cron jobs.', step: '⏱' },
   { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate).', step: '▶' },
+  { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
   { href: '/owner/maintenance', label: 'Maintenance', description: 'Add players and sync their chess.com game archives.', step: '🛠' }
 ]
 

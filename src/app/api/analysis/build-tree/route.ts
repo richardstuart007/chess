@@ -7,9 +7,10 @@ export async function GET(req: NextRequest) {
   const player   = searchParams.get('player')   ?? undefined
   const dateFrom = searchParams.get('dateFrom') ?? undefined
   const dateTo   = searchParams.get('dateTo')   ?? undefined
+  const skipSync = searchParams.get('skipSync') === 'true'
 
   try {
-    const result = await buildPositionTree({ limit, playerUsername: player, dateFrom, dateTo })
+    const result = await buildPositionTree({ limit, playerUsername: player, dateFrom, dateTo, skipSync })
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('build-tree route error', err)

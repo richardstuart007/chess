@@ -144,7 +144,8 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
   function handleSelectGame(game: ChessComGame, username: string) {
     const gameId = (game as any)._gameId
     if (gameId) {
-      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}`)
+      const from = encodeURIComponent(`/?highlight=${gameId}`)
+      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}&from=${from}`)
     }
   }
 

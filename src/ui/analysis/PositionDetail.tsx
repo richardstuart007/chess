@@ -152,6 +152,12 @@ export default function PositionDetail({
               </span>
             </div>
           </div>
+          <MyButton
+            onClick={() => router.push(`/analyze?mode=free&fen=${encodeURIComponent(position.pos_fen)}&from=${encodeURIComponent(`/position/${position.pos_id}`)}`)}
+            overrideClass='w-full text-xs'
+          >
+            Analyze this position
+          </MyButton>
         </div>
 
         {/* Right: tabs */}
@@ -261,7 +267,7 @@ export default function PositionDetail({
                         <tr
                           key={i}
                           className={canClick ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}
-                          onClick={() => canClick && router.push(`/analyze?game=${g.gameId}&user=${g.player}`)}
+                          onClick={() => canClick && router.push(`/analyze?game=${g.gameId}&user=${g.player}&from=${encodeURIComponent(`/position/${position.pos_id}`)}`)}
                         >
                           <td className="py-1.5 pr-3 tabular-nums text-xs text-gray-500">
                             {g.gameId ?? '—'}

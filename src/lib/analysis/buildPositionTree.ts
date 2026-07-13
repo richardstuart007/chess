@@ -2,10 +2,9 @@
 
 import { Chess } from 'chess.js'
 import { startPipelineLog, completePipelineLog } from '../actions/pipelineLog'
-import { table_query } from 'nextjs-shared/table_query'
-import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE } from '../constants'
-
-const ROW_CHUNK = 500   // rows per bulk INSERT (keeps params well under PG limit)
+import { write_logging } from 'nextjs-shared/write_logging'
+import { logStart, logEnd } from '../logStep'
+import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  truncateFen — keep only the 4 positional fields (piece placement, active color,
@@ -25,21 +24,14 @@ interface GameRecord {
 }
 
 interface PositionRecord {
-  gdid:              number
-  player:            string
-  posFen:            string
-  posId:             number | null
-  movePlayed:        string
-  moveUci:            string | null
-  resultingFen:       string | null
-  resultingPosId:     number | null
-  resultingColor:     string | null
-  resultingMoveNum:   number | null
-  resultingPlyCount:  number | null
+  gdid:         number
+  player:       string
+  posFen:       string
+  movePlayed:   string
+  moveUci:      string | null
+  resultingFen: string | null
   moveNum:      number
   result:       string
-  color:        string
-  plyCount:     number
 }
 
 //----------------------------------------------------------------------------------
@@ -58,7 +50,6 @@ function getPositionsFromGame(
   const history  = chess.history({ verbose: true })
   const replay   = new Chess()
   const records: PositionRecord[] = []
-  const seenFens = new Set<string>()
 
   for (let i = 0; i < Math.min(history.length, maxHalfMove); i++) {
     const fen   = truncateFen(replay.fen())
@@ -67,30 +58,21 @@ function getPositionsFromGame(
     const moveUci = move.lan ?? (move.from + move.to + (move.promotion ?? ''))
     const moveNum = Math.ceil((i + 1) / 2)
     replay.move(move.san)
-    const resultingFen      = truncateFen(replay.fen())
-    const resultingColor    = replay.turn()
-    // fullmove increments after Black's move — verified formula, matches Evaluate Positions
-    const resultingMoveNum  = moveNum + (color === 'b' ? 1 : 0)
-    const resultingPlyCount = i + 2
+    const resultingFen = truncateFen(replay.fen())
 
-    if (i >= minHalfMove && color === game.playerColor && !seenFens.has(fen)) {
-      seenFens.add(fen)
+    // A revisited position (transposition/repetition) is real and gets its own row each
+    // time — not deduped within a game. pos_reached counts DISTINCT gam_gdid, so this
+    // doesn't affect reach counts; it does let move-frequency queries see every visit.
+    if (i >= minHalfMove && color === game.playerColor) {
       records.push({
         gdid:         game.gdid,
         player:       game.player,
         posFen:       fen,
-        posId:        null,
         movePlayed:   move.san,
         moveUci,
         resultingFen,
-        resultingPosId:    null,
-        resultingColor,
-        resultingMoveNum,
-        resultingPlyCount,
         moveNum,
-        result:       game.result,
-        color,
-        plyCount:     i + 1
+        result:       game.result
       })
     }
   }
@@ -101,18 +83,11 @@ function getPositionsFromGame(
       gdid:         game.gdid,
       player:       game.player,
       posFen:       '__too_short__',
-      posId:        null,
       movePlayed:   '',
       moveUci:      null,
       resultingFen: null,
-      resultingPosId:    null,
-      resultingColor:    null,
-      resultingMoveNum:  null,
-      resultingPlyCount: null,
       moveNum:      0,
-      result:       game.result,
-      color:        '',
-      plyCount:     0
+      result:       game.result
     })
   }
 
@@ -120,112 +95,81 @@ function getPositionsFromGame(
 }
 
 //----------------------------------------------------------------------------------
-//  bulkEnsurePositions — insert new unique FENs into tpos_positions
+//  chunkByGame — group records into chunks without ever splitting one game's own
+//  records across two chunks. Records for the same gdid are always contiguous (games
+//  are processed in order), so a single Postgres statement per chunk is atomic per
+//  whole game on its own — no transaction needed.
 //----------------------------------------------------------------------------------
-async function bulkEnsurePositions(db: any, records: PositionRecord[]): Promise<void> {
-  const fenMap = new Map<string, { color: string; plyCount: number; moveNum: number }>()
-  for (const r of records) {
-    if (r.posFen === '__too_short__') continue
-    if (!fenMap.has(r.posFen)) fenMap.set(r.posFen, { color: r.color, plyCount: r.plyCount, moveNum: r.moveNum })
-    if (r.resultingFen && !fenMap.has(r.resultingFen)) {
-      fenMap.set(r.resultingFen, { color: r.resultingColor!, plyCount: r.resultingPlyCount!, moveNum: r.resultingMoveNum! })
+function chunkByGame(records: PositionRecord[], maxRows: number): PositionRecord[][] {
+  const chunks: PositionRecord[][] = []
+  let current: PositionRecord[] = []
+  let i = 0
+  while (i < records.length) {
+    const gdid = records[i].gdid
+    let j = i
+    while (j < records.length && records[j].gdid === gdid) j++
+    const gameRecords = records.slice(i, j)
+    if (current.length > 0 && current.length + gameRecords.length > maxRows) {
+      chunks.push(current)
+      current = []
     }
+    current.push(...gameRecords)
+    i = j
   }
-  if (fenMap.size === 0) return
-
-  const entries = [...fenMap.entries()]
-  for (let start = 0; start < entries.length; start += ROW_CHUNK) {
-    const chunk  = entries.slice(start, start + ROW_CHUNK)
-    const values = chunk.map((_, i) => {
-      const b = i * 4
-      return `($${b+1},$${b+2},$${b+3},0,$${b+4})`
-    }).join(',')
-    const params = chunk.flatMap(([fen, v]) => [fen, v.color, v.plyCount, v.moveNum])
-    await db.query({
-      caller:       'bulkEnsurePositions',
-      query:        `
-        INSERT INTO tpos_positions (pos_fen, pos_color, pos_ply_count, pos_reached, pos_move_num)
-        VALUES ${values}
-        ON CONFLICT (pos_fen) DO UPDATE SET
-          pos_ply_count = LEAST(tpos_positions.pos_ply_count, EXCLUDED.pos_ply_count)
-      `,
-      params,
-      functionName: 'buildPositionTree'
-    })
-  }
+  if (current.length > 0) chunks.push(current)
+  return chunks
 }
 
 //----------------------------------------------------------------------------------
-//  resolvePositionIds — look up pos_id for every unique FEN in this batch and
-//  attach it to each record in place, now that bulkEnsurePositions has guaranteed
-//  every non-sentinel FEN has a tpos_positions row
+//  insertGamePositions — Phase A: write tgam_game_positions directly from parsed
+//  records. gam_pos_fen/gam_resulting_fen carry the FEN text, so this step has no
+//  dependency on tpos_positions at all — tgam_game_positions is the source of truth.
+//  gam_pos_id/gam_resulting_pos_id are left NULL here; syncTposFromTgam (Phase B)
+//  backfills them afterward. Plain INSERT, no ON CONFLICT — a revisited position within
+//  a game is legitimate and gets its own row (gam_gamid's own IDENTITY makes every row
+//  distinct regardless); nothing about (gdid, player, pos_fen) is unique anymore.
 //----------------------------------------------------------------------------------
-async function resolvePositionIds(db: any, records: PositionRecord[]): Promise<void> {
-  const fenSet = new Set<string>()
-  for (const r of records) {
-    if (r.posFen !== '__too_short__') fenSet.add(r.posFen)
-    if (r.resultingFen) fenSet.add(r.resultingFen)
-  }
-  const fens = [...fenSet]
-  if (fens.length === 0) return
-
-  const fenToPosId = new Map<string, number>()
-  for (let start = 0; start < fens.length; start += 1000) {
-    const chunk = fens.slice(start, start + 1000)
-    const res = await db.query({
-      caller:       'resolvePositionIds',
-      query:        `SELECT pos_id, pos_fen FROM tpos_positions WHERE pos_fen = ANY($1)`,
-      params:       [chunk],
-      functionName: 'buildPositionTree'
-    })
-    for (const row of res.rows) fenToPosId.set(row.pos_fen, row.pos_id)
-  }
-
-  for (const r of records) {
-    if (r.posFen !== '__too_short__') r.posId = fenToPosId.get(r.posFen) ?? null
-    if (r.resultingFen) r.resultingPosId = fenToPosId.get(r.resultingFen) ?? null
-  }
-}
-
-//----------------------------------------------------------------------------------
-//  bulkInsertGamePositions — one INSERT per ROW_CHUNK rows, ON CONFLICT DO NOTHING
-//----------------------------------------------------------------------------------
-async function bulkInsertGamePositions(db: any, records: PositionRecord[]): Promise<void> {
-  for (let start = 0; start < records.length; start += ROW_CHUNK) {
-    const chunk  = records.slice(start, start + ROW_CHUNK)
+async function insertGamePositions(db: any, records: PositionRecord[], level: number): Promise<void> {
+  await logStart('insertGamePositions', 'buildPositionTree', `inserting ${records.length} game-position rows`, level)
+  const chunks = chunkByGame(records, POSITION_INSERT_CHUNK_SIZE)
+  for (const chunk of chunks) {
     const values = chunk.map((_, i) => {
       const b = i * 8
       return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`
     }).join(',')
     const params = chunk.flatMap(r => [
-      r.gdid, r.player, r.posId, r.movePlayed,
-      r.moveUci, r.resultingPosId, r.moveNum, r.result
+      r.gdid, r.player, r.posFen, r.movePlayed,
+      r.moveUci, r.resultingFen, r.moveNum, r.result
     ])
     await db.query({
-      caller:       'bulkInsertGamePositions',
+      caller:       'insertGamePositions',
       query:        `
         INSERT INTO tgam_game_positions
-          (gam_gdid, gam_player, gam_pos_id, gam_move_played,
-           gam_move_uci, gam_resulting_pos_id, gam_move_num, gam_player_result)
+          (gam_gdid, gam_player, gam_pos_fen, gam_move_played,
+           gam_move_uci, gam_resulting_fen, gam_move_num, gam_player_result)
         VALUES ${values}
-        ON CONFLICT (gam_gdid, gam_player, gam_pos_id) DO NOTHING
       `,
       params,
-      functionName: 'buildPositionTree'
+      functionName: 'buildPositionTree',
+      table:        'tgam_game_positions',
+      level,
+      isupdate:     true,
+      severity:     'D'
     })
   }
+  await logEnd('insertGamePositions', 'buildPositionTree', `${records.length} tgam_game_positions rows inserted`, level)
 }
 
 //----------------------------------------------------------------------------------
-//  recomputePosReached — accurate count from tgam_game_positions. A position can be
-//  someone's "before" position in one game and a "resulting" position in another, so
-//  the true reach count combines both — matches gam_pos_id and gam_resulting_pos_id.
+//  recomputePosReachedByIds — accurate count from tgam_game_positions for a specific
+//  set of positions. A position can be someone's "before" position in one game and a
+//  "resulting" position in another, so the true reach count combines both.
 //----------------------------------------------------------------------------------
-async function recomputePosReached(fens: string[]): Promise<void> {
-  const unique = [...new Set(fens.filter(f => f !== '__too_short__'))]
-  for (let start = 0; start < unique.length; start += 1000) {
-    const chunk = unique.slice(start, start + 1000)
-    await table_query({
+async function recomputePosReachedByIds(db: any, posIds: number[], level: number): Promise<void> {
+  if (posIds.length === 0) return
+  for (let start = 0; start < posIds.length; start += 1000) {
+    const chunk = posIds.slice(start, start + 1000)
+    await db.query({
       caller: 'recomputePosReached',
       query:  `
         UPDATE tpos_positions p
@@ -238,12 +182,112 @@ async function recomputePosReached(fens: string[]): Promise<void> {
           SELECT COUNT(DISTINCT gam_gdid)
           FROM tgam_game_positions
           WHERE gam_resulting_pos_id = p.pos_id
+        ),
+        pos_move_num = (
+          SELECT MIN(gam_move_num)
+          FROM tgam_game_positions
+          WHERE gam_pos_id = p.pos_id OR gam_resulting_pos_id = p.pos_id
         )
-        WHERE p.pos_fen = ANY($1)
+        WHERE p.pos_id = ANY($1)
       `,
-      params: [chunk as unknown as string]
+      params: [chunk],
+      functionName: 'buildPositionTree',
+      table: 'tpos_positions',
+      level,
+      isupdate: true,
+      severity: 'D'
     })
   }
+}
+
+//----------------------------------------------------------------------------------
+//  syncTposFromTgam — Phase B: derive tpos_positions from tgam_game_positions.
+//  Idempotent and safely re-runnable at any time: only touches tgam rows not yet
+//  resolved (gam_pos_id / gam_resulting_pos_id IS NULL), so already-processed history
+//  is never rescanned. Three steps: (1) ensure a tpos_positions row exists for every
+//  FEN still referenced by an unresolved tgam row, (2) backfill the ids, (3) recompute
+//  pos_reached only for the positions actually touched. Exported standalone so it can
+//  also be re-run on its own as a catch-up pass if it ever fails to complete for some
+//  batch.
+//----------------------------------------------------------------------------------
+export async function syncTposFromTgam(level: number = 1): Promise<{ positionsSynced: number }> {
+  const { sql } = await import('nextjs-shared/db')
+  const db = await sql()
+
+  await logStart('syncTposFromTgam', 'buildPositionTree', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
+  const t0 = Date.now()
+  const logId = await startPipelineLog(3, 'Sync Position Tree', 0)
+
+  // Step 1 — ensure a tpos_positions row exists for every FEN still referenced by an
+  // unresolved tgam row. pos_color is the FEN's own active-color field (2nd token),
+  // derived directly rather than carried through as a separate column.
+  await db.query({
+    caller: 'syncTposFromTgam_ensure',
+    query:  `
+      INSERT INTO tpos_positions (pos_fen, pos_color, pos_reached)
+      SELECT DISTINCT fen, split_part(fen, ' ', 2), 0 FROM (
+        SELECT gam_pos_fen AS fen FROM tgam_game_positions
+        WHERE gam_pos_id IS NULL AND gam_pos_fen IS NOT NULL AND gam_pos_fen <> '__too_short__'
+        UNION
+        SELECT gam_resulting_fen AS fen FROM tgam_game_positions
+        WHERE gam_resulting_pos_id IS NULL AND gam_resulting_fen IS NOT NULL
+      ) t
+      ON CONFLICT (pos_fen) DO NOTHING
+    `,
+    params: [],
+    functionName: 'buildPositionTree',
+    table: 'tpos_positions',
+    level,
+    isupdate: true,
+    severity: 'D'
+  })
+
+  // Step 2 — backfill ids wherever still NULL, capturing which positions were touched
+  const beforeRes = await db.query({
+    caller: 'syncTposFromTgam_backfillBefore',
+    query:  `
+      UPDATE tgam_game_positions g
+      SET gam_pos_id = p.pos_id
+      FROM tpos_positions p
+      WHERE g.gam_pos_id IS NULL AND g.gam_pos_fen = p.pos_fen
+      RETURNING p.pos_id
+    `,
+    params: [],
+    functionName: 'buildPositionTree',
+    table: 'tgam_game_positions',
+    level,
+    isupdate: true,
+    severity: 'D'
+  })
+  const resultingRes = await db.query({
+    caller: 'syncTposFromTgam_backfillResulting',
+    query:  `
+      UPDATE tgam_game_positions g
+      SET gam_resulting_pos_id = p.pos_id
+      FROM tpos_positions p
+      WHERE g.gam_resulting_pos_id IS NULL AND g.gam_resulting_fen = p.pos_fen
+      RETURNING p.pos_id
+    `,
+    params: [],
+    functionName: 'buildPositionTree',
+    table: 'tgam_game_positions',
+    level,
+    isupdate: true,
+    severity: 'D'
+  })
+
+  const touchedPosIds = [...new Set<number>([
+    ...beforeRes.rows.map((r: any) => Number(r.pos_id)),
+    ...resultingRes.rows.map((r: any) => Number(r.pos_id))
+  ])]
+
+  // Step 3 — recompute pos_reached only for touched positions
+  await recomputePosReachedByIds(db, touchedPosIds, level)
+
+  await completePipelineLog(logId, touchedPosIds.length, 0, 0, Date.now() - t0)
+
+  await logEnd('syncTposFromTgam', 'buildPositionTree', `${touchedPosIds.length} positions synced`, level)
+  return { positionsSynced: touchedPosIds.length }
 }
 
 //----------------------------------------------------------------------------------
@@ -254,6 +298,8 @@ export async function buildPositionTree(opts: {
   playerUsername?: string
   dateFrom?:       string
   dateTo?:         string
+  level?:          number
+  skipSync?:       boolean   // debug/verification only — skip Phase B (syncTposFromTgam)
 }): Promise<{
   gamesProcessed: number
   positions:      number
@@ -264,17 +310,17 @@ export async function buildPositionTree(opts: {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
 
+  const level    = opts.level ?? 1
+  const caller   = level === 1 ? 'analysisCronRoute' : 'runCronAnalysis'
   const limit       = opts.limit ?? 100
   const minHalfMove = (MIN_ANALYSIS_MOVE - 1) * 2
   const maxHalfMove = MAX_ANALYSIS_MOVE * 2
 
   const params: any[]     = []
-  const conditions: string[] = ['d.gd_pgn IS NOT NULL']
-
-  conditions.push(`NOT EXISTS (
+  const conditions: string[] = [`NOT EXISTS (
     SELECT 1 FROM tgam_game_positions
     WHERE gam_gdid = d.gd_gdid
-  )`)
+  ) AND NOT d.gd_positions_purged`]
 
   if (opts.playerUsername) {
     params.push(opts.playerUsername.toLowerCase())
@@ -307,7 +353,10 @@ export async function buildPositionTree(opts: {
       ${limitClause}
     `,
     params,
-    functionName: 'buildPositionTree'
+    functionName: 'buildPositionTree',
+    table: 'tgd_gamesdecon',
+    level,
+    severity: 'D'
   })
 
   const games: GameRecord[] = gamesRes.rows.map((r: any) => ({
@@ -317,6 +366,8 @@ export async function buildPositionTree(opts: {
     pgn:           r.pgn ?? '',
     result:        r.result
   }))
+
+  await logStart('buildPositionTree', caller, `building position tree, ${games.length} games fetched`, level)
 
   const fromTs  = opts.dateFrom ? Math.floor(new Date(opts.dateFrom).getTime() / 1000)                   : 0
   const toTs    = opts.dateTo   ? Math.floor(new Date(opts.dateTo + 'T23:59:59').getTime() / 1000)       : Math.floor(Date.now() / 1000)
@@ -330,14 +381,16 @@ export async function buildPositionTree(opts: {
          WHERE d.gd_end_time >= $1 AND d.gd_end_time <= $2
        ) t) AS snap_processed,
       (SELECT COUNT(*) FROM tgd_gamesdecon d
-       WHERE d.gd_pgn IS NOT NULL
-         AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
+       WHERE d.gd_end_time >= $1 AND d.gd_end_time <= $2
+         AND NOT d.gd_positions_purged
          AND NOT EXISTS (
            SELECT 1 FROM tgam_game_positions
            WHERE gam_gdid = d.gd_gdid
          )) AS snap_remaining`,
     params:       [fromTs, toTs],
-    functionName: 'buildPositionTree'
+    functionName: 'buildPositionTree',
+    level,
+    severity:     'D'
   })
   const snapProcessed = parseInt(snapRes.rows[0].snap_processed ?? '0')
   const snapRemaining = parseInt(snapRes.rows[0].snap_remaining ?? '0')
@@ -357,22 +410,26 @@ export async function buildPositionTree(opts: {
       totalPositions += records.filter(r => r.moveNum > 0).length
     } catch (err) {
       console.error(`buildPositionTree: chess.js error on game ${game.gdid}`, err)
+      await write_logging({
+        lg_functionname: 'buildPositionTree',
+        lg_caller: caller,
+        lg_msg: `chess.js error on game ${game.gdid}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
       errors++
     }
   }
 
-  // Bulk insert into DB
-  await bulkEnsurePositions(db, allRecords)
-  await resolvePositionIds(db, allRecords)
-  await bulkInsertGamePositions(db, allRecords)
-  await recomputePosReached([
-    ...allRecords.map(r => r.posFen),
-    ...allRecords.map(r => r.resultingFen).filter((f): f is string => f !== null)
-  ])
+  // Phase A — write tgam_game_positions (self-contained, no tpos_positions dependency)
+  await insertGamePositions(db, allRecords, level + 1)
+  // Phase B — derive tpos_positions from what Phase A just wrote
+  if (!opts.skipSync) await syncTposFromTgam(level + 1)
 
   const processed      = games.length - errors
   const afterRemaining = Math.max(0, snapRemaining - processed)
   await completePipelineLog(logId, processed, errors, 0, Date.now() - t0, snapProcessed + processed)
+
+  await logEnd('buildPositionTree', caller, `${totalPositions} positions recorded, treeBuilt ${snapProcessed + processed}, remaining ${afterRemaining}`, level)
 
   return {
     gamesProcessed: games.length,

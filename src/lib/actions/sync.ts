@@ -2,6 +2,9 @@
 
 import { table_write } from 'nextjs-shared/table_write'
 import { table_delete } from 'nextjs-shared/table_delete'
+import { write_logging } from 'nextjs-shared/write_logging'
+import { logStart, logEnd } from '../logStep'
+import { startPipelineLog, completePipelineLog } from './pipelineLog'
 import { INCLUDED_TIME_CLASSES } from '../constants'
 import { getPlayers, getPlayerLastSyncedEndTime, markPlayerSynced, updatePlayerRating } from './players'
 import { deconstructGames } from './deconstruct'
@@ -30,7 +33,8 @@ async function insertRawGame(data: {
       { column: 'gr_end_time', value: data.end_time },
       { column: 'gr_time_class', value: data.time_class }
     ],
-    conflictColumn: 'gr_chesscom_uuid, gr_player'
+    conflictColumn: 'gr_chesscom_uuid, gr_player',
+    skipCache: true
   })
   return rows.length > 0
 }
@@ -51,6 +55,7 @@ export async function initSync(
   syncType: 'full_replace' | 'refresh'
 ): Promise<{ archives: string[]; latestEndTime: number | null }> {
   const username = playerUsername.toLowerCase()
+  await logStart('initSync', 'gameSyncPipeline', `fetching archive list for ${username} (${syncType})`, 2)
 
   //
   //  tgr_gamesraw is a per-run transaction/staging table — cleared for this
@@ -60,7 +65,10 @@ export async function initSync(
   await table_delete({
     table: GAMES_TABLE,
     whereColumnValuePairs: [{ column: 'gr_player', value: username }],
-    caller: 'initSync_clearStaging'
+    caller: 'initSync_clearStaging',
+    skipCache: true,
+    level: 2,
+    severity: 'D'
   })
 
   const latestEndTime = syncType === 'refresh'
@@ -71,6 +79,7 @@ export async function initSync(
   if (!archivesRes.ok) throw new Error(`Failed to fetch archives for ${username}`)
   const { archives } = await archivesRes.json() as { archives: string[] }
 
+  await logEnd('initSync', 'gameSyncPipeline', `${archives.length} archives found, resume cutoff ${latestEndTime}`, 2)
   return { archives, latestEndTime }
 }
 
@@ -84,6 +93,7 @@ export async function syncArchive(params: {
   latestEndTime: number | null
 }): Promise<{ inserted: number; skipped: number; total: number }> {
   const { username, archiveUrl, syncType, latestEndTime } = params
+  await logStart('syncArchive', 'gameSyncPipeline', `downloading archive ${archiveUrl}`, 2)
 
   try {
     if (syncType === 'refresh' && latestEndTime) {
@@ -92,13 +102,17 @@ export async function syncArchive(params: {
         const archiveDate = new Date(parseInt(match[1]), parseInt(match[2]) - 1)
         const latestDate = new Date(latestEndTime * 1000)
         if (archiveDate < new Date(latestDate.getFullYear(), latestDate.getMonth())) {
+          await logEnd('syncArchive', 'gameSyncPipeline', `${archiveUrl}: before resume cutoff, skipped`, 2)
           return { inserted: 0, skipped: 0, total: 0 }
         }
       }
     }
 
     const monthRes = await fetch(archiveUrl)
-    if (!monthRes.ok) return { inserted: 0, skipped: 0, total: 0 }
+    if (!monthRes.ok) {
+      await logEnd('syncArchive', 'gameSyncPipeline', `${archiveUrl}: fetch failed (${monthRes.status})`, 2)
+      return { inserted: 0, skipped: 0, total: 0 }
+    }
 
     const { games } = await monthRes.json() as { games: any[] }
     const standardGames = games
@@ -129,9 +143,17 @@ export async function syncArchive(params: {
       else skipped++
     }
 
+    await logEnd('syncArchive', 'gameSyncPipeline', `${inserted} inserted, ${skipped} skipped, ${games.length} total games`, 2)
     return { inserted, skipped, total: games.length }
   } catch (error) {
     console.error(`Error syncing archive ${archiveUrl}:`, error)
+    await write_logging({
+      lg_functionname: 'syncArchive',
+      lg_caller: 'runCronSync',
+      lg_msg: `Error syncing archive ${archiveUrl}: ` + (error as Error).message,
+      lg_severity: 'E'
+    })
+    await logEnd('syncArchive', 'gameSyncPipeline', `${archiveUrl}: failed — ` + (error as Error).message, 2)
     return { inserted: 0, skipped: 0, total: 0 }
   }
 }
@@ -146,12 +168,17 @@ export async function runGameSync(): Promise<{
   totalInserted: number
   totalDeconstructed: number
 }> {
-  const players = await getPlayers()
+  const players = await getPlayers(true, 1, 'D')
+  await logStart('runGameSync', 'vercelCronSync', `game sync for ${players.length} players`, 1)
+  const t0 = Date.now()
+  const logId = await startPipelineLog(1, 'Game Sync', players.length)
   const summary: { username: string; inserted: number; deconstructed: number }[] = []
+  let errors = 0
 
   for (const player of players) {
     const username = player.username
     let totalInserted = 0
+    await logStart('runGameSync', 'runGameSync', `syncing ${username}`, 2)
 
     try {
       const { archives, latestEndTime } = await initSync(username, 'refresh')
@@ -165,14 +192,26 @@ export async function runGameSync(): Promise<{
       await updatePlayerRating(username)
       await markPlayerSynced(username, Math.floor(Date.now() / 1000))
       summary.push({ username, inserted: totalInserted, deconstructed: processed })
+      await logEnd('runGameSync', 'runGameSync', `${username}: ${totalInserted} inserted, ${processed} deconstructed`, 2)
     } catch (err) {
       console.error(`runGameSync: failed for ${username}:`, err)
+      await write_logging({
+        lg_functionname: 'runGameSync',
+        lg_caller: 'runGameSync',
+        lg_msg: `runGameSync failed for ${username}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
       summary.push({ username, inserted: totalInserted, deconstructed: 0 })
+      errors++
+      await logEnd('runGameSync', 'runGameSync', `${username}: failed — ` + (err as Error).message, 2)
     }
   }
 
   const totalInserted       = summary.reduce((s, p) => s + p.inserted, 0)
   const totalDeconstructed  = summary.reduce((s, p) => s + p.deconstructed, 0)
+
+  await completePipelineLog(logId, players.length - errors, errors, 0, Date.now() - t0)
+  await logEnd('runGameSync', 'vercelCronSync', `${summary.length} players processed, ${totalInserted} inserted, ${totalDeconstructed} deconstructed`, 1)
 
   return { players: summary, totalInserted, totalDeconstructed }
 }

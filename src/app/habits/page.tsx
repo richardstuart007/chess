@@ -133,7 +133,7 @@ function HabitsContent() {
             onChange={e => setMinMove(Number(e.target.value))}
             className="border rounded px-2 py-1 text-sm"
           >
-            <option value={6}>From move 6</option>
+            <option value={MIN_ANALYSIS_MOVE}>{`From move ${MIN_ANALYSIS_MOVE}`}</option>
           </select>
 
           {/* Sort */}

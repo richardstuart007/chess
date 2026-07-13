@@ -63,10 +63,12 @@ export async function completePipelineLog(
 //  Rows with pip_processed = 0 are cancelled/incomplete runs and are excluded.
 //----------------------------------------------------------------------------------
 export async function getPipelineRates(): Promise<{
+  step1: number | null
   step2: number | null
   step3: number | null
   step4: number | null
   step5: number | null
+  step6: number | null
 }> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
@@ -74,6 +76,8 @@ export async function getPipelineRates(): Promise<{
     caller: 'getPipelineRates',
     query: `
       SELECT
+        SUM(CASE WHEN pip_step = 1 AND rn <= 10 THEN pip_duration_ms END)::float
+          / NULLIF(SUM(CASE WHEN pip_step = 1 AND rn <= 10 THEN pip_processed END), 0) AS rate1,
         SUM(CASE WHEN pip_step = 2 AND rn <= 10 THEN pip_duration_ms END)::float
           / NULLIF(SUM(CASE WHEN pip_step = 2 AND rn <= 10 THEN pip_processed END), 0) AS rate2,
         SUM(CASE WHEN pip_step = 3 AND rn <= 10 THEN pip_duration_ms END)::float
@@ -81,7 +85,9 @@ export async function getPipelineRates(): Promise<{
         SUM(CASE WHEN pip_step = 4 AND rn <= 10 THEN pip_duration_ms END)::float
           / NULLIF(SUM(CASE WHEN pip_step = 4 AND rn <= 10 THEN pip_processed END), 0) AS rate4,
         SUM(CASE WHEN pip_step = 5 AND rn <= 10 THEN pip_duration_ms END)::float
-          / NULLIF(SUM(CASE WHEN pip_step = 5 AND rn <= 10 THEN pip_processed END), 0) AS rate5
+          / NULLIF(SUM(CASE WHEN pip_step = 5 AND rn <= 10 THEN pip_processed END), 0) AS rate5,
+        SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_duration_ms END)::float
+          / NULLIF(SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_processed END), 0) AS rate6
       FROM (
         SELECT pip_step, pip_processed, pip_duration_ms,
                ROW_NUMBER() OVER (PARTITION BY pip_step ORDER BY pip_pipid DESC) AS rn
@@ -94,9 +100,11 @@ export async function getPipelineRates(): Promise<{
   })
   const r = res.rows[0]
   return {
+    step1: r.rate1 != null ? Number(r.rate1) : null,
     step2: r.rate2 != null ? Number(r.rate2) : null,
     step3: r.rate3 != null ? Number(r.rate3) : null,
     step4: r.rate4 != null ? Number(r.rate4) : null,
     step5: r.rate5 != null ? Number(r.rate5) : null,
+    step6: r.rate6 != null ? Number(r.rate6) : null,
   }
 }

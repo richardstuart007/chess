@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit*)",
+      "Edit",
+      "Write",
+      "Bash(export PGPASSWORD=* && psql * -c \"SELECT*)",
+      "Bash(export PGPASSWORD=* && psql * -c 'SELECT*)",
+      "Bash(psql * -c \"SELECT*)",
+      "Bash(psql * -c 'SELECT*)",
+      "Bash(taskkill*)",
+      "Bash(pkill*)",
+      "Bash(powershell -Command \"Get-NetTCPConnection*)",
+      "PowerShell(Stop-Process*)",
+      "PowerShell(Get-NetTCPConnection*)"
+    ]
+  }
+}

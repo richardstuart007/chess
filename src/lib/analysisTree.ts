@@ -165,9 +165,9 @@ export function getPath(node: MoveNode): MoveNode[] {
 //  Replay a path to get a Chess instance at that position
 // --------------------------------------------------------------------------
 
-export function replayToNode(node: MoveNode): Chess {
+export function replayToNode(node: MoveNode, startFen?: string): Chess {
   const path = getPath(node)
-  const g = new Chess()
+  const g = startFen ? new Chess(startFen) : new Chess()
   for (const n of path) {
     g.move(n.san)
   }

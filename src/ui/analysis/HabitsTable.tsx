@@ -12,6 +12,7 @@ interface HabitRow {
   pos_cp:      number | null
   move_san:    string
   move_uci:    string | null
+  move_num:    number | null
   move_times:  number
   move_wins:   number
   move_losses: number
@@ -30,7 +31,8 @@ function cpClass(cp: number | null): string {
 
 function cpLabel(cp: number | null): string {
   if (cp === null) return '—'
-  return `${cp > 0 ? '+' : ''}${cp.toFixed(2)}`
+  const pawns = cp / 100
+  return `${pawns > 0 ? '+' : ''}${pawns.toFixed(1)}`
 }
 
 function pctLabel(n: number, total: number): string {
@@ -101,6 +103,12 @@ export default function HabitsTable({ rows }: HabitsTableProps) {
             </th>
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
+                Move #
+                <MyHelpField text="The move number this position was reached at (earliest, if reached at different move numbers via transposition)." />
+              </span>
+            </th>
+            <th className="px-3 py-2 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
                 Times
                 <MyHelpField text="How many separate games you've played this move from this position." />
               </span>
@@ -130,7 +138,7 @@ export default function HabitsTable({ rows }: HabitsTableProps) {
             <tr
               key={`${row.pos_id}-${row.move_san}-${i}`}
               className="hover:bg-gray-50 cursor-pointer"
-              onClick={() => router.push(`/analysis/position/${row.pos_id}`)}
+              onClick={() => router.push(`/position/${row.pos_id}`)}
             >
               {/* Mini board */}
               <td className="px-3 py-2">
@@ -150,12 +158,17 @@ export default function HabitsTable({ rows }: HabitsTableProps) {
 
               {/* Position CP — score before the move */}
               <td className={`px-3 py-2 text-right tabular-nums font-mono text-xs ${cpClass(row.pos_cp)}`}>
-                {row.pos_cp != null ? (row.pos_cp > 0 ? `+${row.pos_cp}` : `${row.pos_cp}`) : '—'}
+                {cpLabel(row.pos_cp)}
               </td>
 
               {/* Move */}
               <td className="px-3 py-2 font-mono font-semibold text-gray-800">
                 {row.move_san}
+              </td>
+
+              {/* Move # */}
+              <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                {row.move_num ?? '—'}
               </td>
 
               {/* Times */}

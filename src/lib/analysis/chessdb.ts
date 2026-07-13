@@ -5,7 +5,6 @@
 //
 // Simple single-table ops use nextjs-shared generic functions:
 //   table_fetch  — SELECT (cached)
-//   table_write  — INSERT
 //   table_update — UPDATE
 //   table_upsert — INSERT … ON CONFLICT DO UPDATE SET col = EXCLUDED.col
 //   table_count  — SELECT COUNT(*)
@@ -16,7 +15,6 @@
 // ============================================================================
 
 import { table_fetch }  from 'nextjs-shared/table_fetch'
-import { table_write }  from 'nextjs-shared/table_write'
 import { table_upsert } from 'nextjs-shared/table_upsert'
 import { table_count }  from 'nextjs-shared/table_count'
 import { table_check }  from 'nextjs-shared/table_check'
@@ -182,7 +180,8 @@ export async function saveEvaluation(data: {
       { column: 'eva_cp',        value: data.cp },
       { column: 'eva_best_move', value: data.bestMove }
     ],
-    conflictColumns: ['eva_pos_id']
+    conflictColumns: ['eva_pos_id'],
+    skipCache: true
   })
 }
 
@@ -203,41 +202,6 @@ export async function getEvaluationForPosition(posId: number): Promise<Evaluatio
 // ---------------------------------------------------------------------------
 
 //----------------------------------------------------------------------------------
-//  saveGamePosition — record a position occurrence in a game
-//----------------------------------------------------------------------------------
-export async function saveGamePosition(data: {
-  gameRef:      string
-  gdid:         number
-  player:       string
-  posId:        number
-  posFen:       string
-  movePlayed:   string
-  moveUci:      string
-  resultingFen: string
-  moveNum:      number
-  result:       string
-  cpLoss?:      number
-}): Promise<void> {
-  await table_write({
-    caller: 'saveGamePosition',
-    table: 'tgam_game_positions',
-    columnValuePairs: [
-      { column: 'gam_game_ref',      value: data.gameRef },
-      { column: 'gam_gdid',          value: data.gdid },
-      { column: 'gam_player',        value: data.player.toLowerCase() },
-      { column: 'gam_pos_id',        value: data.posId },
-      { column: 'gam_pos_fen',       value: data.posFen },
-      { column: 'gam_move_played',   value: data.movePlayed },
-      { column: 'gam_move_uci',      value: data.moveUci },
-      { column: 'gam_resulting_fen', value: data.resultingFen },
-      { column: 'gam_move_num',      value: data.moveNum },
-      { column: 'gam_player_result', value: data.result },
-      { column: 'gam_cp_change',     value: data.cpLoss ?? null }
-    ]
-  })
-}
-
-//----------------------------------------------------------------------------------
 //  gamePositionExists — check whether a game position has already been recorded
 //----------------------------------------------------------------------------------
 export async function gamePositionExists(gdid: number, posId: number): Promise<boolean> {
@@ -249,59 +213,6 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
     ]
   }], 'gamePositionExists')
   return found
-}
-
-//----------------------------------------------------------------------------------
-//  updateGamePositionFlags — mark a position as habit or improvement
-//  COALESCE in SET clause requires table_query.
-//----------------------------------------------------------------------------------
-export async function updateGamePositionFlags(data: {
-  gdid: number
-  posId: number
-  isHabit: boolean
-  isImproved: boolean
-  cpLoss?: number
-}): Promise<void> {
-  await table_query({
-    caller: 'updateGamePositionFlags',
-    query: `
-      UPDATE tgam_game_positions
-      SET gam_is_habit    = $3,
-          gam_is_improved = $4,
-          gam_cp_change   = COALESCE($5, gam_cp_change)
-      WHERE gam_gdid = $1 AND gam_pos_id = $2
-    `,
-    params: [data.gdid, data.posId, data.isHabit, data.isImproved, data.cpLoss ?? null]
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Quiz
-// ---------------------------------------------------------------------------
-
-//----------------------------------------------------------------------------------
-//  saveQuizResult — record one quiz attempt
-//----------------------------------------------------------------------------------
-export async function saveQuizResult(data: {
-  session: string
-  posId: number
-  posFen: string
-  movePlayed: string
-  correct: boolean
-  cpLoss: number | null
-}): Promise<void> {
-  await table_write({
-    caller: 'saveQuizResult',
-    table: 'tqui_quiz',
-    columnValuePairs: [
-      { column: 'qui_session',     value: data.session },
-      { column: 'qui_pos_id',      value: data.posId },
-      { column: 'qui_pos_fen',     value: data.posFen },
-      { column: 'qui_move_played', value: data.movePlayed },
-      { column: 'qui_correct',     value: data.correct },
-      { column: 'qui_cp_change',   value: data.cpLoss }
-    ]
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +237,7 @@ export async function getHabitsData(opts: {
   pos_cp:      number | null
   move_san:    string
   move_uci:    string | null
+  move_num:    number | null
   move_times:  number
   move_wins:   number
   move_losses: number
@@ -354,6 +266,7 @@ export async function getHabitsData(opts: {
         e.eva_cp                                          AS pos_cp,
         gp.gam_move_played                                AS move_san,
         gp.gam_move_uci                                   AS move_uci,
+        MIN(gp.gam_move_num)::int                         AS move_num,
         COUNT(*)::int                                     AS move_times,
         COUNT(*) FILTER (WHERE gp.gam_player_result = 'win')::int  AS move_wins,
         COUNT(*) FILTER (WHERE gp.gam_player_result = 'loss')::int AS move_losses,
@@ -379,6 +292,7 @@ export async function getHabitsData(opts: {
     pos_cp:      r.pos_cp  != null ? Number(r.pos_cp)  : null,
     move_san:    r.move_san,
     move_uci:    r.move_uci ?? null,
+    move_num:    r.move_num != null ? Number(r.move_num) : null,
     move_times:  Number(r.move_times),
     move_wins:   Number(r.move_wins),
     move_losses: Number(r.move_losses),
@@ -481,94 +395,5 @@ export async function getPositionDetail(posId: number): Promise<{
       gameId:      r.gd_gdid      != null ? Number(r.gd_gdid)      : null
     }))
   }
-}
-
-// ---------------------------------------------------------------------------
-// Quiz queue
-// ---------------------------------------------------------------------------
-
-//----------------------------------------------------------------------------------
-//  getQuizQueue — top positions by priority with best and habit move
-//  LATERAL join requires table_query.
-//----------------------------------------------------------------------------------
-export async function getQuizQueue(limit: number = 20, player?: string): Promise<Array<{
-  pos_id: number
-  pos_fen: string
-  pos_reached: number
-  pos_color: string | null
-  ins_theme: string | null
-  ins_advice: string | null
-  ins_priority: number | null
-  best_move: string | null
-  habit_move: string | null
-  habit_move_uci: string | null
-  habit_times: number | null
-}>> {
-  const params: (string | number)[] = []
-  const extraFilters: string[] = []
-  if (player) {
-    params.push(player.toLowerCase())
-    extraFilters.push(`EXISTS (SELECT 1 FROM tgam_game_positions WHERE gam_pos_id = p.pos_id AND gam_player = $${params.length})`)
-  }
-  // Exclude opening positions — only quiz positions reached from move 6 onwards
-  extraFilters.push(`(SELECT MIN(gam_move_num) FROM tgam_game_positions WHERE gam_pos_id = p.pos_id) >= ${MIN_ANALYSIS_MOVE}`)
-  // Require at least 3 occurrences to be a real habit
-  extraFilters.push(`p.pos_reached >= 3`)
-
-  const whereExtra = extraFilters.map(f => `AND ${f}`).join('\n      ')
-  const limitIdx = params.length + 1
-  if (limit > 0) params.push(limit)
-
-  const rows = await table_query({
-    caller: 'getQuizQueue',
-    query: `
-      SELECT
-        p.pos_id,
-        p.pos_fen,
-        p.pos_reached,
-        p.pos_color,
-        i.ins_theme,
-        i.ins_advice,
-        i.ins_priority,
-        e.eva_best_move             AS best_move,
-        habit.gam_move_played       AS habit_move,
-        habit.gam_move_uci          AS habit_move_uci,
-        habit.times                 AS habit_times
-      FROM (
-        SELECT DISTINCT gam_pos_id FROM tgam_game_positions
-        ${player ? `WHERE gam_player = $1` : ''}
-      ) gp
-      JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
-      LEFT JOIN tins_insights i ON i.ins_pos_id = gp.gam_pos_id
-      LEFT JOIN teva_evaluations e ON e.eva_pos_id = gp.gam_pos_id
-      LEFT JOIN LATERAL (
-        SELECT gam_move_played, gam_move_uci, COUNT(*)::int AS times
-        FROM tgam_game_positions
-        WHERE gam_pos_id = gp.gam_pos_id
-          ${player ? `AND gam_player = $1` : ''}
-        GROUP BY gam_move_played, gam_move_uci
-        ORDER BY times DESC
-        LIMIT 1
-      ) habit ON TRUE
-      WHERE TRUE
-      ${whereExtra}
-      ORDER BY i.ins_priority DESC NULLS LAST
-      ${limit > 0 ? `LIMIT $${limitIdx}` : ''}
-    `,
-    params
-  })
-  return rows.map((r: any) => ({
-    pos_id:         Number(r.pos_id),
-    pos_fen:        r.pos_fen,
-    pos_reached:    Number(r.pos_reached),
-    pos_color:      r.pos_color,
-    ins_theme:      r.ins_theme,
-    ins_advice:     r.ins_advice,
-    ins_priority:   r.ins_priority != null ? Number(r.ins_priority) : null,
-    best_move:      r.best_move,
-    habit_move:     r.habit_move,
-    habit_move_uci: r.habit_move_uci ?? null,
-    habit_times:    r.habit_times != null ? Number(r.habit_times) : null
-  }))
 }
 

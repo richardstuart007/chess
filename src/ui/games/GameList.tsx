@@ -6,8 +6,7 @@ import { MyButton } from 'nextjs-shared/MyButton'
 import MyPagination from 'nextjs-shared/MyPagination'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
-
-const ITEMS_PER_PAGE = 15
+import { GAME_LIST_ITEMS_PER_PAGE } from '@/src/lib/constants'
 
 interface PlayerOption {
   username: string
@@ -78,7 +77,7 @@ export default function GameList({ players, playerFilter, filters, onSelectGame,
     return () => { cancelled = true }
   }, [usernamesToFetch, filters])
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE))
+  const totalPages = Math.max(1, Math.ceil(totalCount / GAME_LIST_ITEMS_PER_PAGE))
 
   useEffect(() => {
     let cancelled = false
@@ -90,7 +89,7 @@ export default function GameList({ players, playerFilter, filters, onSelectGame,
         return
       }
 
-      const rows = await fetchFilteredGames(usernamesToFetch, filters, currentPage, ITEMS_PER_PAGE)
+      const rows = await fetchFilteredGames(usernamesToFetch, filters, currentPage, GAME_LIST_ITEMS_PER_PAGE)
 
       if (!cancelled) {
         setGames(rows)
@@ -175,7 +174,7 @@ export default function GameList({ players, playerFilter, filters, onSelectGame,
               const hh = String(date.getHours()).padStart(2, '0')
               const min = String(date.getMinutes()).padStart(2, '0')
               const dateStr = `${dd}/${mm}/${yy} ${hh}:${min}`
-              const gameNumber = (currentPage - 1) * ITEMS_PER_PAGE + index + 1
+              const gameNumber = (currentPage - 1) * GAME_LIST_ITEMS_PER_PAGE + index + 1
 
               return (
                 <tr

@@ -3,12 +3,21 @@
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { table_count } from 'nextjs-shared/table_count'
-import { parsePgnHeaders, parsePgnOpening } from '../parsePgn'
-import { INCLUDED_TIME_CLASSES } from '../constants'
+import { write_logging } from 'nextjs-shared/write_logging'
+import { logStart, logEnd } from '../logStep'
+import { parsePgnHeaders, parsePgnOpening, countMoves } from '../parsePgn'
+import { INCLUDED_TIME_CLASSES, MIN_ANALYSIS_MOVE } from '../constants'
 
 const RAW_TABLE = 'tgr_gamesraw'
 const DECON_TABLE = 'tgd_gamesdecon'
 const ECO_TABLE = 'tec_ecoreference'
+
+//
+//  A game with fewer half-moves than this can never produce a trackable
+//  position (buildPositionTree's analysis window starts at MIN_ANALYSIS_MOVE)
+//  — not a "game" for this app's purposes, so it's never written to tgd_gamesdecon.
+//
+const MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE - 1) * 2
 
 //----------------------------------------------------------------------------------
 //  normalizeTermination — map raw chess.com termination string to short label
@@ -68,6 +77,7 @@ export async function deconstructGames(
   timeClasses: string[] = INCLUDED_TIME_CLASSES
 ): Promise<{ processed: number; skipped: number; errors: number }> {
   const username = playerUsername.toLowerCase()
+  await logStart('deconstructGames', 'gameSyncPipeline', `deconstructing raw games for ${username}`, 2)
 
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
@@ -78,7 +88,10 @@ export async function deconstructGames(
     caller: 'deconstructGames',
     query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
     params: [username, ...timeClasses],
-    functionName: 'deconstructGames'
+    functionName: 'deconstructGames',
+    table: RAW_TABLE,
+    level: 2,
+    severity: 'D'
   })
 
   const rawGames = result.rows
@@ -94,6 +107,11 @@ export async function deconstructGames(
 
       const pgn = rawData.pgn
       if (!pgn) {
+        skipped++
+        continue
+      }
+
+      if (countMoves(pgn) <= MIN_TRACKABLE_HALF_MOVES) {
         skipped++
         continue
       }
@@ -135,7 +153,8 @@ export async function deconstructGames(
           { column: 'gd_opening_moves', value: parsePgnOpening(pgn) },
           { column: 'gd_pgn', value: pgn },
           { column: 'gd_chesscom_uuid', value: row.gr_chesscom_uuid }
-        ]
+        ],
+        skipCache: true
       })
 
       if (headers.eco && headers.openingName) {
@@ -145,10 +164,17 @@ export async function deconstructGames(
       processed++
     } catch (err) {
       console.error(`Error deconstructing game ${row.gr_chesscom_uuid}:`, err)
+      await write_logging({
+        lg_functionname: 'deconstructGames',
+        lg_caller: 'gameSyncPipeline',
+        lg_msg: `Error deconstructing game ${row.gr_chesscom_uuid}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
       errors++
     }
   }
 
+  await logEnd('deconstructGames', 'gameSyncPipeline', `${processed} ${DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`, 2)
   return { processed, skipped, errors }
 }
 
@@ -163,7 +189,8 @@ async function upsertEcoReference(ecoCode: string, openingName: string): Promise
       { column: 'ec_eco_code', value: ecoCode },
       { column: 'ec_opening_name', value: openingName }
     ],
-    limit: 1
+    limit: 1,
+    skipCache: true
   })
 
   if (existing.length === 0) {
@@ -174,7 +201,8 @@ async function upsertEcoReference(ecoCode: string, openingName: string): Promise
         columnValuePairs: [
           { column: 'ec_eco_code', value: ecoCode },
           { column: 'ec_opening_name', value: openingName }
-        ]
+        ],
+        skipCache: true
       })
     } catch {
       // Ignore duplicate key errors (race condition)

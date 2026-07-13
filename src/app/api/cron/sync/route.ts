@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { runGameSync } from '@/src/lib/actions/sync'
 
 export async function GET(request: NextRequest) {
@@ -15,6 +16,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.error('Cron sync error:', err)
+    await write_logging({
+      lg_functionname: 'api/cron/sync',
+      lg_caller: 'vercelCronSync',
+      lg_msg: 'Cron sync error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }

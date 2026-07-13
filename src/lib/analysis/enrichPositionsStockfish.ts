@@ -4,6 +4,9 @@ import { spawn } from 'child_process'
 import { createInterface } from 'readline'
 import { saveEvaluation } from './chessdb'
 import { startPipelineLog, completePipelineLog } from '../actions/pipelineLog'
+import { write_logging } from 'nextjs-shared/write_logging'
+import { logStart, logEnd } from '../logStep'
+import { MIN_REACH_TO_KEEP } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  StockfishEngineBase — shared UCI line protocol (queueing, evaluate parsing);
@@ -126,7 +129,7 @@ class StockfishWasm extends StockfishEngineBase {
 //  binary when STOCKFISH_PATH is set (local dev), the WASM engine otherwise (production).
 //  Reads tpos_positions (unevaluated), writes teva_evaluations.
 //----------------------------------------------------------------------------------
-async function countRemainingPositions(dateFrom?: string, dateTo?: string): Promise<number> {
+async function countRemainingPositions(level: number = 1, dateFrom?: string, dateTo?: string): Promise<number> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   if (dateFrom && dateTo) {
@@ -137,13 +140,16 @@ async function countRemainingPositions(dateFrom?: string, dateTo?: string): Prom
       query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
         LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
         WHERE e.eva_evaid IS NULL
+          AND p.pos_reached > ${MIN_REACH_TO_KEEP}
           AND EXISTS (
             SELECT 1 FROM tgam_game_positions gp
             JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
             WHERE gp.gam_pos_id = p.pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
           )`,
       params: [fromTs, toTs],
-      functionName: 'enrichPositionsStockfish'
+      functionName: 'enrichPositionsStockfish',
+      level,
+      severity: 'D'
     })
     return parseInt(res.rows[0]?.cnt ?? '0')
   }
@@ -151,14 +157,17 @@ async function countRemainingPositions(dateFrom?: string, dateTo?: string): Prom
     caller: 'enrichPositionsStockfish_count',
     query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
       LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-      WHERE e.eva_evaid IS NULL`,
+      WHERE e.eva_evaid IS NULL
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP}`,
     params: [],
-    functionName: 'enrichPositionsStockfish'
+    functionName: 'enrichPositionsStockfish',
+    level,
+    severity: 'D'
   })
   return parseInt(res.rows[0]?.cnt ?? '0')
 }
 
-async function countEvaluatedPositions(dateFrom?: string, dateTo?: string): Promise<number> {
+async function countEvaluatedPositions(level: number = 1, dateFrom?: string, dateTo?: string): Promise<number> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   if (dateFrom && dateTo) {
@@ -173,7 +182,9 @@ async function countEvaluatedPositions(dateFrom?: string, dateTo?: string): Prom
             WHERE gp.gam_pos_id = e.eva_pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
           )`,
       params: [fromTs, toTs],
-      functionName: 'enrichPositionsStockfish'
+      functionName: 'enrichPositionsStockfish',
+      level,
+      severity: 'D'
     })
     return parseInt(res.rows[0]?.cnt ?? '0')
   }
@@ -181,12 +192,15 @@ async function countEvaluatedPositions(dateFrom?: string, dateTo?: string): Prom
     caller: 'enrichPositionsStockfish_countEval',
     query:  `SELECT COUNT(*) AS cnt FROM teva_evaluations`,
     params: [],
-    functionName: 'enrichPositionsStockfish'
+    functionName: 'enrichPositionsStockfish',
+    level,
+    severity: 'D'
   })
   return parseInt(res.rows[0]?.cnt ?? '0')
 }
 
-async function getResultingFensToEvaluate(limit: number, dateFrom?: string, dateTo?: string): Promise<{ posId: number; fen: string; color: string | null }[]> {
+async function getResultingFensToEvaluate(limit: number, level: number, dateFrom?: string, dateTo?: string): Promise<{ posId: number; fen: string; color: string | null }[]> {
+  await logStart('getResultingFensToEvaluate', 'enrichPositionsStockfish', 'fetching resulting FENs to evaluate', level)
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   const params: (string | number)[] = []
@@ -211,6 +225,7 @@ async function getResultingFensToEvaluate(limit: number, dateFrom?: string, date
       FROM tgam_game_positions gp
       JOIN tpos_positions p ON p.pos_id = gp.gam_resulting_pos_id
       WHERE gp.gam_resulting_pos_id IS NOT NULL
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP}
         AND NOT EXISTS (
           SELECT 1 FROM teva_evaluations WHERE eva_pos_id = gp.gam_resulting_pos_id
         )
@@ -218,12 +233,25 @@ async function getResultingFensToEvaluate(limit: number, dateFrom?: string, date
       ${limit > 0 ? `LIMIT $${params.length}` : ''}
     `,
     params,
-    functionName: 'getResultingFensToEvaluate'
+    functionName: 'getResultingFensToEvaluate',
+    level,
+    severity: 'D'
   })
-  return res.rows.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
+  const rows = res.rows.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
+  await logEnd('getResultingFensToEvaluate', 'enrichPositionsStockfish', `${rows.length} FENs found`, level)
+  return rows
 }
 
-async function bulkUpdateCpLoss(): Promise<number> {
+//----------------------------------------------------------------------------------
+//  bulkUpdateCpLoss — computes gam_cp_change for tgam_game_positions rows still NULL
+//  whose before/after positions both now have a teva_evaluations row. Scoped to NULL
+//  rows only — never re-touches already-computed rows. Decoupled from
+//  enrichPositionsStockfish — own pipeline step, own trigger (cron + manual).
+//----------------------------------------------------------------------------------
+export async function bulkUpdateCpLoss(level: number): Promise<number> {
+  await logStart('bulkUpdateCpLoss', 'enrichPositionsStockfish', 'recomputing cp loss', level)
+  const t0 = Date.now()
+  const logId = await startPipelineLog(6, 'Update CP Change', 0)
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   const res = await db.query({
@@ -242,13 +270,20 @@ async function bulkUpdateCpLoss(): Promise<number> {
         AND e_before.eva_pos_id     = gp.gam_pos_id
         AND e_after.eva_pos_id      = gp.gam_resulting_pos_id
         AND gp.gam_resulting_pos_id IS NOT NULL
+        AND gp.gam_cp_change IS NULL
         AND e_before.eva_cp IS NOT NULL
         AND e_after.eva_cp  IS NOT NULL
     `,
     params: [],
-    functionName: 'bulkUpdateCpLoss'
+    functionName: 'bulkUpdateCpLoss',
+    level,
+    isupdate: true,
+    severity: 'D'
   })
-  return res.rowCount ?? 0
+  const rowCount = res.rowCount ?? 0
+  await completePipelineLog(logId, rowCount, 0, 0, Date.now() - t0)
+  await logEnd('bulkUpdateCpLoss', 'enrichPositionsStockfish', `${rowCount} tgam_game_positions rows updated`, level)
+  return rowCount
 }
 
 export async function enrichPositionsStockfish(opts: {
@@ -256,11 +291,15 @@ export async function enrichPositionsStockfish(opts: {
   depth?:    number
   dateFrom?: string
   dateTo?:   string
+  level?:    number
 }): Promise<{ processed: number; errors: number; remaining: number }> {
   const binPath = process.env.STOCKFISH_PATH ?? ''
 
   const depth = opts.depth ?? 16
   const limit = opts.limit ?? 50
+  const level = opts.level ?? 1
+
+  await logStart('enrichPositionsStockfish', 'analysisCronRoute', `evaluating positions at depth ${depth}`, level)
 
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
@@ -286,19 +325,23 @@ export async function enrichPositionsStockfish(opts: {
       FROM tpos_positions p
       LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
       WHERE e.eva_evaid IS NULL
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP}
         ${posDatFilter}
       ORDER BY p.pos_reached DESC
       ${limit > 0 ? `LIMIT $${posParams.length}` : ''}
     `,
     params: posParams,
-    functionName: 'enrichPositionsStockfish'
+    functionName: 'enrichPositionsStockfish',
+    table: 'tpos_positions',
+    level,
+    severity: 'D'
   })
   const positions: Array<{ posId: number; fen: string; color: string | null }> =
     posRes.rows.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
 
   // Phase 2 — resulting positions not yet evaluated (real tpos_positions rows already
   // exist for these, created eagerly by Build Position Tree)
-  const resultingFens = await getResultingFensToEvaluate(limit, opts.dateFrom, opts.dateTo)
+  const resultingFens = await getResultingFensToEvaluate(limit, level + 1, opts.dateFrom, opts.dateTo)
 
   const allFensToEval: Array<{ fen: string; color: string | null; posId: number }> = [
     ...positions,
@@ -306,14 +349,13 @@ export async function enrichPositionsStockfish(opts: {
   ]
 
   if (allFensToEval.length === 0) {
-    // No positions to evaluate — still run CP loss update in case new data exists
-    await bulkUpdateCpLoss()
+    await logEnd('enrichPositionsStockfish', 'analysisCronRoute', '0 processed, 0 errors, 0 remaining', level)
     return { processed: 0, errors: 0, remaining: 0 }
   }
 
   const [evaluatedBefore, remainingBefore] = await Promise.all([
-    countEvaluatedPositions(opts.dateFrom, opts.dateTo),
-    countRemainingPositions(opts.dateFrom, opts.dateTo)
+    countEvaluatedPositions(level, opts.dateFrom, opts.dateTo),
+    countRemainingPositions(level, opts.dateFrom, opts.dateTo)
   ])
 
   //
@@ -342,16 +384,20 @@ export async function enrichPositionsStockfish(opts: {
       processed++
     } catch (err) {
       console.error(`enrichPositionsStockfish: error on FEN`, err)
+      await write_logging({
+        lg_functionname: 'enrichPositionsStockfish',
+        lg_caller: 'analysisCronRoute',
+        lg_msg: `error on FEN ${item.fen}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
       errors++
     }
   }
 
   sf.quit()
 
-  // Phase 3: bulk update gam_cp_change now that both before and after evaluations exist
-  await bulkUpdateCpLoss()
-
   await completePipelineLog(logId, processed, errors, 0, Date.now() - t0, evaluatedBefore + processed)
-  const remaining = await countRemainingPositions()
+  const remaining = await countRemainingPositions(level)
+  await logEnd('enrichPositionsStockfish', 'analysisCronRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
   return { processed, errors, remaining }
 }

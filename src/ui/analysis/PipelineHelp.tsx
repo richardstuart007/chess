@@ -21,28 +21,65 @@ const STEPS = [
     ],
   },
   {
-    num: '2',
-    title: 'Build Position Tree',
+    num: '2a',
+    title: 'Build Game Positions (tgam)',
     input: [
-      'tgr_gamesraw — PGN and game result for each game',
+      'tgd_gamesdecon — PGN and game result for each game not yet in tgam_game_positions',
     ],
     processing:
-      'Replays each game up to move 20 using chess.js. Records every unique board position (FEN) reached and the move played from it. Builds a frequency model showing which positions you reach repeatedly and what you play from them. Skips games already in the tree.',
+      'Replays each game using chess.js and writes one row per tracked-player move directly to tgam_game_positions, FEN text included — self-contained, no dependency on tpos_positions. Skips games already processed.',
     output: [
-      'tpos_positions — unique FEN positions reached across all games',
-      'tgam_game_positions — per-player, per-game record: position FEN, move played (SAN + UCI), resulting FEN, CP loss',
+      'tgam_game_positions — per-player, per-game record: position FEN, move played (SAN + UCI), resulting FEN, move number',
+    ],
+  },
+  {
+    num: '2b',
+    title: 'Sync Position Tree (tpos)',
+    input: [
+      'tgam_game_positions — rows with gam_pos_id / gam_resulting_pos_id still NULL',
+    ],
+    processing:
+      'Idempotent derivation of tpos_positions from tgam_game_positions: inserts any missing tpos_positions row, backfills gam_pos_id/gam_resulting_pos_id by FEN match, recomputes pos_reached for positions just touched. Safe to re-run any time.',
+    output: [
+      'tpos_positions — unique FEN positions reached across all games, with pos_reached',
+      'tgam_game_positions.gam_pos_id / gam_resulting_pos_id — backfilled',
     ],
   },
   {
     num: '3',
-    title: 'Evaluate Positions',
+    title: 'Purge Stale Positions',
     input: [
-      'tpos_positions — unique FEN positions not yet in teva_evaluations',
+      'tpos_positions — positions with pos_reached <= MIN_REACH_TO_KEEP whose occurrences are all older than PURGE_REACH_GRACE_DAYS',
     ],
     processing:
-      'Evaluates each unique board position from the tree with Stockfish. Normalises the centipawn score to white\'s perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions get evaluated first regardless of when they occurred. Run in batches; repeat until processed = 0. Also runs unattended via a local scheduled task hitting /api/analysis/cron.',
+      'Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions (dual-reference rule — full delete only when the before-position is in scope, else just null the resulting reference), then the tpos_positions rows themselves. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows, so Build Game Positions never mistakes a purged game for an unprocessed one. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via /api/analysis/cron. Deliberate exception to the "no destructive SQL in automation" rule — see project .claude/CLAUDE.md.',
+    output: [
+      'teva_evaluations / tgam_game_positions / tpos_positions — rows removed',
+      'tgd_gamesdecon.gd_positions_purged — set true on emptied games (resurrection guard)',
+    ],
+  },
+  {
+    num: '4',
+    title: 'Evaluate Positions',
+    input: [
+      'tpos_positions — unique FEN positions not yet in teva_evaluations, pos_reached > MIN_REACH_TO_KEEP',
+    ],
+    processing:
+      'Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (purge candidates — evaluating them risks wasted work). Normalises the centipawn score to white\'s perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions get evaluated first regardless of when they occurred. Run in batches; repeat until processed = 0. Also runs unattended via a local scheduled task hitting /api/analysis/cron.',
     output: [
       'teva_evaluations — one row per position: centipawn score (white perspective), best move (UCI), search depth',
+    ],
+  },
+  {
+    num: '4b',
+    title: 'Update CP Change',
+    input: [
+      'tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a teva_evaluations row',
+    ],
+    processing:
+      "Computes gam_cp_change (centipawn loss from the tracked player's perspective) for each move once both its before and after positions have been evaluated. Scoped to gam_cp_change IS NULL — never re-touches already-computed rows. Decoupled from Evaluate Positions (own trigger, own status). Also runs unattended via /api/analysis/cron.",
+    output: [
+      'tgam_game_positions.gam_cp_change — per-move centipawn loss, computed',
     ],
   },
 ]

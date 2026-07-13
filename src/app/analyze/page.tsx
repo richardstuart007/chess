@@ -16,6 +16,7 @@ function AnalyzeContent() {
   const gameId = searchParams.get('game')
   const username = searchParams.get('user') ?? ''
   const isFree = searchParams.get('mode') === 'free'
+  const startFen = searchParams.get('fen') ?? undefined
 
   const [game, setGame] = useState<ChessComGame | null>(null)
   const [gameRef, setGameRef] = useState<string | undefined>(undefined)
@@ -86,7 +87,8 @@ function AnalyzeContent() {
   }, [gameId, isFree])
 
   function handleBack() {
-    router.push(gameId ? `/?highlight=${gameId}` : '/')
+    const from = searchParams.get('from')
+    router.push(from ? decodeURIComponent(from) : (gameId ? `/?highlight=${gameId}` : '/'))
   }
 
   if (loading) {
@@ -109,6 +111,7 @@ function AnalyzeContent() {
       game={isFree ? undefined : (game ?? undefined)}
       gameRef={gameRef}
       username={username}
+      startFen={isFree ? startFen : undefined}
       stockfishDepth={stockfishDepth}
       stockfishMultiPv={stockfishMultiPv}
       onStockfishDepthChange={setStockfishDepth}

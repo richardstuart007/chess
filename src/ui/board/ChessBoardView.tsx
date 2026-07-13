@@ -30,11 +30,21 @@ interface ChessBoardViewProps {
   game?: ChessComGame
   gameRef?: string
   username: string
+  startFen?: string
   stockfishDepth?: number
   stockfishMultiPv?: number
   onStockfishDepthChange?: (depth: number) => void
   onStockfishMultiPvChange?: (multiPv: number) => void
   onBack: () => void
+}
+
+function isValidFen(fen: string): boolean {
+  try {
+    new Chess(fen)
+    return true
+  } catch {
+    return false
+  }
 }
 
 const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
@@ -51,7 +61,7 @@ function formatCp(cp: number): string {
   return cp > 0 ? `+${val}` : val
 }
 
-export default function ChessBoardView({ game, gameRef, username, stockfishDepth, stockfishMultiPv, onStockfishDepthChange, onStockfishMultiPvChange, onBack }: ChessBoardViewProps) {
+export default function ChessBoardView({ game, gameRef, username, startFen, stockfishDepth, stockfishMultiPv, onStockfishDepthChange, onStockfishMultiPvChange, onBack }: ChessBoardViewProps) {
   const isFreeAnalysis = !game
   const playerColor = game ? getPlayerResult(game, username).color : 'white' as const
   const result = game ? getPlayerResult(game, username).result : ''
@@ -122,17 +132,18 @@ export default function ChessBoardView({ game, gameRef, username, stockfishDepth
       setTree(newTree)
       setCurrentNode(null)
       setExplorationMode(true)
+      displayGame.current = new Chess()
     } else {
-      const startFen = new Chess().fen()
-      const newTree = buildTree([], [startFen], [])
+      const initialFen = (startFen && isValidFen(startFen)) ? startFen : new Chess().fen()
+      const newTree = buildTree([], [initialFen], [])
       setTree(newTree)
       setCurrentNode(null)
       setExplorationMode(true)
       setEvaluations([])
+      displayGame.current = new Chess(initialFen)
     }
-    displayGame.current = new Chess()
     setBoardKey(k => k + 1)
-  }, [game])
+  }, [game, startFen])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -140,12 +151,12 @@ export default function ChessBoardView({ game, gameRef, username, stockfishDepth
   const goToNode = useCallback((node: MoveNode | null) => {
     setCurrentNode(node)
     if (!node || node.san === '') {
-      displayGame.current = new Chess()
+      displayGame.current = new Chess(tree?.root.fen)
     } else {
-      displayGame.current = replayToNode(node)
+      displayGame.current = replayToNode(node, tree?.root.fen)
     }
     setBoardKey(k => k + 1)
-  }, [])
+  }, [tree])
 
   // Navigate main line by index (for slider)
   const goToMainLineIndex = useCallback((index: number) => {
@@ -593,7 +604,7 @@ export default function ChessBoardView({ game, gameRef, username, stockfishDepth
       <MyBox>
         <div className='flex items-center justify-between'>
           <MyButton onClick={onBack} overrideClass='bg-gray-500 hover:bg-gray-600 text-xs'>
-            {isFreeAnalysis ? 'Back' : 'Back to Games'}
+            Back
           </MyButton>
           {isFreeAnalysis && (
             <span className='text-xs font-bold text-green-700'>Free Analysis</span>
