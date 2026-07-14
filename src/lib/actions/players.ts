@@ -26,15 +26,13 @@ export async function upsertPlayer(data: {
   username: string
   avatar?: string
   display_name?: string
-  rating_blitz?: number
 }) {
   const existing = await getPlayer(data.username)
 
   const columnMap: Record<string, string> = {
     username:     'pl_player',
     avatar:       'pl_avatar',
-    display_name: 'pl_display_name',
-    rating_blitz: 'pl_rating_blitz'
+    display_name: 'pl_display_name'
   }
 
   const pairs = Object.entries(data)

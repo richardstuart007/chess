@@ -1,6 +1,10 @@
 {
   "crons": [
     { "path": "/api/cron/sync", "schedule": "0 3 * * *" },
-    { "path": "/api/analysis/cron", "schedule": "5 3 * * *" }
+    { "path": "/api/analysis/build-tree?limit=200&skipSync=true", "schedule": "0 4 * * *" },
+    { "path": "/api/analysis/sync-tpos", "schedule": "0 5 * * *" },
+    { "path": "/api/analysis/purge", "schedule": "0 6 * * *" },
+    { "path": "/api/analysis/evaluate-positions?limit=200&depth=16", "schedule": "0 7 * * *" },
+    { "path": "/api/analysis/update-cp-change", "schedule": "0 8 * * *" }
   ]
 }

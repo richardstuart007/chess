@@ -240,7 +240,6 @@ CREATE TABLE public.tpl_players (
     pl_player character varying(64) NOT NULL,
     pl_avatar text,
     pl_display_name character varying(128),
-    pl_rating_blitz integer,
     pl_last_synced_end_time integer
 );
 

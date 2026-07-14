@@ -61,8 +61,8 @@ marker without a replacement caused 3,136 already-purged games to be silently re
 purged positions regenerated) that's why `tgd_gamesdecon.gd_positions_purged` exists and must
 never be removed without also removing/redesigning the guard it provides. **Candidate refinement
 (2026-07-13)**: the initial reach/age-eligible candidate set is refined before any deletes run,
-excluding positions still needed as the after-side of a surviving row (see `docs/Dataflow.md`
-§5) — implemented as a JS-side loop, not a database temp table, since this project's `db.query()`
+excluding positions still needed as the after-side of a surviving row (see the Purge section of
+`docs/Dataflow.md`) — implemented as a JS-side loop, not a database temp table, since this project's `db.query()`
 opens a new connection per call.
 
 ## Open decisions — to be made with the user, not assumed
@@ -73,3 +73,26 @@ opens a new connection per call.
 - Whether/how to migrate `next-chess-analysis`'s already-built analysis data (`tpos_positions`/`teva_evaluations` — expensive Stockfish work) versus starting that fresh too. If migrating, game IDs need remapping from old to new via the stable natural key (player username + chess.com UUID), since a fresh sync assigns new surrogate IDs.
 
 **Do not make any of the above decisions unilaterally. Ask the user first — this project's whole premise is deliberate, collaborative design, not a default carried over from either source project.**
+
+## Outstanding items
+
+- **`pos_reached` double-counting bug** (identified 2026-07-14, not yet fixed) —
+  `recomputePosReachedByIds` ([buildPositionTree.ts:174-193](../src/lib/analysis/buildPositionTree.ts#L174-L193))
+  computes `pos_reached` as the *sum* of two separately-deduplicated counts (`COUNT(DISTINCT
+  gam_gdid)` on `gam_pos_id` match, plus `COUNT(DISTINCT gam_gdid)` on `gam_resulting_pos_id`
+  match), not a single distinct-game count across both sides. If the same game reaches a position
+  once as a "before" position and once as an "after" position (e.g. a repeated position later in
+  the same game), that game is counted twice. User-assessed as a bug. Fix is a SQL change to the
+  `UPDATE tpos_positions` statement — per standing convention, provide the SQL in chat for the user
+  to run manually via pgAdmin4; do not write a migration script. See the `tgam_game_positions`
+  section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the full write-up.
+
+- **Store the player avatar image on the app, not just its chess.com URL** (identified 2026-07-14,
+  not to be done now) — `tpl_players.pl_avatar` currently stores chess.com's own hosted image URL
+  as text (`upsertPlayer`, fed by `fetchPlayer`), fetched once at add-time. `PlayerProfile.tsx`
+  renders it directly as `<img src={pl_avatar}>` — the app never re-fetches it, but still depends
+  on chess.com continuing to serve that exact URL indefinitely. Suggestion: download the image once
+  at add-time and store/serve it from the app itself instead of hotlinking. Not investigated
+  further (storage mechanism, whether nextjs-shared already has a pattern for this, etc.). See
+  the `tpl_players` section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the
+  full write-up.
