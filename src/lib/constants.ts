@@ -42,18 +42,6 @@ export const MIN_REACH_TO_KEEP = 2
 export const DEFAULT_BATCH_SIZE = 200
 
 //
-//  PURGE_ROW_CAP — safety rail, refuse to purge more than this many positions in one
-//  purgeStaleReachOnePositions() run.
-//
-export const PURGE_ROW_CAP = 50000
-
-//
-//  MAX_REFINEMENT_ITERATIONS — safety cap on the purge candidate-refinement loop
-//  (purgeStaleReachOnePositions, refreshPurgeStatus).
-//
-export const MAX_REFINEMENT_ITERATIONS = 20
-
-//
 //  POSITION_INSERT_CHUNK_SIZE — target rows per bulk INSERT into tgam_game_positions
 //  (keeps query params well under the Postgres per-statement limit).
 //

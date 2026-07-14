@@ -3,7 +3,7 @@
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
 import { startPipelineLog, completePipelineLog } from '../actions/pipelineLog'
-import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP, PURGE_ROW_CAP, MAX_REFINEMENT_ITERATIONS } from '../constants'
+import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  purgeStaleReachOnePositions — EXPLICIT EXCEPTION to the "no destructive SQL in
@@ -14,17 +14,12 @@ import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP, PURGE_ROW_CAP, MAX_REFINEMEN
 //  with zero tgam_game_positions rows, so buildPositionTree never mistakes a purged
 //  game for an unprocessed one and resurrects what was just removed.
 //
-//  Candidate refinement: a position can independently qualify by reach/age yet still
-//  be needed as the after-position of a tgam row whose own before-position doesn't
-//  qualify — that row would survive the purge, so the position can't actually be
-//  deleted without leaving that row referencing something gone. The candidate set,
-//  materialized in tpur_workfile (truncated at the start of every run — always holds
-//  only the current run's data, an inspectable snapshot until the next run), is
-//  refined before any deletes run, repeating until stable since excluding one
-//  candidate can change whether another, dependent on it, should also be excluded.
-//  Once stable, every row touching a final candidate — as its own before or as an
-//  after pointing to it — is guaranteed to be deleted by the gam_pos_id-based delete
-//  below, so no null-out/flag step is needed afterward.
+//  Dangling-reference handling follows the standard before/resulting-pair rule (see
+//  .claude/CLAUDE.md): full-delete a tgam row when its own before-position is a
+//  candidate; otherwise, if only its resulting-position is a candidate, null out just
+//  that reference and keep the row. No cross-candidate dependency check is needed —
+//  each candidate is safe to process independently of which other candidates are in
+//  the same run, so there's no per-run row cap; every eligible candidate is purged.
 //----------------------------------------------------------------------------------
 export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ purged: number }> {
   const { sql } = await import('nextjs-shared/db')
@@ -43,10 +38,13 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
     level, isupdate: true, severity: 'D'
   })
 
-  // Stage 1 — cheap, indexed reach filter. Stage 2 — join only that small candidate
-  // set to confirm every occurrence (before or resulting side) is outside the grace
-  // period; NOT EXISTS rather than a single date check so this stays correct if
-  // MIN_REACH_TO_KEEP is ever raised further (multiple occurrences, all must be old).
+  // Stage 1 — cheap, indexed reach filter. Stage 2 — confirm every occurrence (before
+  // and resulting side, checked as two separate NOT EXISTS rather than one OR'd
+  // condition so each can use its own single-column index — idx_tgam_pos_id /
+  // idx_tgam_resulting_pos_id — instead of forcing the planner to reconcile an OR
+  // across two different indexed columns) is outside the grace period. NOT EXISTS
+  // rather than a single date check so this stays correct if MIN_REACH_TO_KEEP is ever
+  // raised further (multiple occurrences, all must be old).
   const insertRes = await db.query({
     caller: 'purgeStaleReachOnePositions_seed',
     query: `
@@ -58,10 +56,16 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
           SELECT 1
           FROM tgam_game_positions g
           JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
-          WHERE (g.gam_pos_id = p.pos_id OR g.gam_resulting_pos_id = p.pos_id)
+          WHERE g.gam_pos_id = p.pos_id
             AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
         )
-      LIMIT ${PURGE_ROW_CAP}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tgam_game_positions g
+          JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
+          WHERE g.gam_resulting_pos_id = p.pos_id
+            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+        )
     `,
     params: [],
     functionName: 'purgeStaleReachOnePositions',
@@ -69,58 +73,16 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
     level, isupdate: true, severity: 'D'
   })
 
-  const logId = await startPipelineLog(5, 'Purge Stale Positions', insertRes.rowCount ?? 0)
+  const purgedCount = insertRes.rowCount ?? 0
+  const logId = await startPipelineLog(5, 'Purge Stale Positions', purgedCount)
 
-  if (!insertRes.rowCount) {
+  if (!purgedCount) {
     await completePipelineLog(logId, 0, 0, 0, Date.now() - t0)
     await logEnd('purgeStaleReachOnePositions', 'analysisCronRoute', '0 positions eligible', level)
     return { purged: 0 }
   }
 
-  // Refine: repeatedly exclude any candidate still needed as the after-position of a
-  // row whose own before-position isn't (currently) also a candidate — that row would
-  // survive, so the candidate must stay. Each pass re-checks against the latest
-  // (already-refined) workfile, so excluding one candidate correctly cascades to any
-  // other candidate that depended on it.
-  for (let iteration = 0; iteration < MAX_REFINEMENT_ITERATIONS; iteration++) {
-    const refineRes = await db.query({
-      caller: 'purgeStaleReachOnePositions_refine',
-      query: `
-        DELETE FROM tpur_workfile wc
-        WHERE EXISTS (
-          SELECT 1
-          FROM tgam_game_positions g
-          WHERE g.gam_resulting_pos_id = wc.pur_pos_id
-            AND (g.gam_pos_id IS NULL OR NOT EXISTS (
-              SELECT 1 FROM tpur_workfile wc2 WHERE wc2.pur_pos_id = g.gam_pos_id
-            ))
-        )
-      `,
-      params: [],
-      functionName: 'purgeStaleReachOnePositions',
-      table: 'tpur_workfile',
-      level, isupdate: true, severity: 'D'
-    })
-    if (!refineRes.rowCount) break
-  }
-
-  const finalCountRes = await db.query({
-    caller: 'purgeStaleReachOnePositions_count',
-    query: `SELECT COUNT(*) AS cnt FROM tpur_workfile`,
-    params: [],
-    functionName: 'purgeStaleReachOnePositions',
-    table: 'tpur_workfile',
-    level, severity: 'D'
-  })
-  const purgedCount = parseInt(finalCountRes.rows[0]?.cnt ?? '0')
-
-  if (purgedCount === 0) {
-    await completePipelineLog(logId, 0, 0, 0, Date.now() - t0)
-    await logEnd('purgeStaleReachOnePositions', 'analysisCronRoute', '0 positions eligible after refinement', level)
-    return { purged: 0 }
-  }
-
-  // 1. Delete evaluations for the refined purge set
+  // 1. Delete evaluations for the candidate set
   await db.query({
     caller: 'purgeStaleReachOnePositions_evals',
     query: `DELETE FROM teva_evaluations WHERE eva_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,
@@ -130,12 +92,9 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
     level, isupdate: true, severity: 'D'
   })
 
-  // 2. Full-delete tgam rows where the before-position is in the refined purge set —
-  // refinement guarantees this also correctly accounts for every row that had one of
-  // these positions as its after-side, since those rows' own before is in this same
-  // set too (otherwise refinement would have excluded the position).
+  // 2. Full-delete tgam rows whose own before-position is a candidate.
   await db.query({
-    caller: 'purgeStaleReachOnePositions_tgam',
+    caller: 'purgeStaleReachOnePositions_tgam_delete',
     query: `DELETE FROM tgam_game_positions WHERE gam_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,
     params: [],
     functionName: 'purgeStaleReachOnePositions',
@@ -143,7 +102,23 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
     level, isupdate: true, severity: 'D'
   })
 
-  // 3. Resurrection guard — stamp any game now left with zero tgam rows
+  // 3. Null out the resulting-position reference on any surviving row (its own
+  // before-position wasn't a candidate, so the row stays — only the now-dangling
+  // pointer is cleared).
+  await db.query({
+    caller: 'purgeStaleReachOnePositions_tgam_null',
+    query: `
+      UPDATE tgam_game_positions
+      SET gam_resulting_pos_id = NULL
+      WHERE gam_resulting_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)
+    `,
+    params: [],
+    functionName: 'purgeStaleReachOnePositions',
+    table: 'tgam_game_positions',
+    level, isupdate: true, severity: 'D'
+  })
+
+  // 4. Resurrection guard — stamp any game now left with zero tgam rows
   await db.query({
     caller: 'purgeStaleReachOnePositions_guard',
     query: `
@@ -158,10 +133,10 @@ export async function purgeStaleReachOnePositions(level: number = 1): Promise<{ 
     level, isupdate: true, severity: 'D'
   })
 
-  // 4. Delete the purged tpos_positions rows themselves — no null-out/flag step
-  // needed; refinement already guarantees no surviving row references any of these.
-  // tpur_workfile itself is intentionally left populated — an inspectable record of
-  // exactly what this run purged, until the next run truncates it.
+  // 5. Delete the purged tpos_positions rows themselves — safe unconditionally now:
+  // every reference to them was either removed with its row (step 2) or nulled out
+  // (step 3). tpur_workfile itself is intentionally left populated — an inspectable
+  // record of exactly what this run purged, until the next run truncates it.
   await db.query({
     caller: 'purgeStaleReachOnePositions_tpos',
     query: `DELETE FROM tpos_positions WHERE pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,

@@ -17,21 +17,16 @@ function truncateFen(fen: string): string {
 
 interface GameRecord {
   gdid:          number
-  player:        string
-  playerColor:   'w' | 'b'
   pgn:           string
-  result:        string
 }
 
 interface PositionRecord {
   gdid:         number
-  player:       string
   posFen:       string
   movePlayed:   string
   moveUci:      string | null
   resultingFen: string | null
   moveNum:      number
-  result:       string
 }
 
 //----------------------------------------------------------------------------------
@@ -53,7 +48,6 @@ function getPositionsFromGame(
 
   for (let i = 0; i < Math.min(history.length, maxHalfMove); i++) {
     const fen   = truncateFen(replay.fen())
-    const color = replay.turn()
     const move  = history[i]
     const moveUci = move.lan ?? (move.from + move.to + (move.promotion ?? ''))
     const moveNum = Math.ceil((i + 1) / 2)
@@ -63,16 +57,20 @@ function getPositionsFromGame(
     // A revisited position (transposition/repetition) is real and gets its own row each
     // time — not deduped within a game. pos_reached counts DISTINCT gam_gdid, so this
     // doesn't affect reach counts; it does let move-frequency queries see every visit.
-    if (i >= minHalfMove && color === game.playerColor) {
+    //
+    // Every ply is recorded, not just the tracked player's own — the opponent's moves
+    // are real edges too. Queries that must stay scoped to the tracked player's own
+    // moves (e.g. the Habits page) filter on pos_color vs. the game's player color
+    // instead, since that's already derivable and this table is no longer implicitly
+    // "my moves only."
+    if (i >= minHalfMove) {
       records.push({
         gdid:         game.gdid,
-        player:       game.player,
         posFen:       fen,
         movePlayed:   move.san,
         moveUci,
         resultingFen,
-        moveNum,
-        result:       game.result
+        moveNum
       })
     }
   }
@@ -81,13 +79,11 @@ function getPositionsFromGame(
   if (records.length === 0) {
     records.push({
       gdid:         game.gdid,
-      player:       game.player,
       posFen:       '__too_short__',
       movePlayed:   '',
       moveUci:      null,
       resultingFen: null,
-      moveNum:      0,
-      result:       game.result
+      moveNum:      0
     })
   }
 
@@ -127,26 +123,26 @@ function chunkByGame(records: PositionRecord[], maxRows: number): PositionRecord
 //  gam_pos_id/gam_resulting_pos_id are left NULL here; syncTposFromTgam (Phase B)
 //  backfills them afterward. Plain INSERT, no ON CONFLICT — a revisited position within
 //  a game is legitimate and gets its own row (gam_gamid's own IDENTITY makes every row
-//  distinct regardless); nothing about (gdid, player, pos_fen) is unique anymore.
+//  distinct regardless); nothing about (gdid, pos_fen) is unique anymore.
 //----------------------------------------------------------------------------------
 async function insertGamePositions(db: any, records: PositionRecord[], level: number): Promise<void> {
   await logStart('insertGamePositions', 'buildPositionTree', `inserting ${records.length} game-position rows`, level)
   const chunks = chunkByGame(records, POSITION_INSERT_CHUNK_SIZE)
   for (const chunk of chunks) {
     const values = chunk.map((_, i) => {
-      const b = i * 8
-      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`
+      const b = i * 6
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6})`
     }).join(',')
     const params = chunk.flatMap(r => [
-      r.gdid, r.player, r.posFen, r.movePlayed,
-      r.moveUci, r.resultingFen, r.moveNum, r.result
+      r.gdid, r.posFen, r.movePlayed,
+      r.moveUci, r.resultingFen, r.moveNum
     ])
     await db.query({
       caller:       'insertGamePositions',
       query:        `
         INSERT INTO tgam_game_positions
-          (gam_gdid, gam_player, gam_pos_fen, gam_move_played,
-           gam_move_uci, gam_resulting_fen, gam_move_num, gam_player_result)
+          (gam_gdid, gam_pos_fen, gam_move_played,
+           gam_move_uci, gam_resulting_fen, gam_move_num)
         VALUES ${values}
       `,
       params,
@@ -163,7 +159,10 @@ async function insertGamePositions(db: any, records: PositionRecord[], level: nu
 //----------------------------------------------------------------------------------
 //  recomputePosReachedByIds — accurate count from tgam_game_positions for a specific
 //  set of positions. A position can be someone's "before" position in one game and a
-//  "resulting" position in another, so the true reach count combines both.
+//  "resulting" position in another (or both, in the same game), so the true reach
+//  count is one COUNT(DISTINCT gam_gdid) over the union of both sides, not a sum of
+//  two independently-deduplicated counts — a game hitting both sides must still only
+//  count once.
 //----------------------------------------------------------------------------------
 async function recomputePosReachedByIds(db: any, posIds: number[], level: number): Promise<void> {
   if (posIds.length === 0) return
@@ -176,12 +175,8 @@ async function recomputePosReachedByIds(db: any, posIds: number[], level: number
         SET pos_reached = (
           SELECT COUNT(DISTINCT gam_gdid)
           FROM tgam_game_positions
-          WHERE gam_pos_id = p.pos_id
-            AND gam_move_num > 0
-        ) + (
-          SELECT COUNT(DISTINCT gam_gdid)
-          FROM tgam_game_positions
-          WHERE gam_resulting_pos_id = p.pos_id
+          WHERE (gam_pos_id = p.pos_id AND gam_move_num > 0)
+             OR gam_resulting_pos_id = p.pos_id
         ),
         pos_move_num = (
           SELECT MIN(gam_move_num)
@@ -343,10 +338,7 @@ export async function buildPositionTree(opts: {
     query:  `
       SELECT
         d.gd_gdid AS gdid,
-        d.gd_player AS player,
-        d.gd_pgn AS pgn,
-        CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END AS player_color,
-        d.gd_player_result AS result
+        d.gd_pgn AS pgn
       FROM tgd_gamesdecon d
       WHERE ${whereClause}
       ORDER BY d.gd_end_time DESC
@@ -361,10 +353,7 @@ export async function buildPositionTree(opts: {
 
   const games: GameRecord[] = gamesRes.rows.map((r: any) => ({
     gdid:          r.gdid,
-    player:        r.player,
-    playerColor:   r.player_color as 'w' | 'b',
-    pgn:           r.pgn ?? '',
-    result:        r.result
+    pgn:           r.pgn ?? ''
   }))
 
   await logStart('buildPositionTree', caller, `building position tree, ${games.length} games fetched`, level)

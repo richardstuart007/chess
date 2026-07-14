@@ -1,6 +1,6 @@
 'use server'
 
-import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MAX_REFINEMENT_ITERATIONS } from '../constants'
+import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  getPipelineStatus — single-query count of processed/remaining rows for all steps
@@ -161,43 +161,33 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 
 //----------------------------------------------------------------------------------
 //  refreshPurgeStatus — "eligible" mirrors exactly what purgeStaleReachOnePositions()
-//  would actually purge: naive reach/age candidates, refined via the same iterative
-//  loop (excluding any candidate still needed as the after-position of a row whose
-//  own before isn't also a candidate, repeated until stable). Read-only — does not
-//  touch tpur_workfile, which stays a snapshot of the last actual purge run.
+//  would actually purge: naive reach/age candidates. No refinement needed — the purge
+//  itself no longer excludes candidates based on cross-references, it nulls out the
+//  dangling reference instead (see purgePositions.ts). Read-only — does not touch
+//  tpur_workfile, which stays a snapshot of the last actual purge run.
 //----------------------------------------------------------------------------------
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const { sql } = await import('nextjs-shared/db')
   const db  = await sql()
   const candidatesRes = await db.query({
     caller: 'refreshPurgeStatus_find', params: [], functionName: 'refreshPurgeStatus',
-    query: `SELECT p.pos_id
+    query: `SELECT COUNT(*) AS cnt
       FROM tpos_positions p
       WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
         AND NOT EXISTS (
           SELECT 1
           FROM tgam_game_positions g
           JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
-          WHERE (g.gam_pos_id = p.pos_id OR g.gam_resulting_pos_id = p.pos_id)
+          WHERE g.gam_pos_id = p.pos_id
+            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tgam_game_positions g
+          JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
+          WHERE g.gam_resulting_pos_id = p.pos_id
             AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
         )`
   })
-  let posIds = candidatesRes.rows.map((r: any) => Number(r.pos_id))
-  if (posIds.length === 0) return { eligible: 0 }
-
-  for (let iteration = 0; iteration < MAX_REFINEMENT_ITERATIONS; iteration++) {
-    const excludeRes = await db.query({
-      caller: 'refreshPurgeStatus_refine', params: [posIds], functionName: 'refreshPurgeStatus',
-      query: `SELECT DISTINCT g.gam_resulting_pos_id AS pos_id
-        FROM tgam_game_positions g
-        WHERE g.gam_resulting_pos_id = ANY($1)
-          AND (g.gam_pos_id IS NULL OR NOT (g.gam_pos_id = ANY($1)))`
-    })
-    if (excludeRes.rows.length === 0) break
-    const excludeSet = new Set(excludeRes.rows.map((r: any) => Number(r.pos_id)))
-    posIds = posIds.filter((id: number) => !excludeSet.has(id))
-    if (posIds.length === 0) break
-  }
-
-  return { eligible: posIds.length }
+  return { eligible: parseInt(candidatesRes.rows[0]?.cnt ?? '0') }
 }

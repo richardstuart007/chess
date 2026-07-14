@@ -58,12 +58,10 @@ CREATE INDEX idx_teva_pos_id ON public.teva_evaluations USING btree (eva_pos_id)
 
 CREATE TABLE public.tgam_game_positions (
     gam_gamid integer CONSTRAINT tgam_game_positions_gam_id_not_null NOT NULL,
-    gam_player text NOT NULL,
     gam_move_played text NOT NULL,
     gam_move_uci text,
     gam_move_num integer,
     gam_cp_change integer,
-    gam_player_result character varying(5),
     gam_pos_id integer,
     gam_gdid integer,
     gam_resulting_pos_id integer,
@@ -85,8 +83,6 @@ ALTER TABLE ONLY public.tgam_game_positions
     ADD CONSTRAINT tgam_game_positions_pkey PRIMARY KEY (gam_gamid);
 
 CREATE INDEX idx_tgam_gdid ON public.tgam_game_positions USING btree (gam_gdid);
-
-CREATE INDEX idx_tgam_player ON public.tgam_game_positions USING btree (gam_player);
 
 CREATE INDEX idx_tgam_pos_id ON public.tgam_game_positions USING btree (gam_pos_id);
 
@@ -295,7 +291,6 @@ CREATE TABLE public.tpos_positions (
     pos_fen text NOT NULL,
     pos_reached integer DEFAULT 0,
     pos_color character(1),
-    pos_ply_count integer,
     pos_move_num integer
 );
 
@@ -327,6 +322,8 @@ CREATE TABLE public.tpur_workfile (
     pur_pos_fen text NOT NULL,
     pur_pos_reached integer NOT NULL
 );
+
+CREATE INDEX idx_tpur_pos_id ON public.tpur_workfile USING btree (pur_pos_id);
 
 --
 -- Name: tqui_quiz; Type: TABLE;

@@ -71,29 +71,24 @@ WHERE gp.gam_cp_change IS NULL
   AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP};`
 
 const SQL_STATUS_PURGE =
-`-- Exact match for purgeStaleReachOnePositions()'s candidate refinement — repeat the
--- exclusion pass below until it excludes 0 rows (a loop, not expressible as one
--- static query); this shows one representative pass.
-WITH candidates AS (
-  SELECT p.pos_id
-  FROM tpos_positions p
-  WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
-    AND NOT EXISTS (
-      SELECT 1
-      FROM tgam_game_positions g
-      JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
-      WHERE (g.gam_pos_id = p.pos_id OR g.gam_resulting_pos_id = p.pos_id)
-        AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
-    )
-)
+`-- Exact match for purgeStaleReachOnePositions()'s candidate query.
 SELECT COUNT(*) AS eligible
-FROM candidates c
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM tgam_game_positions g
-  WHERE g.gam_resulting_pos_id = c.pos_id
-    AND (g.gam_pos_id IS NULL OR NOT EXISTS (SELECT 1 FROM candidates c2 WHERE c2.pos_id = g.gam_pos_id))
-);`
+FROM tpos_positions p
+WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
+  AND NOT EXISTS (
+    SELECT 1
+    FROM tgam_game_positions g
+    JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
+    WHERE g.gam_pos_id = p.pos_id
+      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM tgam_game_positions g
+    JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
+    WHERE g.gam_resulting_pos_id = p.pos_id
+      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+  );`
 
 function StatusBadge({ complete }: { complete: boolean | null }) {
   if (complete === null) return null
@@ -480,7 +475,7 @@ export default function PipelinePage() {
             <MyHelpStep
               title='3. Purge Stale Positions'
               input={['tpos_positions — pos_reached <= MIN_REACH_TO_KEEP, all occurrences older than PURGE_REACH_GRACE_DAYS']}
-              processing='Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions (dual-reference rule), then tpos_positions itself. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows — resurrection guard so Build Game Positions never reprocesses a purged game. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via /api/analysis/cron. Deliberate exception to the "no destructive SQL in automation" rule — see .claude/CLAUDE.md.'
+              processing='Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions rows whose own before-position is a candidate (full delete) or whose resulting-position is a candidate (just nulls that reference, keeps the row), then tpos_positions itself. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows — resurrection guard so Build Game Positions never reprocesses a purged game. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via /api/analysis/cron. Deliberate exception to the "no destructive SQL in automation" rule — see .claude/CLAUDE.md.'
               output={[
                 'teva_evaluations / tgam_game_positions / tpos_positions — rows removed',
                 'tgd_gamesdecon.gd_positions_purged — set true on emptied games',

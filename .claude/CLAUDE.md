@@ -52,18 +52,28 @@ This project is a normal Next.js project under `C:\Users\richa\claude\github` �
 (both constants in `src/lib/constants.ts`), running unattended on the existing daily analysis cron
 schedule. This was a deliberate design decision (not an oversight) after evaluating three options —
 auto-compute-report-only, this real-automation approach, and soft-delete/flag — the user chose real
-automation, with safety rails: a per-run row cap (`PURGE_ROW_CAP` in the same file), and every step
-logged via `write_logging`/`logStart`/`logEnd` same as the rest of the pipeline. **Do not "fix" this
+automation, with safety rails: originally a per-run row cap (`PURGE_ROW_CAP`), removed permanently
+(2026-07-15, user decision) after the redesign below made per-candidate correctness independent of
+batch size — a bug at 50,000 rows and a bug at the full eligible set require the same
+rebuild-from-scratch recovery either way, so the cap wasn't actually limiting risk, only the pace of
+clearing the backlog. Every step is still logged via `write_logging`/`logStart`/`logEnd` same as the
+rest of the pipeline. **Do not "fix" this
 by reverting to a report-only/manual-SQL pattern without asking first** — it's intentional, not a
 violation to clean up. See `C:\Users\richa\.claude\plans\2-build-position-tree-swift-ritchie.md` for
 the full design history, including a live-observed bug (deleting the purge's own resurrection-guard
 marker without a replacement caused 3,136 already-purged games to be silently reprocessed and their
 purged positions regenerated) that's why `tgd_gamesdecon.gd_positions_purged` exists and must
-never be removed without also removing/redesigning the guard it provides. **Candidate refinement
-(2026-07-13)**: the initial reach/age-eligible candidate set is refined before any deletes run,
-excluding positions still needed as the after-side of a surviving row (see the Purge section of
-`docs/Dataflow.md`) — implemented as a JS-side loop, not a database temp table, since this project's `db.query()`
-opens a new connection per call.
+never be removed without also removing/redesigning the guard it provides. **Dangling-reference
+handling (redesigned 2026-07-15)**: candidates are the reach/age-eligible set only (no
+cross-candidate refinement) — a `tgam_game_positions` row is full-deleted if its own before-position
+is a candidate, or has just its resulting-position reference nulled out (row kept) if only that side
+is a candidate, following the standard before/resulting-pair rule (see the Purge section of
+`docs/Dataflow.md`). An earlier version tried to protect candidate positions from deletion via an
+iterative fixpoint refinement instead of nulling the reference — same end result (no dangling
+references), far more complex and, once the both-ply backfill roughly doubled edge density, too slow
+to run at all (multi-minute stalls even with adequate indexing). Replaced rather than optimized
+further, since the null-out rule was already the documented design intent for this exact
+two-reference-pair problem shape.
 
 ## Open decisions — to be made with the user, not assumed
 
@@ -75,17 +85,6 @@ opens a new connection per call.
 **Do not make any of the above decisions unilaterally. Ask the user first — this project's whole premise is deliberate, collaborative design, not a default carried over from either source project.**
 
 ## Outstanding items
-
-- **`pos_reached` double-counting bug** (identified 2026-07-14, not yet fixed) —
-  `recomputePosReachedByIds` ([buildPositionTree.ts:174-193](../src/lib/analysis/buildPositionTree.ts#L174-L193))
-  computes `pos_reached` as the *sum* of two separately-deduplicated counts (`COUNT(DISTINCT
-  gam_gdid)` on `gam_pos_id` match, plus `COUNT(DISTINCT gam_gdid)` on `gam_resulting_pos_id`
-  match), not a single distinct-game count across both sides. If the same game reaches a position
-  once as a "before" position and once as an "after" position (e.g. a repeated position later in
-  the same game), that game is counted twice. User-assessed as a bug. Fix is a SQL change to the
-  `UPDATE tpos_positions` statement — per standing convention, provide the SQL in chat for the user
-  to run manually via pgAdmin4; do not write a migration script. See the `tgam_game_positions`
-  section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the full write-up.
 
 - **Store the player avatar image on the app, not just its chess.com URL** (identified 2026-07-14,
   not to be done now) — `tpl_players.pl_avatar` currently stores chess.com's own hosted image URL

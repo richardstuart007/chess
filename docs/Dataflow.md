@@ -217,13 +217,17 @@ changes.
 
 ### Purpose
 
-**Produce a centipawn change per tracked-player move.**
+**Produce a centipawn change per ply.**
 
-Each row captures one ply — the tracked player's own turn only. In standard chess notation a
-"move" is White's ply plus Black's reply (two plies sharing one move number); a `tgam` row
-brackets just one side of that: `gam_pos_fen` is the board right before the tracked player's ply,
-`gam_resulting_fen` is right after it, before the opponent replies. That before/after pair is what
-makes `gam_cp_change` measurable once both FENs are evaluated.
+Each row captures one ply — either side's turn, not just the tracked player's own. In standard
+chess notation a "move" is White's ply plus Black's reply (two plies sharing one move number); a
+`tgam` row brackets just one side of that: `gam_pos_fen` is the board right before the ply,
+`gam_resulting_fen` is right after it, before the reply. That before/after pair is what makes
+`gam_cp_change` measurable once both FENs are evaluated — and it's computed purely from whoever's
+turn it was at `gam_pos_fen` (`tpos_positions.pos_color`), so the same logic already works for
+either side with no tracked-player-specific handling. Queries that must stay scoped to the tracked
+player's own moves (the Habits page) filter explicitly on `pos_color` vs. the game's player color;
+queries about the position generally (Position Detail) intentionally don't.
 
 ### Input
 
@@ -234,15 +238,15 @@ makes `gam_cp_change` measurable once both FENs are evaluated.
 #### Summary
 
 Creates a `tpos_positions` record for each position — the "before" position and, separately, the
-"after" position — for every tracked-player move.
+"after" position — for every ply.
 
 #### Details
 
 1. *Insert (Phase A)* — Replays `gd_pgn` move-by-move with chess.js
    ([`getPositionsFromGame`](../src/lib/analysis/buildPositionTree.ts#L40)), deriving the
-   before/after FEN for each of the tracked player's own plies. Writes one `INSERT` per whole game
-   (chunked by game, not row count, so it stays atomic per game). FEN text goes straight into
-   `gam_pos_fen`/`gam_resulting_fen`; `gam_pos_id`/`gam_resulting_pos_id` are left `NULL`.
+   before/after FEN for every ply in the analysis window (both sides). Writes one `INSERT` per
+   whole game (chunked by game, not row count, so it stays atomic per game). FEN text goes straight
+   into `gam_pos_fen`/`gam_resulting_fen`; `gam_pos_id`/`gam_resulting_pos_id` are left `NULL`.
 2. *Backfill (Phase B, `syncTposFromTgam`)* — idempotent, re-runnable any time. Fills
    `gam_pos_id`/`gam_resulting_pos_id` by FEN match against `tpos_positions`, creating missing
    `tpos_positions` rows as needed.
@@ -254,7 +258,7 @@ Creates a `tpos_positions` record for each position — the "before" position an
 `tpos_positions`
 
 One record created (or matched) for each of the "before" and "after" positions of every
-tracked-player move — see Processing above for how the FEN match/create is done.
+ply — see Processing above for how the FEN match/create is done.
 
 ### Consumers
 
@@ -282,16 +286,19 @@ Phase B derives/backfills itself from unresolved tgam rows (see Processing above
 - A revisited position (transposition/repetition within the same game) is **not** deduped — it
   gets its own row each time. `pos_reached` counts `DISTINCT gam_gdid`, so this doesn't inflate
   reach counts, but it does mean move-frequency queries see every visit.
-- `pos_reached` (on `tpos_positions`) is the *sum* of two separately-deduplicated counts —
-  `COUNT(DISTINCT gam_gdid)` where `gam_pos_id` matches, plus `COUNT(DISTINCT gam_gdid)` where
-  `gam_resulting_pos_id` matches ([`buildPositionTree.ts:174-193`](../src/lib/analysis/buildPositionTree.ts#L174-L193)).
-  It is **not** a single distinct-game count across both sides: if the same game reaches a position
-  once as a "before" position and once as an "after" position (e.g. a repeated position later in
-  the same game), that one game is counted twice. **Assessed as a bug** (2026-07-14) — not yet
-  fixed; see `.claude/CLAUDE.md` Outstanding items.
+- `pos_reached` (on `tpos_positions`) is one `COUNT(DISTINCT gam_gdid)` over the union of both
+  sides — `gam_pos_id` matches OR `gam_resulting_pos_id` matches
+  ([`buildPositionTree.ts:160-187`](../src/lib/analysis/buildPositionTree.ts#L160-L187)) — so a
+  game that reaches a position once as a "before" position and once as an "after" position (e.g. a
+  repeated position later in the same game) still only counts once. **Fixed** (2026-07-14) — was
+  previously a sum of two independently-deduplicated counts, which double-counted that case.
 - Purge only full-deletes a row when `gam_pos_id` is in the candidate set — never based on
   `gam_resulting_pos_id` alone (the before-position can still be in scope even when the
   after-position isn't).
+- Every ply is recorded (both sides), not just the tracked player's own — see Purpose above. A row
+  has no column identifying whose move it was; that's derived at query time by comparing
+  `tpos_positions.pos_color` (whose turn it was at `gam_pos_fen`) against the game's player color
+  on `tgd_gamesdecon`.
 
 ## `tpos_positions` {#tpos_positions}
 
@@ -344,8 +351,8 @@ Rules/gotchas), `pos_color` (derived from the FEN itself).
 - `pos_move_num` is a "first-known" value, not a fixed property of the position — recomputed
   (never just written once) every time the position is touched again, since the same position can
   be reached at different move numbers via transposition in different games.
-- `pos_ply_count` is unused/`NULL` on the live write path — `chessdb.ts` has its own
-  `upsertPosition` that would set it, but that function is dead code, never called.
+- **Resolved (2026-07-14):** `pos_ply_count` was unused/`NULL` on the live write path — only the
+  dead, never-called `upsertPosition` (`chessdb.ts`) ever set it. Column and function both removed.
 - **Resolved (2026-07-12):** ~319k rows previously had a wrong `pos_reached` (mostly stale, a small
   fraction truly orphaned) because the old design wrote `tpos_positions` *before*
   `tgam_game_positions` across four separate non-transactional steps — a partial failure left them
@@ -372,22 +379,26 @@ position that's about to be deleted.
 
 #### Summary
 
-A cheap candidate query, a refinement pass to protect positions still needed elsewhere, then
-ordered deletes across four tables.
+A cheap candidate query, then ordered deletes across four tables — no cross-candidate refinement;
+dangling references are handled by nulling out the specific pointer, not by protecting the position.
 
 #### Details
 
 1. Candidate query - indexed filter on `pos_reached` first, then confirm every occurrence is older
    than `PURGE_REACH_GRACE_DAYS` by joining through `tgam_game_positions` → `tgd_gamesdecon`
-2. Refine - repeatedly exclude any candidate still needed as the after-position of a row whose
-   before-position isn't also a candidate, looping until stable (a single pass isn't enough)
-3. Delete - `teva_evaluations` → `tgam_game_positions` (`gam_pos_id` in the set) → stamp
-   `tgd_gamesdecon.gd_positions_purged` on emptied games → `tpos_positions`
+   (capped to `PURGE_ROW_CAP` rows, plain `LIMIT` on the seed — safe, since no candidate's
+   eligibility depends on which other candidates are in the same batch)
+2. Delete - `teva_evaluations` → `tgam_game_positions` full-deleted where `gam_pos_id` is a
+   candidate → `tgam_game_positions.gam_resulting_pos_id` nulled out (row kept) where only that
+   side is a candidate → stamp `tgd_gamesdecon.gd_positions_purged` on emptied games →
+   `tpos_positions`
 
 ### Output
 
 Rows removed from `teva_evaluations`, `tgam_game_positions`, `tpos_positions`.
-`tgd_gamesdecon.gd_positions_purged` set true on any game left with zero `tgam` rows.
+`tgam_game_positions.gam_resulting_pos_id` nulled out (row kept) on rows whose before-position
+wasn't a candidate. `tgd_gamesdecon.gd_positions_purged` set true on any game left with zero
+`tgam` rows.
 
 ### Consumers
 
@@ -405,12 +416,19 @@ game is never mistaken for an unprocessed one (see Rules/gotchas).
 - The candidate query is deliberately cheap-filter-first (reach, then age) rather than starting
   from "every old game" — most of `tgd_gamesdecon` is older than the grace period at any given
   time, so filtering by reach first is far cheaper.
-- Refinement is a JS-side loop over id arrays, not a database temp table — `nextjs-shared/db`
-  opens a new connection per query call, so a temp table from one call is invisible to the next.
+- No cross-candidate refinement — each candidate is independently safe to process regardless of
+  which other candidates are in the same batch, since dangling references are resolved by nulling
+  out the specific pointer (on the referencing row) rather than protecting the referenced position
+  from deletion. An earlier design used an iterative fixpoint refinement loop instead; replaced
+  (2026-07-15) once it became too slow at scale (multi-minute stalls) and was more complex than the
+  documented before/resulting-pair rule actually requires.
 - `gd_positions_purged` is a resurrection guard, confirmed live not theoretical: deleting its
   precursor without a replacement once caused 3,136 already-purged games to be silently
   reprocessed and their purged positions regenerated from scratch.
-- A per-run row cap (`PURGE_ROW_CAP`) guards against a logic bug inflating the candidate set.
+- No per-run row cap (removed 2026-07-15) — every eligible candidate is purged in one run. The
+  earlier cap (`PURGE_ROW_CAP`) limited pace, not risk: since candidates are processed
+  independently, a logic bug would be equally catastrophic (rebuild-from-scratch) whether it
+  affected a capped batch or the full set, so the cap wasn't actually bounding blast radius.
 
 ## `teva_evaluations` {#teva_evaluations}
 
