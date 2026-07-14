@@ -33,13 +33,14 @@ export interface InfiniteAnalysisUpdate {
 
 // Read defaults from env, fallback to hardcoded values
 export const STOCKFISH_DEFAULTS = {
-  depth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEPTH ?? '16', 10),
-  multiPv: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_MULTIPV ?? '3', 10),
+  depth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEPTH ?? '20', 10),
   blunderCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_BLUNDER_CP ?? '200', 10),
   mistakeCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_MISTAKE_CP ?? '100', 10),
   inaccuracyCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_INACCURACY_CP ?? '50', 10),
   hash: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_HASH ?? '128', 10),
-  bestLineLength: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_BESTLINE_LENGTH ?? '5', 10)
+  bestLineLength: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_BESTLINE_LENGTH ?? '5', 10),
+  deepAnalysisDepth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_DEPTH ?? '30', 10),
+  deepAnalysisMultiPv: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_MULTIPV ?? '3', 10)
 }
 
 function classifyMove(cpLoss: number): MoveEvaluation['classification'] {
@@ -126,13 +127,17 @@ export class StockfishEngine {
   private infiniteHandler: ((e: MessageEvent) => void) | null = null
 
   /**
-   * Start infinite analysis on a position. Calls onUpdate with live results
-   * as the engine searches deeper. Call stop() to end.
+   * Start deep analysis on a position. Calls onUpdate with live results as
+   * the engine searches deeper. Stops automatically once maxDepth is reached
+   * (or runs unbounded if maxDepth is 'infinite'), or earlier if stopAnalysis()
+   * is called. Either way, onComplete fires once the engine's bestmove arrives.
    */
   startInfiniteAnalysis(
     fen: string,
     numLines: number,
-    onUpdate: (result: InfiniteAnalysisUpdate) => void
+    maxDepth: number | 'infinite',
+    onUpdate: (result: InfiniteAnalysisUpdate) => void,
+    onComplete?: () => void
   ): void {
     if (!this.worker || !this.ready) return
 
@@ -207,11 +212,12 @@ export class StockfishEngine {
       }
 
       if (line.startsWith('bestmove')) {
-        // Engine was stopped
+        // Engine stopped, either manually or by reaching maxDepth
         if (this.infiniteHandler) {
           this.worker!.removeEventListener('message', this.infiniteHandler)
           this.infiniteHandler = null
         }
+        onComplete?.()
       }
     }
 
@@ -219,7 +225,7 @@ export class StockfishEngine {
     this.send(`setoption name MultiPV value ${numLines}`)
     this.send('ucinewgame')
     this.send(`position fen ${fen}`)
-    this.send('go infinite')
+    this.send(maxDepth === 'infinite' ? 'go infinite' : `go depth ${maxDepth}`)
   }
 
   /**
@@ -353,85 +359,6 @@ export class StockfishEngine {
     }
 
     return evaluations
-  }
-
-  async evaluateMultiPV(
-    fen: string,
-    numLines: number = 3,
-    depth: number = STOCKFISH_DEFAULTS.depth
-  ): Promise<MultiPvResult[]> {
-    if (!this.worker || !this.ready) throw new Error('Stockfish not initialized')
-
-    return new Promise((resolve) => {
-      const results = new Map<number, { cp: number; pv: string; depth: number }>()
-
-      const handler = (e: MessageEvent) => {
-        const line = typeof e.data === 'string' ? e.data : ''
-
-        if (line.startsWith('info') && line.includes('score')) {
-          const depthMatch = line.match(/depth (\d+)/)
-          const multipvMatch = line.match(/multipv (\d+)/)
-          const cpMatch = line.match(/score cp (-?\d+)/)
-          const mateMatch = line.match(/score mate (-?\d+)/)
-          const pvMatch = line.match(/ pv (.+)/)
-
-          const currentDepth = depthMatch ? parseInt(depthMatch[1]) : 0
-          const rank = multipvMatch ? parseInt(multipvMatch[1]) : 1
-
-          // Accept any depth, keep the highest per rank
-          if (currentDepth >= 4) {
-            let cp = 0
-            if (cpMatch) {
-              cp = parseInt(cpMatch[1])
-            } else if (mateMatch) {
-              const mateIn = parseInt(mateMatch[1])
-              cp = mateIn > 0 ? 10000 - mateIn : -10000 + Math.abs(mateIn)
-            }
-            const pv = pvMatch ? pvMatch[1] : ''
-
-            const existing = results.get(rank)
-            if (!existing || currentDepth > existing.depth) {
-              results.set(rank, { cp, pv, depth: currentDepth })
-            }
-          }
-        }
-
-        if (line.startsWith('bestmove')) {
-          this.worker!.removeEventListener('message', handler)
-
-          // Reset MultiPV to 1
-          this.send('setoption name MultiPV value 1')
-
-          // Determine side to move from FEN to normalize cp to white's perspective
-          // Stockfish reports cp from the side to move's perspective
-          const isBlackToMove = fen.split(' ')[1] === 'b'
-
-          // Build results array
-          const pvResults: MultiPvResult[] = []
-          for (const [rank, data] of results.entries()) {
-            const uciMoves = data.pv ? data.pv.split(' ') : []
-            const sans = uciLineToSans(fen, uciMoves)
-            pvResults.push({
-              rank,
-              cp: isBlackToMove ? -data.cp : data.cp,
-              bestMoveUci: uciMoves[0] || '',
-              bestMoveSan: sans[0] || '',
-              lineSans: sans,
-              lineUci: uciMoves
-            })
-          }
-
-          pvResults.sort((a, b) => a.rank - b.rank)
-          resolve(pvResults)
-        }
-      }
-
-      this.worker!.addEventListener('message', handler)
-      this.send(`setoption name MultiPV value ${numLines}`)
-      this.send('ucinewgame')
-      this.send(`position fen ${fen}`)
-      this.send(`go depth ${depth}`)
-    })
   }
 
   destroy(): void {

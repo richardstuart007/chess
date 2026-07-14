@@ -93,14 +93,13 @@ export async function insertRawGame(data: {
 //----------------------------------------------------------------------------------
 //  saveGameEvaluations — write per-move Stockfish evals from /analyze to tgev_game_evals
 //----------------------------------------------------------------------------------
-export async function saveGameEvaluations(gameRef: string, player: string, evaluations: GameEvalRow[]): Promise<void> {
+export async function saveGameEvaluations(gdid: number, evaluations: GameEvalRow[]): Promise<void> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
-  const lowerPlayer = player.toLowerCase()
   await db.query({
     caller: 'saveGameEvaluations_delete',
-    query: 'DELETE FROM tgev_game_evals WHERE gev_chesscom_uuid = $1 AND gev_player = $2',
-    params: [gameRef, lowerPlayer],
+    query: 'DELETE FROM tgev_game_evals WHERE gev_gdid = $1',
+    params: [gdid],
     functionName: 'saveGameEvaluations'
   })
   for (let i = 0; i < evaluations.length; i++) {
@@ -108,14 +107,14 @@ export async function saveGameEvaluations(gameRef: string, player: string, evalu
     await db.query({
       caller: 'saveGameEvaluations_insert',
       query: `INSERT INTO tgev_game_evals (
-        gev_chesscom_uuid, gev_player, gev_move_num,
+        gev_gdid, gev_move_num,
         gev_san, gev_fen_before, gev_fen_after,
         gev_cp, gev_cp_before, gev_cp_loss,
         gev_best_move, gev_best_move_san, gev_best_line,
         gev_classification, gev_depth
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       params: [
-        gameRef, lowerPlayer, i,
+        gdid, i,
         e.san, e.fenBefore, e.fen,
         e.cp, e.cpBefore, e.cpLoss,
         e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans),
@@ -129,7 +128,7 @@ export async function saveGameEvaluations(gameRef: string, player: string, evalu
 //----------------------------------------------------------------------------------
 //  getGameEvals — fetch stored per-move evals from tgev_game_evals
 //----------------------------------------------------------------------------------
-export async function getGameEvals(gameRef: string, player: string): Promise<GameEvalRow[]> {
+export async function getGameEvals(gdid: number): Promise<GameEvalRow[]> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   const res = await db.query({
@@ -138,9 +137,9 @@ export async function getGameEvals(gameRef: string, player: string): Promise<Gam
       gev_cp, gev_cp_before, gev_best_move, gev_best_move_san,
       gev_best_line, gev_cp_loss, gev_classification, gev_depth
       FROM tgev_game_evals
-      WHERE gev_chesscom_uuid = $1 AND gev_player = $2
+      WHERE gev_gdid = $1
       ORDER BY gev_move_num`,
-    params: [gameRef, player.toLowerCase()],
+    params: [gdid],
     functionName: 'getGameEvals'
   })
   return res.rows.map((r: any) => ({

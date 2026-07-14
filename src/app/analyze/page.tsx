@@ -13,23 +13,24 @@ function AnalyzeContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const gameId = searchParams.get('game')
+  const gdidParam = searchParams.get('game')
   const username = searchParams.get('user') ?? ''
   const isFree = searchParams.get('mode') === 'free'
   const startFen = searchParams.get('fen') ?? undefined
 
   const [game, setGame] = useState<ChessComGame | null>(null)
-  const [gameRef, setGameRef] = useState<string | undefined>(undefined)
+  const [gdid, setGdid] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.depth)
-  const [stockfishMultiPv, setStockfishMultiPv] = useState(STOCKFISH_DEFAULTS.multiPv)
+  const [deepAnalysisDepth, setDeepAnalysisDepth] = useState<number | 'infinite'>(STOCKFISH_DEFAULTS.deepAnalysisDepth)
+  const [deepAnalysisMultiPv, setDeepAnalysisMultiPv] = useState(STOCKFISH_DEFAULTS.deepAnalysisMultiPv)
 
   useEffect(() => {
     if (isFree) return
 
-    if (!gameId) {
+    if (!gdidParam) {
       setError('No game specified')
       return
     }
@@ -37,7 +38,7 @@ function AnalyzeContent() {
     async function loadGame() {
       setLoading(true)
       try {
-        const row = await getGameById(parseInt(gameId!, 10))
+        const row = await getGameById(parseInt(gdidParam!, 10))
         if (!row) {
           setError('Game not found')
           return
@@ -70,12 +71,12 @@ function AnalyzeContent() {
           }
         }
 
-        const storedEvals = await getGameEvals(row.gd_chesscom_uuid, row.gd_player)
+        const storedEvals = await getGameEvals(row.gd_gdid)
         setGame({
           ...raw,
           _evaluations: storedEvals.length > 0 ? storedEvals : null
         } as ChessComGame)
-        setGameRef(row.gd_chesscom_uuid)
+        setGdid(row.gd_gdid)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load game')
       } finally {
@@ -84,11 +85,11 @@ function AnalyzeContent() {
     }
 
     loadGame()
-  }, [gameId, isFree])
+  }, [gdidParam, isFree])
 
   function handleBack() {
     const from = searchParams.get('from')
-    router.push(from ? decodeURIComponent(from) : (gameId ? `/?highlight=${gameId}` : '/'))
+    router.push(from ? decodeURIComponent(from) : (gdidParam ? `/?highlight=${gdidParam}` : '/'))
   }
 
   if (loading) {
@@ -109,13 +110,15 @@ function AnalyzeContent() {
   return (
     <ChessBoardView
       game={isFree ? undefined : (game ?? undefined)}
-      gameRef={gameRef}
+      gdid={gdid}
       username={username}
       startFen={isFree ? startFen : undefined}
       stockfishDepth={stockfishDepth}
-      stockfishMultiPv={stockfishMultiPv}
       onStockfishDepthChange={setStockfishDepth}
-      onStockfishMultiPvChange={setStockfishMultiPv}
+      deepAnalysisDepth={deepAnalysisDepth}
+      deepAnalysisMultiPv={deepAnalysisMultiPv}
+      onDeepAnalysisDepthChange={setDeepAnalysisDepth}
+      onDeepAnalysisMultiPvChange={setDeepAnalysisMultiPv}
       onBack={handleBack}
     />
   )
