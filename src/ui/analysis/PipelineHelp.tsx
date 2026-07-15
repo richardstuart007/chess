@@ -21,7 +21,7 @@ const STEPS = [
     ],
   },
   {
-    num: '2a',
+    num: '2',
     title: 'Build Game Positions (tgam)',
     input: [
       'tgd_gamesdecon — PGN and game result for each game not yet in tgam_game_positions',
@@ -33,7 +33,7 @@ const STEPS = [
     ],
   },
   {
-    num: '2b',
+    num: '3',
     title: 'Sync Position Tree (tpos)',
     input: [
       'tgam_game_positions — rows with gam_pos_id / gam_resulting_pos_id still NULL',
@@ -46,38 +46,38 @@ const STEPS = [
     ],
   },
   {
-    num: '3',
+    num: '4',
     title: 'Purge Stale Positions',
     input: [
       'tpos_positions — positions with pos_reached <= MIN_REACH_TO_KEEP whose occurrences are all older than PURGE_REACH_GRACE_DAYS',
     ],
     processing:
-      'Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions (dual-reference rule — full delete only when the before-position is in scope, else just null the resulting reference), then the tpos_positions rows themselves. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows, so Build Game Positions never mistakes a purged game for an unprocessed one. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via /api/analysis/cron. Deliberate exception to the "no destructive SQL in automation" rule — see project .claude/CLAUDE.md.',
+      'Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions (dual-reference rule — full delete only when the before-position is in scope, else just null the resulting reference), then the tpos_positions rows themselves. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows, so Build Game Positions never mistakes a purged game for an unprocessed one. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see project .claude/CLAUDE.md.',
     output: [
       'teva_evaluations / tgam_game_positions / tpos_positions — rows removed',
       'tgd_gamesdecon.gd_positions_purged — set true on emptied games (resurrection guard)',
     ],
   },
   {
-    num: '4',
+    num: '5',
     title: 'Evaluate Positions',
     input: [
       'tpos_positions — unique FEN positions not yet in teva_evaluations, pos_reached > MIN_REACH_TO_KEEP',
     ],
     processing:
-      'Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (purge candidates — evaluating them risks wasted work). Normalises the centipawn score to white\'s perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions get evaluated first regardless of when they occurred. Run in batches; repeat until processed = 0. Also runs unattended via a local scheduled task hitting /api/analysis/cron.',
+      'Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (purge candidates — evaluating them risks wasted work). Normalises the centipawn score to white\'s perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions get evaluated first regardless of when they occurred. Run in batches; repeat until processed = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-positions).',
     output: [
       'teva_evaluations — one row per position: centipawn score (white perspective), best move (UCI), search depth',
     ],
   },
   {
-    num: '4b',
+    num: '6',
     title: 'Update CP Change',
     input: [
       'tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a teva_evaluations row',
     ],
     processing:
-      "Computes gam_cp_change (centipawn loss from the tracked player's perspective) for each move once both its before and after positions have been evaluated. Scoped to gam_cp_change IS NULL — never re-touches already-computed rows. Decoupled from Evaluate Positions (own trigger, own status). Also runs unattended via /api/analysis/cron.",
+      "Computes gam_cp_change (centipawn loss from the tracked player's perspective) for each move once both its before and after positions have been evaluated. Scoped to gam_cp_change IS NULL — never re-touches already-computed rows. Decoupled from Evaluate Positions (own trigger, own status). Also runs unattended via its own scheduled cron (/api/analysis/update-cp-change).",
     output: [
       'tgam_game_positions.gam_cp_change — per-move centipawn loss, computed',
     ],

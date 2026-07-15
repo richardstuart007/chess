@@ -4,9 +4,10 @@ import { purgeStaleReachOnePositions } from '@/src/lib/analysis/purgePositions'
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const level = Number(searchParams.get('level') ?? '1')
+  const forceNewRun = searchParams.get('newRun') === 'true'
 
   try {
-    const result = await purgeStaleReachOnePositions(level)
+    const result = await purgeStaleReachOnePositions(level, forceNewRun)
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('purge route error', err)

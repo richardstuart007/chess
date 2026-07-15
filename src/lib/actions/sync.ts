@@ -4,7 +4,7 @@ import { table_write } from 'nextjs-shared/table_write'
 import { table_delete } from 'nextjs-shared/table_delete'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
-import { startPipelineLog, completePipelineLog } from './pipelineLog'
+import { logPipelineStep } from './pipelineLog'
 import { INCLUDED_TIME_CLASSES } from '../constants'
 import { getPlayers, getPlayerLastSyncedEndTime, markPlayerSynced, updatePlayerRating } from './players'
 import { deconstructGames } from './deconstruct'
@@ -149,7 +149,7 @@ export async function syncArchive(params: {
     console.error(`Error syncing archive ${archiveUrl}:`, error)
     await write_logging({
       lg_functionname: 'syncArchive',
-      lg_caller: 'runCronSync',
+      lg_caller: 'runGameSync',
       lg_msg: `Error syncing archive ${archiveUrl}: ` + (error as Error).message,
       lg_severity: 'E'
     })
@@ -171,9 +171,9 @@ export async function runGameSync(): Promise<{
   const players = await getPlayers(true, 1, 'D')
   await logStart('runGameSync', 'vercelCronSync', `game sync for ${players.length} players`, 1)
   const t0 = Date.now()
-  const logId = await startPipelineLog(1, 'Game Sync', players.length)
   const summary: { username: string; inserted: number; deconstructed: number }[] = []
   let errors = 0
+  let totalRead = 0
 
   for (const player of players) {
     const username = player.username
@@ -186,6 +186,7 @@ export async function runGameSync(): Promise<{
       for (const archiveUrl of archives) {
         const result = await syncArchive({ username, archiveUrl, syncType: 'refresh', latestEndTime })
         totalInserted += result.inserted
+        totalRead     += result.total
       }
 
       const { processed } = await deconstructGames(username, 0)
@@ -209,8 +210,12 @@ export async function runGameSync(): Promise<{
 
   const totalInserted       = summary.reduce((s, p) => s + p.inserted, 0)
   const totalDeconstructed  = summary.reduce((s, p) => s + p.deconstructed, 0)
+  const durationMs          = Date.now() - t0
 
-  await completePipelineLog(logId, players.length - errors, errors, 0, Date.now() - t0)
+  await logPipelineStep({ step: 1, subStep: 'a', stepName: 'Query chess.com API', inputTable: 'tpl_players', inputRecs: players.length, outputTable: 'chess.com API', outputRecs: totalRead, durationMs })
+  await logPipelineStep({ step: 1, subStep: 'b', stepName: 'Fetch & Insert Raw Games', inputTable: 'chess.com API', inputRecs: totalRead, outputTable: 'tgr_gamesraw', outputRecs: totalInserted, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'c', stepName: 'Deconstruct Games', inputTable: 'tgr_gamesraw', inputRecs: totalInserted, outputTable: 'tgd_gamesdecon', outputRecs: totalDeconstructed, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'd', stepName: 'Update Player Ratings', inputTable: 'tgd_gamesdecon', inputRecs: totalDeconstructed, outputTable: 'tplr_player_ratings', outputRecs: players.length - errors, durationMs, forceNewRun: false })
   await logEnd('runGameSync', 'vercelCronSync', `${summary.length} players processed, ${totalInserted} inserted, ${totalDeconstructed} deconstructed`, 1)
 
   return { players: summary, totalInserted, totalDeconstructed }

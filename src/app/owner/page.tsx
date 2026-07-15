@@ -3,8 +3,7 @@ import Link from 'next/link'
 const TOOLS = [
   { href: '/owner/logging', label: 'Logging', description: 'View application log entries.', step: '📋' },
   { href: '/owner/cache', label: 'Cache', description: 'Inspect and manage server-side cache entries.', step: '🗄' },
-  { href: '/owner/cron', label: 'Cron', description: 'Manually trigger the game sync and analysis pipeline cron jobs.', step: '⏱' },
-  { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate).', step: '▶' },
+  { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
   { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
   { href: '/owner/maintenance', label: 'Maintenance', description: 'Add players and sync their chess.com game archives.', step: '🛠' },
   { href: '/owner/dataflow', label: 'Dataflow', description: 'Readable view of docs/Dataflow.md — how data moves through the pipeline.', step: '🗺' }

@@ -3,7 +3,7 @@
 import { spawn } from 'child_process'
 import { createInterface } from 'readline'
 import { saveEvaluation } from './chessdb'
-import { startPipelineLog, completePipelineLog } from '../actions/pipelineLog'
+import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
 import { MIN_REACH_TO_KEEP } from '../constants'
@@ -129,30 +129,9 @@ class StockfishWasm extends StockfishEngineBase {
 //  binary when STOCKFISH_PATH is set (local dev), the WASM engine otherwise (production).
 //  Reads tpos_positions (unevaluated), writes teva_evaluations.
 //----------------------------------------------------------------------------------
-async function countRemainingPositions(level: number = 1, dateFrom?: string, dateTo?: string): Promise<number> {
+async function countRemainingPositions(level: number = 1): Promise<number> {
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
-  if (dateFrom && dateTo) {
-    const fromTs = Math.floor(new Date(dateFrom).getTime() / 1000)
-    const toTs   = Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000)
-    const res = await db.query({
-      caller: 'enrichPositionsStockfish_count',
-      query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
-        LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-        WHERE e.eva_evaid IS NULL
-          AND p.pos_reached > ${MIN_REACH_TO_KEEP}
-          AND EXISTS (
-            SELECT 1 FROM tgam_game_positions gp
-            JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-            WHERE gp.gam_pos_id = p.pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
-          )`,
-      params: [fromTs, toTs],
-      functionName: 'enrichPositionsStockfish',
-      level,
-      severity: 'D'
-    })
-    return parseInt(res.rows[0]?.cnt ?? '0')
-  }
   const res = await db.query({
     caller: 'enrichPositionsStockfish_count',
     query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
@@ -167,53 +146,11 @@ async function countRemainingPositions(level: number = 1, dateFrom?: string, dat
   return parseInt(res.rows[0]?.cnt ?? '0')
 }
 
-async function countEvaluatedPositions(level: number = 1, dateFrom?: string, dateTo?: string): Promise<number> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-  if (dateFrom && dateTo) {
-    const fromTs = Math.floor(new Date(dateFrom).getTime() / 1000)
-    const toTs   = Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000)
-    const res = await db.query({
-      caller: 'enrichPositionsStockfish_countEval',
-      query: `SELECT COUNT(*) AS cnt FROM teva_evaluations e
-        WHERE EXISTS (
-            SELECT 1 FROM tgam_game_positions gp
-            JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-            WHERE gp.gam_pos_id = e.eva_pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
-          )`,
-      params: [fromTs, toTs],
-      functionName: 'enrichPositionsStockfish',
-      level,
-      severity: 'D'
-    })
-    return parseInt(res.rows[0]?.cnt ?? '0')
-  }
-  const res = await db.query({
-    caller: 'enrichPositionsStockfish_countEval',
-    query:  `SELECT COUNT(*) AS cnt FROM teva_evaluations`,
-    params: [],
-    functionName: 'enrichPositionsStockfish',
-    level,
-    severity: 'D'
-  })
-  return parseInt(res.rows[0]?.cnt ?? '0')
-}
-
-async function getResultingFensToEvaluate(limit: number, level: number, dateFrom?: string, dateTo?: string): Promise<{ posId: number; fen: string; color: string | null }[]> {
+async function getResultingFensToEvaluate(limit: number, level: number): Promise<{ posId: number; fen: string; color: string | null }[]> {
   await logStart('getResultingFensToEvaluate', 'enrichPositionsStockfish', 'fetching resulting FENs to evaluate', level)
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
-  const params: (string | number)[] = []
-  let dateFilter = ''
-  if (dateFrom && dateTo) {
-    const fromTs = Math.floor(new Date(dateFrom).getTime() / 1000)
-    const toTs   = Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000)
-    params.push(fromTs, toTs)
-    dateFilter = `AND EXISTS (
-      SELECT 1 FROM tgd_gamesdecon d
-      WHERE d.gd_gdid = gp.gam_gdid AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
-    )`
-  }
+  const params: number[] = []
   if (limit > 0) params.push(limit)
   // Resulting positions now have a real tpos_positions row (created eagerly by Build
   // Position Tree), so this is a plain id-based lookup — no more FEN grouping or
@@ -229,7 +166,6 @@ async function getResultingFensToEvaluate(limit: number, level: number, dateFrom
         AND NOT EXISTS (
           SELECT 1 FROM teva_evaluations WHERE eva_pos_id = gp.gam_resulting_pos_id
         )
-        ${dateFilter}
       ${limit > 0 ? `LIMIT $${params.length}` : ''}
     `,
     params,
@@ -248,10 +184,9 @@ async function getResultingFensToEvaluate(limit: number, level: number, dateFrom
 //  rows only — never re-touches already-computed rows. Decoupled from
 //  enrichPositionsStockfish — own pipeline step, own trigger (cron + manual).
 //----------------------------------------------------------------------------------
-export async function bulkUpdateCpLoss(level: number): Promise<number> {
+export async function bulkUpdateCpLoss(level: number, forceNewRun?: boolean): Promise<number> {
   await logStart('bulkUpdateCpLoss', 'enrichPositionsStockfish', 'recomputing cp loss', level)
   const t0 = Date.now()
-  const logId = await startPipelineLog(6, 'Update CP Change', 0)
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
   const res = await db.query({
@@ -281,7 +216,7 @@ export async function bulkUpdateCpLoss(level: number): Promise<number> {
     severity: 'D'
   })
   const rowCount = res.rowCount ?? 0
-  await completePipelineLog(logId, rowCount, 0, 0, Date.now() - t0)
+  await logPipelineStep({ step: 6, subStep: 'a', stepName: 'Update CP Change', inputTable: 'tgam_game_positions', inputRecs: rowCount, outputTable: 'tgam_game_positions', outputRecs: rowCount, durationMs: Date.now() - t0, forceNewRun })
   await logEnd('bulkUpdateCpLoss', 'enrichPositionsStockfish', `${rowCount} tgam_game_positions rows updated`, level)
   return rowCount
 }
@@ -289,9 +224,8 @@ export async function bulkUpdateCpLoss(level: number): Promise<number> {
 export async function enrichPositionsStockfish(opts: {
   limit?:    number
   depth?:    number
-  dateFrom?: string
-  dateTo?:   string
   level?:    number
+  forceNewRun?: boolean
 }): Promise<{ processed: number; errors: number; remaining: number }> {
   const binPath = process.env.STOCKFISH_PATH ?? ''
 
@@ -299,24 +233,14 @@ export async function enrichPositionsStockfish(opts: {
   const limit = opts.limit ?? 50
   const level = opts.level ?? 1
 
-  await logStart('enrichPositionsStockfish', 'analysisCronRoute', `evaluating positions at depth ${depth}`, level)
+  await logStart('enrichPositionsStockfish', 'evaluatePositionsRoute', `evaluating positions at depth ${depth}`, level)
+  const t0 = Date.now()
 
   const { sql } = await import('nextjs-shared/db')
   const db = await sql()
 
   // Phase 1 FENs — positions in tpos_positions not yet evaluated
-  const posParams: (string | number)[] = []
-  let posDatFilter = ''
-  if (opts.dateFrom && opts.dateTo) {
-    const fTs = Math.floor(new Date(opts.dateFrom).getTime() / 1000)
-    const tTs = Math.floor(new Date(opts.dateTo + 'T23:59:59').getTime() / 1000)
-    posParams.push(fTs, tTs)
-    posDatFilter = `AND EXISTS (
-      SELECT 1 FROM tgam_game_positions gp
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      WHERE gp.gam_pos_id = p.pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
-    )`
-  }
+  const posParams: number[] = []
   if (limit > 0) posParams.push(limit)
   const posRes = await db.query({
     caller: 'enrichPositionsStockfish_phase1',
@@ -326,7 +250,6 @@ export async function enrichPositionsStockfish(opts: {
       LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
       WHERE e.eva_evaid IS NULL
         AND p.pos_reached > ${MIN_REACH_TO_KEEP}
-        ${posDatFilter}
       ORDER BY p.pos_reached DESC
       ${limit > 0 ? `LIMIT $${posParams.length}` : ''}
     `,
@@ -341,7 +264,7 @@ export async function enrichPositionsStockfish(opts: {
 
   // Phase 2 — resulting positions not yet evaluated (real tpos_positions rows already
   // exist for these, created eagerly by Build Position Tree)
-  const resultingFens = await getResultingFensToEvaluate(limit, level + 1, opts.dateFrom, opts.dateTo)
+  const resultingFens = await getResultingFensToEvaluate(limit, level + 1)
 
   const allFensToEval: Array<{ fen: string; color: string | null; posId: number }> = [
     ...positions,
@@ -349,14 +272,10 @@ export async function enrichPositionsStockfish(opts: {
   ]
 
   if (allFensToEval.length === 0) {
-    await logEnd('enrichPositionsStockfish', 'analysisCronRoute', '0 processed, 0 errors, 0 remaining', level)
+    await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'teva_evaluations', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', '0 processed, 0 errors, 0 remaining', level)
     return { processed: 0, errors: 0, remaining: 0 }
   }
-
-  const [evaluatedBefore, remainingBefore] = await Promise.all([
-    countEvaluatedPositions(level, opts.dateFrom, opts.dateTo),
-    countRemainingPositions(level, opts.dateFrom, opts.dateTo)
-  ])
 
   //
   //  STOCKFISH_PATH set (local dev, real binary installed) -> fast native binary.
@@ -367,8 +286,6 @@ export async function enrichPositionsStockfish(opts: {
 
   let processed = 0
   let errors    = 0
-  const t0      = Date.now()
-  const logId   = await startPipelineLog(4, 'Evaluate Positions', allFensToEval.length, evaluatedBefore, remainingBefore, opts.dateFrom, opts.dateTo)
 
   for (const item of allFensToEval) {
     try {
@@ -386,7 +303,7 @@ export async function enrichPositionsStockfish(opts: {
       console.error(`enrichPositionsStockfish: error on FEN`, err)
       await write_logging({
         lg_functionname: 'enrichPositionsStockfish',
-        lg_caller: 'analysisCronRoute',
+        lg_caller: 'evaluatePositionsRoute',
         lg_msg: `error on FEN ${item.fen}: ` + (err as Error).message,
         lg_severity: 'E'
       })
@@ -396,8 +313,8 @@ export async function enrichPositionsStockfish(opts: {
 
   sf.quit()
 
-  await completePipelineLog(logId, processed, errors, 0, Date.now() - t0, evaluatedBefore + processed)
+  await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', inputTable: 'tpos_positions', inputRecs: allFensToEval.length, outputTable: 'teva_evaluations', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
   const remaining = await countRemainingPositions(level)
-  await logEnd('enrichPositionsStockfish', 'analysisCronRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
+  await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
   return { processed, errors, remaining }
 }
