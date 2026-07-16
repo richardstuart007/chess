@@ -1,9 +1,9 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
-import { MyButton } from 'nextjs-shared/MyButton'
+import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import ChessBoardView from '@/src/ui/board/ChessBoardView'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { getGameById, getGameEvals } from '@/src/lib/actions/games'
@@ -11,12 +11,13 @@ import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 
 function AnalyzeContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
 
   const gdidParam = searchParams.get('game')
   const username = searchParams.get('user') ?? ''
   const isFree = searchParams.get('mode') === 'free'
   const startFen = searchParams.get('fen') ?? undefined
+  const fromParam = searchParams.get('from')
+  const backPath = fromParam ? decodeURIComponent(fromParam) : '/'
 
   const [game, setGame] = useState<ChessComGame | null>(null)
   const [gdid, setGdid] = useState<number | undefined>(undefined)
@@ -87,11 +88,6 @@ function AnalyzeContent() {
     loadGame()
   }, [gdidParam, isFree])
 
-  function handleBack() {
-    const from = searchParams.get('from')
-    router.push(from ? decodeURIComponent(from) : (gdidParam ? `/?highlight=${gdidParam}` : '/'))
-  }
-
   if (loading) {
     return <MyLoadingMessage message1='Loading game...' />
   }
@@ -100,9 +96,7 @@ function AnalyzeContent() {
     return (
       <div className='text-center py-8'>
         <p className='text-red-600 text-sm'>{error}</p>
-        <MyButton onClick={handleBack} overrideClass='h-auto bg-transparent hover:bg-transparent text-blue-500 underline mt-2'>
-          Back to games
-        </MyButton>
+        <MyBackHomeNav backPath={backPath} />
       </div>
     )
   }
@@ -119,7 +113,7 @@ function AnalyzeContent() {
       deepAnalysisMultiPv={deepAnalysisMultiPv}
       onDeepAnalysisDepthChange={setDeepAnalysisDepth}
       onDeepAnalysisMultiPvChange={setDeepAnalysisMultiPv}
-      onBack={handleBack}
+      backPath={backPath}
     />
   )
 }

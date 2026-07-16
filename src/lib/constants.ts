@@ -62,6 +62,11 @@ export const GAME_LIST_ITEMS_PER_PAGE = 15
 //
 export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 
+//
+//  HABITS_ITEMS_PER_PAGE — page size for the /habits table.
+//
+export const HABITS_ITEMS_PER_PAGE = 10
+
 export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
   stricade: ['blitz'],
   astarrboy: ['blitz', 'rapid']

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MyButton } from 'nextjs-shared/MyButton'
+import AppNav from '@/src/ui/AppNav'
 import TabBar from '@/src/ui/TabBar'
 import PlayerProfile from '@/src/ui/player/PlayerProfile'
 import GameList from '@/src/ui/games/GameList'
@@ -144,7 +145,7 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
   function handleSelectGame(game: ChessComGame, username: string) {
     const gameId = (game as any)._gameId
     if (gameId) {
-      const from = encodeURIComponent(`/?highlight=${gameId}`)
+      const from = encodeURIComponent('/')
       router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}&from=${from}`)
     }
   }
@@ -152,6 +153,7 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
   if (players.length === 0) {
     return (
       <div className='space-y-4'>
+        <AppNav />
         <MyBox title='No Players'>
           <p className='text-xs text-gray-600'>
             No players in the database yet.{' '}
@@ -165,6 +167,8 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
 
   return (
     <div className='space-y-4'>
+      <AppNav />
+
       <div className={players.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'}>
         {players.map((p, i) => {
           const db      = dbPlayers[i]
@@ -183,28 +187,32 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
         })}
       </div>
 
-      <TabBar />
+      <MyBox title='Shared Data' className='bg-yellow-50'>
+        <div className='space-y-3'>
+          <TabBar />
 
-      {(tab === 'games' || tab === 'graph') && (
-        <div className='flex flex-wrap items-end justify-between gap-3'>
-          <GameFilterPanel
-            players={playerOptions}
-            playerFilter={draftPlayerFilter}
-            onPlayerFilterChange={setDraftPlayerFilter}
-            filters={draftFilters}
-            onFilterChange={updateFilter}
-            onTerminationChange={updateTerminationFilter}
-            onApply={handleApplyFilters}
-            onReset={handleFilterReset}
-            minDate={minDate}
-            mode={tab === 'graph' ? 'graph' : 'games'}
-            graphLimit={draftGraphLimit}
-            onGraphLimitChange={setDraftGraphLimit}
-            fetching={graphLoading}
-          />
-          <span className='text-xs text-gray-500 whitespace-nowrap'>{gameCount.toLocaleString()} games</span>
+          {(tab === 'games' || tab === 'graph') && (
+            <div className='flex flex-wrap items-end justify-between gap-3'>
+              <GameFilterPanel
+                players={playerOptions}
+                playerFilter={draftPlayerFilter}
+                onPlayerFilterChange={setDraftPlayerFilter}
+                filters={draftFilters}
+                onFilterChange={updateFilter}
+                onTerminationChange={updateTerminationFilter}
+                onApply={handleApplyFilters}
+                onReset={handleFilterReset}
+                minDate={minDate}
+                mode={tab === 'graph' ? 'graph' : 'games'}
+                graphLimit={draftGraphLimit}
+                onGraphLimitChange={setDraftGraphLimit}
+                fetching={graphLoading}
+              />
+              <span className='text-xs text-gray-500 whitespace-nowrap'>{gameCount.toLocaleString()} games</span>
+            </div>
+          )}
         </div>
-      )}
+      </MyBox>
 
       <div className={tab === 'games' ? '' : 'hidden'}>
         <GameList

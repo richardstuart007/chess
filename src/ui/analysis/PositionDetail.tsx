@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyButton } from 'nextjs-shared/MyButton'
+import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 
@@ -98,9 +99,7 @@ export default function PositionDetail({
 
   return (
     <div className="max-w-5xl mx-auto p-4">
-      <MyButton onClick={() => router.back()} overrideClass='h-auto bg-transparent hover:bg-transparent text-blue-600 hover:underline mb-4'>
-        ← Back to Habits
-      </MyButton>
+      <MyBackHomeNav backPath='/habits' />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: board */}

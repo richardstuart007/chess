@@ -20,7 +20,7 @@ export default function PlayerProfile({
   selected
 }: PlayerProfileProps) {
   return (
-    <MyBox>
+    <MyBox className='bg-blue-50'>
       <div
         className={`flex items-start gap-4 rounded ${onClick ? 'cursor-pointer hover:bg-blue-50' : ''} ${selected ? 'outline outline-2 outline-blue-400 rounded' : ''}`}
         onClick={onClick}
@@ -45,7 +45,7 @@ export default function PlayerProfile({
                   key={control}
                   className='rounded bg-gray-100 px-2 py-0.5 text-xs'
                 >
-                  {control}: {rating}
+                  {control}: <span className='text-red-600 font-semibold'>{rating}</span>
                 </span>
               ))}
             </div>

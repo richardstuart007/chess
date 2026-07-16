@@ -203,11 +203,26 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
 //  only narrows to games where that player is tracked. The pos_color check below
 //  restricts further to rows where it was actually that player's own turn to move.
 //----------------------------------------------------------------------------------
+function buildHabitsFilter(opts: {
+  player?: string
+  color?: 'w' | 'b'
+  minMove?: number
+  minReached?: number
+}): { params: (string | number)[]; colorFilter: string } {
+  const player     = (opts.player ?? '').toLowerCase()
+  const minMove    = opts.minMove    ?? MIN_ANALYSIS_MOVE
+  const minReached = opts.minReached ?? 3
+  const params: (string | number)[] = [player, minMove, minReached]
+  const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
+  return { params, colorFilter }
+}
+
 export async function getHabitsData(opts: {
   player?: string
   color?: 'w' | 'b'
   sortBy?: 'cpLoss' | 'reached'
   limit?: number
+  offset?: number
   minMove?: number
   minReached?: number
 }): Promise<Array<{
@@ -225,13 +240,9 @@ export async function getHabitsData(opts: {
 }>> {
   if (!opts.player) return []
 
-  const player     = opts.player.toLowerCase()
-  const minMove    = opts.minMove    ?? MIN_ANALYSIS_MOVE
-  const minReached = opts.minReached ?? 3
-  const params: (string | number)[] = [player, minMove, minReached]
-
-  const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
-  const limitClause = (opts.limit ?? 0) > 0 ? `LIMIT ${opts.limit}` : ''
+  const { params, colorFilter } = buildHabitsFilter(opts)
+  const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
+  const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
     ? 'COUNT(*) DESC, AVG(gp.gam_cp_change) ASC NULLS LAST'
     : 'AVG(gp.gam_cp_change) ASC NULLS LAST'
@@ -264,6 +275,7 @@ export async function getHabitsData(opts: {
         AND AVG(gp.gam_cp_change) < 0
       ORDER BY ${orderClause}
       ${limitClause}
+      ${offsetClause}
     `,
     params
   })
@@ -280,6 +292,43 @@ export async function getHabitsData(opts: {
     move_losses: Number(r.move_losses),
     move_cp:     r.move_cp != null ? Number(r.move_cp) : null
   }))
+}
+
+//----------------------------------------------------------------------------------
+//  getHabitsCount — total row count for getHabitsData's same filter set, for
+//  MyPagination's total-pages calculation
+//----------------------------------------------------------------------------------
+export async function getHabitsCount(opts: {
+  player?: string
+  color?: 'w' | 'b'
+  minMove?: number
+  minReached?: number
+}): Promise<number> {
+  if (!opts.player) return 0
+
+  const { params, colorFilter } = buildHabitsFilter(opts)
+
+  const rows = await table_query({
+    caller: 'getHabitsCount',
+    query: `
+      SELECT COUNT(*)::int AS total FROM (
+        SELECT p.pos_id
+        FROM tgam_game_positions gp
+        JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
+        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+        LEFT JOIN teva_evaluations e ON e.eva_pos_id = gp.gam_pos_id
+        WHERE d.gd_player = $1
+          AND gp.gam_move_num >= $2
+          AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
+          ${colorFilter}
+        GROUP BY p.pos_id, p.pos_fen, p.pos_color, e.eva_cp, gp.gam_move_played, gp.gam_move_uci
+        HAVING COUNT(*) >= $3
+          AND AVG(gp.gam_cp_change) < 0
+      ) AS sub
+    `,
+    params
+  })
+  return rows.length > 0 ? Number(rows[0].total) : 0
 }
 
 // ---------------------------------------------------------------------------

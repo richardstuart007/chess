@@ -1,23 +1,19 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 
 const TABS = [
   { key: 'games',    label: 'Games',    href: '/?tab=games' },
   { key: 'graph',    label: 'Graph',    href: '/?tab=graph' },
   { key: 'openings', label: 'Openings', href: '/?tab=openings' },
-  { key: 'endings',  label: 'Endings',  href: '/?tab=endings' },
-  { key: 'habits',   label: 'Habits',   href: '/habits' }
+  { key: 'endings',  label: 'Endings',  href: '/?tab=endings' }
 ] as const
 
 export default function TabBar() {
-  const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const activeKey =
-    pathname === '/habits' ? 'habits' :
-    (searchParams.get('tab') ?? 'games')
+  const activeKey = searchParams.get('tab') ?? 'games'
 
   return (
     <div className='flex items-end border-b border-gray-200'>

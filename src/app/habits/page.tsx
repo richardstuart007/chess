@@ -3,11 +3,16 @@
 import { Suspense, useState, useEffect, useCallback } from 'react'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyHelp } from 'nextjs-shared/MyHelp'
-import TabBar from '@/src/ui/TabBar'
+import MyPagination from 'nextjs-shared/MyPagination'
+import AppNav from '@/src/ui/AppNav'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
-import { getHabitsData } from '@/src/lib/analysis/chessdb'
+import { getHabitsData, getHabitsCount } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
-import { MIN_ANALYSIS_MOVE } from '@/src/lib/constants'
+import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE } from '@/src/lib/constants'
+
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+}
 
 const STORAGE_KEY = 'habits_filters'
 
@@ -30,6 +35,8 @@ function HabitsContent() {
   const [minReached,  setMinReached]  = useState(3)
   const [rows,        setRows]        = useState<any[]>([])
   const [loading,     setLoading]     = useState(false)
+  const [currentPage, setCurrentPage] = useState(() => ss('chess-habits-page', 1))
+  const [totalCount,  setTotalCount]  = useState(0)
 
   useEffect(() => {
     const saved = sessionStorage.getItem(STORAGE_KEY)
@@ -51,6 +58,10 @@ function HabitsContent() {
   }, [player, color, sortBy, minMove, minReached])
 
   useEffect(() => {
+    try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
+  }, [currentPage])
+
+  useEffect(() => {
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -60,6 +71,30 @@ function HabitsContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  //
+  //  Reset back to page 1 whenever the filters change, same as when the user
+  //  changed them directly.
+  //
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [player, color, sortBy, minMove, minReached])
+
+  useEffect(() => {
+    async function loadCount() {
+      if (!player) { setTotalCount(0); return }
+      const count = await getHabitsCount({
+        player,
+        color: color === 'all' ? undefined : color,
+        minMove,
+        minReached
+      })
+      setTotalCount(count)
+    }
+    loadCount()
+  }, [player, color, minMove, minReached])
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / HABITS_ITEMS_PER_PAGE))
+
   const load = useCallback(async () => {
     if (!player) return
     setLoading(true)
@@ -68,7 +103,8 @@ function HabitsContent() {
         player,
         color:      color === 'all' ? undefined : color,
         sortBy,
-        limit:      200,
+        limit:      HABITS_ITEMS_PER_PAGE,
+        offset:     (currentPage - 1) * HABITS_ITEMS_PER_PAGE,
         minMove,
         minReached
       })
@@ -76,13 +112,13 @@ function HabitsContent() {
     } finally {
       setLoading(false)
     }
-  }, [player, color, sortBy, minMove, minReached])
+  }, [player, color, sortBy, minMove, minReached, currentPage])
 
   useEffect(() => { load() }, [load])
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <TabBar />
+      <AppNav />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold">Blunder Habits</h1>
@@ -156,8 +192,18 @@ function HabitsContent() {
         </div>
       )}
 
-      <div className="text-xs text-gray-400 text-right">
-        {rows.length} bad move{rows.length !== 1 ? 's' : ''} shown
+      <div className="flex items-center justify-between">
+        <div />
+        {totalPages > 1 && (
+          <MyPagination
+            totalPages={totalPages}
+            statecurrentPage={currentPage}
+            setStateCurrentPage={setCurrentPage}
+          />
+        )}
+        <span className="text-xs text-gray-400">
+          Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} bad move{totalCount !== 1 ? 's' : ''})
+        </span>
       </div>
     </div>
   )

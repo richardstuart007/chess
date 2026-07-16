@@ -5,6 +5,7 @@ import { Chess, Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
+import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MySelect from 'nextjs-shared/MySelect'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
@@ -37,7 +38,7 @@ interface ChessBoardViewProps {
   deepAnalysisMultiPv?: number
   onDeepAnalysisDepthChange?: (depth: number | 'infinite') => void
   onDeepAnalysisMultiPvChange?: (multiPv: number) => void
-  onBack: () => void
+  backPath: string
 }
 
 function isValidFen(fen: string): boolean {
@@ -63,7 +64,7 @@ function formatCp(cp: number): string {
   return cp > 0 ? `+${val}` : val
 }
 
-export default function ChessBoardView({ game, gdid, username, startFen, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, onBack }: ChessBoardViewProps) {
+export default function ChessBoardView({ game, gdid, username, startFen, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
   const isFreeAnalysis = !game
   const playerColor = game ? getPlayerResult(game, username).color : 'white' as const
   const result = game ? getPlayerResult(game, username).result : ''
@@ -601,9 +602,7 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
       {/* Header */}
       <MyBox>
         <div className='flex items-center justify-between'>
-          <MyButton onClick={onBack} overrideClass='bg-gray-500 hover:bg-gray-600 text-xs'>
-            Back
-          </MyButton>
+          <MyBackHomeNav backPath={backPath} />
           {isFreeAnalysis && (
             <span className='text-xs font-bold text-green-700'>Free Analysis</span>
           )}
