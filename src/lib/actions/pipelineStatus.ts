@@ -166,6 +166,24 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  dangling reference instead (see purgePositions.ts). Read-only — does not touch
 //  tpur_workfile, which stays a snapshot of the last actual purge run.
 //----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+//  refreshHabitsStatus — total/dismissed row counts for thab_habits, for the pipeline
+//  page's Build Habits status line. No "remaining" concept — buildHabits() is a full
+//  recompute every run, not an incremental cursor.
+//----------------------------------------------------------------------------------
+export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number }> {
+  const { sql } = await import('nextjs-shared/db')
+  const db  = await sql()
+  const res = await db.query({
+    caller: 'refreshHabitsStatus', params: [], functionName: 'refreshHabitsStatus',
+    query: `SELECT
+      (SELECT COUNT(*) FROM thab_habits)                        AS total,
+      (SELECT COUNT(*) FROM thab_habits WHERE hab_dismissed)     AS dismissed`
+  })
+  const r = res.rows[0]
+  return { total: parseInt(r.total ?? '0'), dismissed: parseInt(r.dismissed ?? '0') }
+}
+
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const { sql } = await import('nextjs-shared/db')
   const db  = await sql()

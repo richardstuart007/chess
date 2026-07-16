@@ -82,6 +82,18 @@ const STEPS = [
       'tgam_game_positions.gam_cp_change — per-move centipawn loss, computed',
     ],
   },
+  {
+    num: '7',
+    title: 'Build Habits',
+    input: [
+      'tgam_game_positions joined to tgd_gamesdecon — every tracked-player move at move_num >= MIN_ANALYSIS_MOVE',
+    ],
+    processing:
+      "Full recompute every run, not incremental — a habit's move_cp can change as new games arrive for a move already in the table. Aggregates by (player, position, move played), keeping only moves reached HABITS_MIN_REACH_FLOOR+ times whose largest-magnitude occurrence is a negative CP change, then upserts into thab_habits keyed on (player, position, move). move_cp is that single largest-magnitude occurrence (sign kept), not an average. The upsert never touches hab_dismissed, so a dismissed habit stays dismissed across every future rebuild. Also runs unattended via its own scheduled cron (/api/analysis/build-habits).",
+    output: [
+      'thab_habits — one row per player/position/move habit: times played, wins, losses, worst-occurrence CP change, dismissed flag',
+    ],
+  },
 ]
 
 const ROW_COUNT_SQL =
@@ -91,6 +103,7 @@ const ROW_COUNT_SQL =
   UNION ALL SELECT 3, 'tpos_positions',         COUNT(*) FROM tpos_positions
   UNION ALL SELECT 4, 'tgam_game_positions',    COUNT(*) FROM tgam_game_positions
   UNION ALL SELECT 5, 'teva_evaluations',       COUNT(*) FROM teva_evaluations
+  UNION ALL SELECT 6, 'thab_habits',            COUNT(*) FROM thab_habits
 ) t ORDER BY ord;`
 
 //----------------------------------------------------------------------------------------------

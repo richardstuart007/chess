@@ -6,7 +6,7 @@ import { MyHelp } from 'nextjs-shared/MyHelp'
 import MyPagination from 'nextjs-shared/MyPagination'
 import AppNav from '@/src/ui/AppNav'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
-import { getHabitsData, getHabitsCount } from '@/src/lib/analysis/chessdb'
+import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
 import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE } from '@/src/lib/constants'
 
@@ -33,6 +33,7 @@ function HabitsContent() {
   const [sortBy,      setSortBy]      = useState<SortBy>('cpLoss')
   const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE)
   const [minReached,  setMinReached]  = useState(3)
+  const [showDismissed, setShowDismissed] = useState(false)
   const [rows,        setRows]        = useState<any[]>([])
   const [loading,     setLoading]     = useState(false)
   const [currentPage, setCurrentPage] = useState(() => ss('chess-habits-page', 1))
@@ -48,14 +49,15 @@ function HabitsContent() {
         if (s.sortBy)     setSortBy(s.sortBy)
         if (s.minMove)    setMinMove(s.minMove)
         if (s.minReached) setMinReached(s.minReached)
+        if (s.showDismissed) setShowDismissed(s.showDismissed)
       } catch { /* ignore corrupt storage */ }
     }
   }, [])
 
   useEffect(() => {
     if (!player) return
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ player, color, sortBy, minMove, minReached }))
-  }, [player, color, sortBy, minMove, minReached])
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ player, color, sortBy, minMove, minReached, showDismissed }))
+  }, [player, color, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
@@ -77,7 +79,7 @@ function HabitsContent() {
   //
   useEffect(() => {
     setCurrentPage(1)
-  }, [player, color, sortBy, minMove, minReached])
+  }, [player, color, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     async function loadCount() {
@@ -85,13 +87,13 @@ function HabitsContent() {
       const count = await getHabitsCount({
         player,
         color: color === 'all' ? undefined : color,
-        minMove,
-        minReached
+        minReached,
+        dismissed: showDismissed
       })
       setTotalCount(count)
     }
     loadCount()
-  }, [player, color, minMove, minReached])
+  }, [player, color, minMove, minReached, showDismissed])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / HABITS_ITEMS_PER_PAGE))
 
@@ -105,16 +107,32 @@ function HabitsContent() {
         sortBy,
         limit:      HABITS_ITEMS_PER_PAGE,
         offset:     (currentPage - 1) * HABITS_ITEMS_PER_PAGE,
-        minMove,
-        minReached
+        minReached,
+        dismissed:  showDismissed
       })
       setRows(data)
     } finally {
       setLoading(false)
     }
-  }, [player, color, sortBy, minMove, minReached, currentPage])
+  }, [player, color, sortBy, minMove, minReached, showDismissed, currentPage])
 
   useEffect(() => { load() }, [load])
+
+  //
+  //  handleToggleDismiss — dismisses or restores depending on which view is showing,
+  //  then drops the row from the current page locally instead of refetching (avoids a
+  //  page/offset shift for the other rows still on screen) — either direction removes
+  //  the row from whichever view is currently active.
+  //
+  const handleToggleDismiss = useCallback(async (posId: number, moveSan: string) => {
+    if (showDismissed) {
+      await undismissHabit(player, posId, moveSan)
+    } else {
+      await dismissHabit(player, posId, moveSan)
+    }
+    setRows(rows => rows.filter(r => !(r.pos_id === posId && r.move_san === moveSan)))
+    setTotalCount(c => Math.max(0, c - 1))
+  }, [player, showDismissed])
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
@@ -181,6 +199,14 @@ function HabitsContent() {
             <option value="cpLoss">Sort: Worst CP first</option>
             <option value="reached">Sort: Most played first</option>
           </select>
+
+          {/* Show dismissed */}
+          <button
+            onClick={() => setShowDismissed(v => !v)}
+            className={`px-3 py-1 rounded border text-sm ${showDismissed ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+          >
+            Show dismissed
+          </button>
         </div>
       </div>
 
@@ -188,7 +214,7 @@ function HabitsContent() {
         <MyLoadingMessage message1="Loading habits…" />
       ) : (
         <div className="bg-white border rounded-lg overflow-hidden">
-          <HabitsTable rows={rows} />
+          <HabitsTable rows={rows} dismissedView={showDismissed} onToggleDismiss={handleToggleDismiss} />
         </div>
       )}
 
@@ -202,7 +228,7 @@ function HabitsContent() {
           />
         )}
         <span className="text-xs text-gray-400">
-          Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} bad move{totalCount !== 1 ? 's' : ''})
+          Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : 'bad'} move{totalCount !== 1 ? 's' : ''})
         </span>
       </div>
     </div>

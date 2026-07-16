@@ -19,7 +19,7 @@ import { table_upsert } from 'nextjs-shared/table_upsert'
 import { table_count }  from 'nextjs-shared/table_count'
 import { table_check }  from 'nextjs-shared/table_check'
 import { table_query }  from 'nextjs-shared/table_query'
-import { MIN_ANALYSIS_MOVE } from '../constants'
+import { table_update } from 'nextjs-shared/table_update'
 
 export interface PositionRow {
   pos_id: number
@@ -196,23 +196,22 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
 
 //----------------------------------------------------------------------------------
 //  getHabitsData — one row per (position × move) where avg CP is negative (loss).
-//  Only bad moves are returned; the position detail page shows all moves.
-//
-//  tgam_game_positions records every ply (tracked player's and opponent's alike), so
-//  d.gd_player = $1 alone isn't enough to scope to the tracked player's own moves — it
-//  only narrows to games where that player is tracked. The pos_color check below
-//  restricts further to rows where it was actually that player's own turn to move.
+//  Only bad moves are returned; the position detail page shows all moves. Reads from
+//  thab_habits (built/refreshed by buildHabits() on the Pipeline page) rather than
+//  live-aggregating tgam_game_positions on every request — pos_fen/pos_color/pos_cp
+//  still come from tpos_positions/teva_evaluations via join since those aren't
+//  player-specific and don't need duplicating into thab_habits.
 //----------------------------------------------------------------------------------
 function buildHabitsFilter(opts: {
   player?: string
   color?: 'w' | 'b'
-  minMove?: number
   minReached?: number
-}): { params: (string | number)[]; colorFilter: string } {
+  dismissed?: boolean
+}): { params: (string | number | boolean)[]; colorFilter: string } {
   const player     = (opts.player ?? '').toLowerCase()
-  const minMove    = opts.minMove    ?? MIN_ANALYSIS_MOVE
   const minReached = opts.minReached ?? 3
-  const params: (string | number)[] = [player, minMove, minReached]
+  const dismissed  = opts.dismissed ?? false
+  const params: (string | number | boolean)[] = [player, dismissed, minReached]
   const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
   return { params, colorFilter }
 }
@@ -223,8 +222,8 @@ export async function getHabitsData(opts: {
   sortBy?: 'cpLoss' | 'reached'
   limit?: number
   offset?: number
-  minMove?: number
   minReached?: number
+  dismissed?: boolean
 }): Promise<Array<{
   pos_id:      number
   pos_fen:     string
@@ -244,35 +243,31 @@ export async function getHabitsData(opts: {
   const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
   const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
-    ? 'COUNT(*) DESC, AVG(gp.gam_cp_change) ASC NULLS LAST'
-    : 'AVG(gp.gam_cp_change) ASC NULLS LAST'
+    ? 'h.hab_move_times DESC, h.hab_move_cp ASC NULLS LAST'
+    : 'h.hab_move_cp ASC NULLS LAST'
 
   const rows = await table_query({
     caller: 'getHabitsData',
     query: `
       SELECT
-        p.pos_id,
+        h.hab_pos_id                                     AS pos_id,
         p.pos_fen,
         p.pos_color,
         e.eva_cp                                          AS pos_cp,
-        gp.gam_move_played                                AS move_san,
-        gp.gam_move_uci                                   AS move_uci,
-        MIN(gp.gam_move_num)::int                         AS move_num,
-        COUNT(*)::int                                     AS move_times,
-        COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS move_wins,
-        COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS move_losses,
-        ROUND(AVG(gp.gam_cp_change)::numeric, 2)         AS move_cp
-      FROM tgam_game_positions gp
-      JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      LEFT JOIN teva_evaluations e ON e.eva_pos_id = gp.gam_pos_id
-      WHERE d.gd_player = $1
-        AND gp.gam_move_num >= $2
-        AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
+        h.hab_move_san                                    AS move_san,
+        h.hab_move_uci                                    AS move_uci,
+        h.hab_move_num                                    AS move_num,
+        h.hab_move_times                                  AS move_times,
+        h.hab_move_wins                                   AS move_wins,
+        h.hab_move_losses                                 AS move_losses,
+        h.hab_move_cp                                     AS move_cp
+      FROM thab_habits h
+      JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
+      LEFT JOIN teva_evaluations e ON e.eva_pos_id = h.hab_pos_id
+      WHERE h.hab_player = $1
+        AND h.hab_dismissed = $2
+        AND h.hab_move_times >= $3
         ${colorFilter}
-      GROUP BY p.pos_id, p.pos_fen, p.pos_color, e.eva_cp, gp.gam_move_played, gp.gam_move_uci
-      HAVING COUNT(*) >= $3
-        AND AVG(gp.gam_cp_change) < 0
       ORDER BY ${orderClause}
       ${limitClause}
       ${offsetClause}
@@ -301,8 +296,8 @@ export async function getHabitsData(opts: {
 export async function getHabitsCount(opts: {
   player?: string
   color?: 'w' | 'b'
-  minMove?: number
   minReached?: number
+  dismissed?: boolean
 }): Promise<number> {
   if (!opts.player) return 0
 
@@ -311,24 +306,54 @@ export async function getHabitsCount(opts: {
   const rows = await table_query({
     caller: 'getHabitsCount',
     query: `
-      SELECT COUNT(*)::int AS total FROM (
-        SELECT p.pos_id
-        FROM tgam_game_positions gp
-        JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
-        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-        LEFT JOIN teva_evaluations e ON e.eva_pos_id = gp.gam_pos_id
-        WHERE d.gd_player = $1
-          AND gp.gam_move_num >= $2
-          AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
-          ${colorFilter}
-        GROUP BY p.pos_id, p.pos_fen, p.pos_color, e.eva_cp, gp.gam_move_played, gp.gam_move_uci
-        HAVING COUNT(*) >= $3
-          AND AVG(gp.gam_cp_change) < 0
-      ) AS sub
+      SELECT COUNT(*)::int AS total
+      FROM thab_habits h
+      JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
+      WHERE h.hab_player = $1
+        AND h.hab_dismissed = $2
+        AND h.hab_move_times >= $3
+        ${colorFilter}
     `,
     params
   })
   return rows.length > 0 ? Number(rows[0].total) : 0
+}
+
+//----------------------------------------------------------------------------------
+//  dismissHabit — marks one (player, position, move) habit as dismissed so it stops
+//  appearing in the default (non-dismissed) Habits view. Reversible via undismissHabit.
+//----------------------------------------------------------------------------------
+export async function dismissHabit(player: string, posId: number, moveSan: string): Promise<void> {
+  await table_update({
+    caller: 'dismissHabit',
+    table: 'thab_habits',
+    columnValuePairs: [
+      { column: 'hab_dismissed', value: true }
+    ],
+    whereColumnValuePairs: [
+      { column: 'hab_player', value: player.toLowerCase() },
+      { column: 'hab_pos_id', value: posId },
+      { column: 'hab_move_san', value: moveSan }
+    ]
+  })
+}
+
+//----------------------------------------------------------------------------------
+//  undismissHabit — restores a previously-dismissed habit back into the default view.
+//----------------------------------------------------------------------------------
+export async function undismissHabit(player: string, posId: number, moveSan: string): Promise<void> {
+  await table_update({
+    caller: 'undismissHabit',
+    table: 'thab_habits',
+    columnValuePairs: [
+      { column: 'hab_dismissed', value: false }
+    ],
+    whereColumnValuePairs: [
+      { column: 'hab_player', value: player.toLowerCase() },
+      { column: 'hab_pos_id', value: posId },
+      { column: 'hab_move_san', value: moveSan }
+    ]
+  })
 }
 
 // ---------------------------------------------------------------------------

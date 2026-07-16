@@ -117,6 +117,13 @@ export async function getPipelineRates(): Promise<{
 //----------------------------------------------------------------------------------
 //  getLatestPipelineRuns — every row belonging to the single highest pip_run_id, for
 //  the Pipeline page jobs summary table (full expanded view, one row per sub-step).
+//  Reverted from a per-step "latest run regardless of run_id" version (user decision,
+//  2026-07-16): showing each step's own latest run meant the table could mix rows
+//  from different run_ids under one "Run #N" header, which read as misleading even
+//  though each individual row was accurate — user preferred the table only ever
+//  reflect one single run's data, accepting that a standalone single-step click
+//  (which allocates its own new run_id) will make every other step show "—" until
+//  the next coordinated run repopulates them all together.
 //----------------------------------------------------------------------------------
 export async function getLatestPipelineRuns(): Promise<{
   pip_step:        number

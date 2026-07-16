@@ -21,6 +21,8 @@ interface HabitRow {
 
 interface HabitsTableProps {
   rows: HabitRow[]
+  dismissedView: boolean
+  onToggleDismiss: (posId: number, moveSan: string) => void
 }
 
 function cpClass(cp: number | null): string {
@@ -61,13 +63,15 @@ function MiniBoard({ fen, color }: { fen: string; color: string | null }) {
   )
 }
 
-export default function HabitsTable({ rows }: HabitsTableProps) {
+export default function HabitsTable({ rows, dismissedView, onToggleDismiss }: HabitsTableProps) {
   const router = useRouter()
 
   if (rows.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500 text-sm">
-        No bad habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.
+        {dismissedView
+          ? 'No dismissed habits.'
+          : 'No bad habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.'}
       </div>
     )
   }
@@ -128,9 +132,10 @@ export default function HabitsTable({ rows }: HabitsTableProps) {
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
                 CP
-                <MyHelpField text="Average centipawns lost by playing this move instead of the best move, across all occurrences." />
+                <MyHelpField text="Centipawns lost by playing this move instead of the best move (the largest-magnitude occurrence, if you've played it more than once)." />
               </span>
             </th>
+            <th className="px-3 py-2 w-8" />
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -189,6 +194,18 @@ export default function HabitsTable({ rows }: HabitsTableProps) {
               {/* CP */}
               <td className={`px-3 py-2 text-right tabular-nums font-mono ${cpClass(row.move_cp)}`}>
                 {cpLabel(row.move_cp)}
+              </td>
+
+              {/* Dismiss / Restore */}
+              <td className="px-3 py-2">
+                <button
+                  type="button"
+                  title={dismissedView ? 'Restore — show this habit again' : "Dismiss — don't show this habit again"}
+                  onClick={e => { e.stopPropagation(); onToggleDismiss(row.pos_id, row.move_san) }}
+                  className="text-gray-400 hover:text-red-600 text-xs leading-none px-1"
+                >
+                  {dismissedView ? '↺' : '✕'}
+                </button>
               </td>
             </tr>
           ))}

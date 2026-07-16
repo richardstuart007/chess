@@ -35,6 +35,21 @@ export const PURGE_REACH_GRACE_DAYS = 90
 export const MIN_REACH_TO_KEEP = 2
 
 //
+//  HABITS_MIN_REACH_FLOOR — loosest reach threshold baked into buildHabits' aggregation
+//  HAVING clause, matching the lowest option in the Habits page's "Min Reached" dropdown.
+//  Every dropdown option (2/3/5/10) still works at read time via hab_move_times >= N.
+//
+export const HABITS_MIN_REACH_FLOOR = 2
+
+//
+//  HABITS_MOVE_CP_CLAMP — max magnitude buildHabits() will store in hab_move_cp. Mate
+//  scores are normalized to +-10000 (see enrichPositionsStockfish.ts), so a single
+//  real gam_cp_change swing can occasionally exceed thab_habits.hab_move_cp's
+//  numeric(6,2) precision (max +-9999.99) — clamped here rather than widening the column.
+//
+export const HABITS_MOVE_CP_CLAMP = 9999
+
+//
 //  DEFAULT_BATCH_SIZE — standing default batch size for per-run limits (Build Game
 //  Positions, Evaluate Positions). Same default in both the pipeline UI (overridable
 //  via input) and the cron route (fixed), single source of truth for both.
@@ -42,8 +57,8 @@ export const MIN_REACH_TO_KEEP = 2
 export const DEFAULT_BATCH_SIZE = 200
 
 //
-//  POSITION_INSERT_CHUNK_SIZE — target rows per bulk INSERT into tgam_game_positions
-//  (keeps query params well under the Postgres per-statement limit).
+//  POSITION_INSERT_CHUNK_SIZE — target rows per bulk INSERT (tgam_game_positions,
+//  thab_habits) — keeps query params well under the Postgres per-statement limit.
 //
 export const POSITION_INSERT_CHUNK_SIZE = 500
 

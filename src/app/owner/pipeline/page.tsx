@@ -9,7 +9,7 @@ import PipelineHelp from '@/src/ui/analysis/PipelineHelp'
 import { MyHelpStep } from 'nextjs-shared/MyHelpStep'
 import { getPlayers } from '@/src/lib/actions/players'
 import { runGameSync } from '@/src/lib/actions/sync'
-import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
+import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
 import { getPipelineRates, getLatestPipelineRuns } from '@/src/lib/actions/pipelineLog'
 import EvalProgress from '@/src/ui/analysis/EvalProgress'
 import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS } from '@/src/lib/constants'
@@ -28,7 +28,7 @@ type LatestRun = {
 }
 
 //
-//  Job group order matches the scheduled cron order in vercel.json (3am-8am). Each group
+//  Job group order matches the scheduled cron order in vercel.json (3:00am-5:00am, 20min apart). Each group
 //  is one scheduled/schedulable macro step; its subJobs are the individual table-writes
 //  within it, run together and sharing one pip_run_id.
 //
@@ -38,30 +38,33 @@ const JOB_GROUPS: {
   schedule: string
   subJobs: { subStep: string; label: string }[]
 }[] = [
-  { step: 1, groupLabel: 'Game Sync', schedule: '3am', subJobs: [
+  { step: 1, groupLabel: 'Game Sync', schedule: '3:00am', subJobs: [
       { subStep: 'a', label: 'Query chess.com API' },
       { subStep: 'b', label: 'Fetch & Insert Raw Games' },
       { subStep: 'c', label: 'Deconstruct Games' },
       { subStep: 'd', label: 'Update Player Ratings' },
     ] },
-  { step: 2, groupLabel: 'Build Position Tree', schedule: '4am', subJobs: [
+  { step: 2, groupLabel: 'Build Position Tree', schedule: '3:20am', subJobs: [
       { subStep: 'a', label: 'Build Position Tree' },
     ] },
-  { step: 3, groupLabel: 'Sync Position Tree', schedule: '5am', subJobs: [
+  { step: 3, groupLabel: 'Sync Position Tree', schedule: '3:40am', subJobs: [
       { subStep: 'a', label: 'Sync tpos_positions' },
       { subStep: 'b', label: 'Backfill tgam ids' },
     ] },
-  { step: 4, groupLabel: 'Purge Stale Positions', schedule: '6am', subJobs: [
+  { step: 4, groupLabel: 'Purge Stale Positions', schedule: '4:00am', subJobs: [
       { subStep: 'a', label: 'Purge teva_evaluations' },
       { subStep: 'b', label: 'Purge tgam_game_positions' },
       { subStep: 'c', label: 'Purge tpos_positions' },
       { subStep: 'd', label: 'Purge tgd_gamesdecon guard' },
     ] },
-  { step: 5, groupLabel: 'Evaluate Positions', schedule: '7am', subJobs: [
+  { step: 5, groupLabel: 'Evaluate Positions', schedule: '4:20am', subJobs: [
       { subStep: 'a', label: 'Evaluate Positions' },
     ] },
-  { step: 6, groupLabel: 'Update CP Change', schedule: '8am', subJobs: [
+  { step: 6, groupLabel: 'Update CP Change', schedule: '4:40am', subJobs: [
       { subStep: 'a', label: 'Update CP Change' },
+    ] },
+  { step: 7, groupLabel: 'Build Habits', schedule: '5:00am', subJobs: [
+      { subStep: 'a', label: 'Build Habits' },
     ] },
 ]
 
@@ -108,6 +111,9 @@ JOIN tpos_positions pa ON pa.pos_id = gp.gam_resulting_pos_id
 WHERE gp.gam_cp_change IS NULL
   AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP};`
 
+const SQL_STATUS_HABITS =
+`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE hab_dismissed) AS dismissed FROM thab_habits;`
+
 const SQL_STATUS_PURGE =
 `SELECT COUNT(*) AS eligible
 FROM tpos_positions p
@@ -152,12 +158,14 @@ export default function PipelinePage() {
   const [s4, setS4] = useState<{ evaluated: number; remaining: number } | null>(null)
   const [sCp, setSCp] = useState<{ pending: number } | null>(null)
   const [sPurge, setSPurge] = useState<{ eligible: number } | null>(null)
+  const [sHabits, setSHabits] = useState<{ total: number; dismissed: number } | null>(null)
   const [s1Loading, setS1Loading] = useState(false)
   const [s3Loading, setS3Loading] = useState(false)
   const [s3bLoading, setS3bLoading] = useState(false)
   const [s4Loading, setS4Loading] = useState(false)
   const [sCpLoading, setSCpLoading] = useState(false)
   const [sPurgeLoading, setSPurgeLoading] = useState(false)
+  const [sHabitsLoading, setSHabitsLoading] = useState(false)
   const [rates, setRates] = useState<{ step1: number|null; step2: number|null; step3: number|null; step4: number|null; step5: number|null; step6: number|null } | null>(null)
   const [runs, setRuns] = useState<LatestRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
@@ -170,21 +178,23 @@ export default function PipelinePage() {
   async function doRefreshStep4() { setS4Loading(true); setS4(await refreshStep4()); setS4Loading(false) }
   async function doRefreshCp() { setSCpLoading(true); setSCp(await refreshCpChangeStatus()); setSCpLoading(false) }
   async function doRefreshPurge() { setSPurgeLoading(true); setSPurge(await refreshPurgeStatus()); setSPurgeLoading(false) }
+  async function doRefreshHabits() { setSHabitsLoading(true); setSHabits(await refreshHabitsStatus()); setSHabitsLoading(false) }
 
   const [refreshAllLoading, setRefreshAllLoading] = useState(false)
   async function doRefreshAll() {
     setRefreshAllLoading(true)
-    setS1Loading(true); setS3Loading(true); setS3bLoading(true); setS4Loading(true); setSCpLoading(true); setSPurgeLoading(true)
-    const [r1, r3, r3b, r4, rCp, rPurge] = await Promise.all([
+    setS1Loading(true); setS3Loading(true); setS3bLoading(true); setS4Loading(true); setSCpLoading(true); setSPurgeLoading(true); setSHabitsLoading(true)
+    const [r1, r3, r3b, r4, rCp, rPurge, rHabits] = await Promise.all([
       refreshStep1(),
       refreshStep3(),
       refreshTposStatus(),
       refreshStep4(),
       refreshCpChangeStatus(),
       refreshPurgeStatus(),
+      refreshHabitsStatus(),
     ])
-    setS1(r1); setS3(r3); setS3b(r3b); setS4(r4); setSCp(rCp); setSPurge(rPurge)
-    setS1Loading(false); setS3Loading(false); setS3bLoading(false); setS4Loading(false); setSCpLoading(false); setSPurgeLoading(false)
+    setS1(r1); setS3(r3); setS3b(r3b); setS4(r4); setSCp(rCp); setSPurge(rPurge); setSHabits(rHabits)
+    setS1Loading(false); setS3Loading(false); setS3bLoading(false); setS4Loading(false); setSCpLoading(false); setSPurgeLoading(false); setSHabitsLoading(false)
     doRefreshRuns()
     setRefreshAllLoading(false)
   }
@@ -204,6 +214,8 @@ export default function PipelinePage() {
       setSCp(cpInit)
       const purgeInit = await refreshPurgeStatus()
       setSPurge(purgeInit)
+      const habitsInit = await refreshHabitsStatus()
+      setSHabits(habitsInit)
       setRuns(await getLatestPipelineRuns())
     }
     load()
@@ -223,6 +235,7 @@ export default function PipelinePage() {
       setSyncResult(data)
       doRefreshStep1()
       getPipelineRates().then(setRates)
+      doRefreshRuns()
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Sync failed')
     } finally {
@@ -247,6 +260,7 @@ export default function PipelinePage() {
       doRefreshStep3()
       doRefreshStep3b()
       getPipelineRates().then(setRates)
+      doRefreshRuns()
     } catch (err) {
       setTreeResult({ ok: false, error: String(err) })
     } finally {
@@ -270,6 +284,7 @@ export default function PipelinePage() {
       doRefreshStep3b()
       doRefreshStep4()
       getPipelineRates().then(setRates)
+      doRefreshRuns()
     } catch (err) {
       setTposResult({ ok: false, error: String(err) })
     } finally {
@@ -298,6 +313,7 @@ export default function PipelinePage() {
       doRefreshStep4()
       doRefreshCp()
       getPipelineRates().then(setRates)
+      doRefreshRuns()
     } catch (err) {
       setPosError(err instanceof Error ? err.message : 'Failed')
     } finally {
@@ -319,6 +335,7 @@ export default function PipelinePage() {
       if (!data.ok) { setCpResult({ ok: false, error: data.error }); return }
       setCpResult({ ok: true, updated: data.updated })
       doRefreshCp()
+      doRefreshRuns()
     } catch (err) {
       setCpResult({ ok: false, error: String(err) })
     } finally {
@@ -344,10 +361,33 @@ export default function PipelinePage() {
       doRefreshStep3b()
       doRefreshStep4()
       getPipelineRates().then(setRates)
+      doRefreshRuns()
     } catch (err) {
       setPurgeResult({ ok: false, error: String(err) })
     } finally {
       setPurgeRunning(false)
+    }
+  }
+
+  // ── Step 6: Build Habits ───────────────────────────────────────────────────
+  const [habitsRunning, setHabitsRunning] = useState(false)
+  const [habitsResult,  setHabitsResult]  = useState<{ ok: boolean; built?: number; error?: string } | null>(null)
+
+  async function handleBuildHabits(forceNewRun: boolean = true) {
+    setHabitsRunning(true)
+    setHabitsResult(null)
+    try {
+      const params = new URLSearchParams(forceNewRun ? { newRun: 'true' } : {})
+      const res  = await fetch(`/api/analysis/build-habits?${params}`)
+      const data = await res.json()
+      if (!data.ok) { setHabitsResult({ ok: false, error: data.error }); return }
+      setHabitsResult({ ok: true, built: data.built })
+      doRefreshHabits()
+      doRefreshRuns()
+    } catch (err) {
+      setHabitsResult({ ok: false, error: String(err) })
+    } finally {
+      setHabitsRunning(false)
     }
   }
 
@@ -366,6 +406,8 @@ export default function PipelinePage() {
     await handleEvaluatePositions(false)
     await doRefreshRuns()
     await handleUpdateCp(false)
+    await doRefreshRuns()
+    await handleBuildHabits(false)
     await doRefreshRuns()
     setRunAllRunning(false)
   }
@@ -501,7 +543,7 @@ export default function PipelinePage() {
             {eta(s1?.pending, rates?.step1 ?? null) && <span className='text-gray-400 text-xs'>{eta(s1?.pending, rates?.step1 ?? null)}</span>}
             <span className='text-gray-300'>·</span>
             <StatusBadge complete={s1 === null ? null : s1.pending === 0} />
-            <MyHelp label='SQL' title='Game Sync — Status SQL' text={SQL_STATUS_1} />
+            <MyHelp label='SQL' text={SQL_STATUS_1} />
           </div>
         </div>
         <div className='flex items-center gap-2 mb-2'>
@@ -545,7 +587,7 @@ export default function PipelinePage() {
               {eta(s3?.allRemaining, rates?.step2 ?? null) && <span className='text-gray-400 text-xs'>{eta(s3?.allRemaining, rates?.step2 ?? null)}</span>}
               <span className='text-gray-300'>·</span>
               <StatusBadge complete={s3 === null ? null : s3.allRemaining === 0} />
-              <MyHelp label='SQL' title='Build Game Positions — Status SQL' text={SQL_STATUS_3} />
+              <MyHelp label='SQL' text={SQL_STATUS_3} />
             </div>
           </div>
           <div className='flex flex-wrap items-end gap-2'>
@@ -589,7 +631,7 @@ export default function PipelinePage() {
               {eta(s3b?.unresolved, rates?.step3 ?? null) && <span className='text-gray-400 text-xs'>{eta(s3b?.unresolved, rates?.step3 ?? null)}</span>}
               <span className='text-gray-300'>·</span>
               <StatusBadge complete={s3b === null ? null : s3b.unresolved === 0} />
-              <MyHelp label='SQL' title='Sync Position Tree — Status SQL' text={SQL_STATUS_3B} />
+              <MyHelp label='SQL' text={SQL_STATUS_3B} />
             </div>
           </div>
           <div className='flex flex-wrap items-end gap-2'>
@@ -631,7 +673,7 @@ export default function PipelinePage() {
               <span>eligible now: <strong className='text-gray-800'>{n(sPurge?.eligible)}</strong></span>
               <span className='text-gray-300'>·</span>
               <StatusBadge complete={sPurge === null ? null : sPurge.eligible === 0} />
-              <MyHelp label='SQL' title='Purge Stale Positions — Status SQL' text={SQL_STATUS_PURGE} />
+              <MyHelp label='SQL' text={SQL_STATUS_PURGE} />
             </div>
           </div>
           <div className='flex flex-wrap items-end gap-2'>
@@ -669,7 +711,7 @@ export default function PipelinePage() {
               {eta(s4?.remaining, rates?.step5 ?? null) && <span className='text-gray-400 text-xs'>{eta(s4?.remaining, rates?.step5 ?? null)}</span>}
               <span className='text-gray-300'>·</span>
               <StatusBadge complete={s4 === null ? null : s4.remaining === 0} />
-              <MyHelp label='SQL' title='Evaluate Positions — Status SQL' text={SQL_STATUS_4} />
+              <MyHelp label='SQL' text={SQL_STATUS_4} />
             </div>
           </div>
           <div className='flex flex-wrap items-end gap-2'>
@@ -717,7 +759,7 @@ export default function PipelinePage() {
               {eta(sCp?.pending, rates?.step6 ?? null) && <span className='text-gray-400 text-xs'>{eta(sCp?.pending, rates?.step6 ?? null)}</span>}
               <span className='text-gray-300'>·</span>
               <StatusBadge complete={sCp === null ? null : sCp.pending === 0} />
-              <MyHelp label='SQL' title='Update CP Change — Status SQL' text={SQL_STATUS_CP} />
+              <MyHelp label='SQL' text={SQL_STATUS_CP} />
             </div>
           </div>
           <div className='flex flex-wrap items-end gap-2'>
@@ -728,6 +770,43 @@ export default function PipelinePage() {
           {cpResult && (
             <p className={`text-xs ${cpResult.ok ? 'text-green-600' : 'text-red-600'}`}>
               {cpResult.ok ? `Done — ${cpResult.updated} rows updated` : `Error: ${cpResult.error}`}
+            </p>
+          )}
+        </div>
+      </MyBox>
+
+      {/* Step 7 */}
+      <MyBox>
+        <div className='space-y-2'>
+          <div className='flex items-center gap-2 mb-2'>
+            <h3 className='text-xs font-bold'>7. Build Habits</h3>
+            <MyHelpStep
+              title='7. Build Habits'
+              input={['tgam_game_positions joined to tgd_gamesdecon — every tracked-player move at move_num >= MIN_ANALYSIS_MOVE']}
+              processing="Full recompute every run, not incremental — a habit's move_cp can change as new games arrive for a move already in the table, so there is no safe 'already processed' cursor the way row-insertion steps have one. Aggregates by (player, position, move played), keeping only moves reached HABITS_MIN_REACH_FLOOR+ times whose largest-magnitude occurrence is a negative CP change, then upserts into thab_habits keyed on (player, position, move). move_cp is that single largest-magnitude occurrence (sign kept), not an average. The upsert never touches hab_dismissed, so a habit dismissed on the Habits page stays dismissed across every future rebuild even as its stats keep refreshing. Also runs unattended via its own scheduled cron (/api/analysis/build-habits)."
+              output={['thab_habits — one row per player/position/move habit: times played, wins, losses, worst-occurrence CP change, dismissed flag']}
+              consumers={[
+                'Habits page (getHabitsData/getHabitsCount) — reads thab_habits directly instead of live-aggregating on every request',
+              ]}
+            />
+            <MyButton onClick={doRefreshHabits} disabled={sHabitsLoading} overrideClass='h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sHabitsLoading ? '…' : '↻'}</MyButton>
+          </div>
+          <div className='space-y-1'>
+            <div className='flex items-center gap-3 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-md text-xs text-gray-600'>
+              <span>total: <strong className='text-gray-800'>{n(sHabits?.total)}</strong></span>
+              <span className='text-gray-300'>·</span>
+              <span>dismissed: <strong className='text-gray-800'>{n(sHabits?.dismissed)}</strong></span>
+              <MyHelp label='SQL' text={SQL_STATUS_HABITS} />
+            </div>
+          </div>
+          <div className='flex flex-wrap items-end gap-2'>
+            <MyButton onClick={() => handleBuildHabits()} disabled={habitsRunning} overrideClass={habitsRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}>
+              {habitsRunning ? 'Building...' : 'Run Build Habits'}
+            </MyButton>
+          </div>
+          {habitsResult && (
+            <p className={`text-xs ${habitsResult.ok ? 'text-green-600' : 'text-red-600'}`}>
+              {habitsResult.ok ? `Done — ${habitsResult.built} habit rows built/refreshed` : `Error: ${habitsResult.error}`}
             </p>
           )}
         </div>
