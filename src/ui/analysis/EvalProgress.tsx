@@ -62,7 +62,8 @@ export default function EvalProgress({
         await saveEvaluation({
           posId:    pos.pos_id,
           cp:       pos.pos_color === 'b' ? -result.cp : result.cp,
-          bestMove: result.bestMove || null
+          bestMove: result.bestMove || null,
+          depth
         })
       } catch (err) {
         console.error(`EvalProgress position error ${pos.pos_fen}`, err)

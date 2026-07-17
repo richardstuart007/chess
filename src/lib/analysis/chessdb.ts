@@ -41,6 +41,7 @@ export interface EvaluationRow {
   eva_evaid: number
   eva_cp: number | null
   eva_best_move: string | null
+  eva_depth: number
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +147,7 @@ export async function saveEvaluation(data: {
   posId: number
   cp: number | null
   bestMove: string | null
+  depth: number
 }): Promise<void> {
   await table_upsert({
     caller: 'saveEvaluation',
@@ -153,7 +155,8 @@ export async function saveEvaluation(data: {
     columnValuePairs: [
       { column: 'eva_pos_id',    value: data.posId },
       { column: 'eva_cp',        value: data.cp },
-      { column: 'eva_best_move', value: data.bestMove }
+      { column: 'eva_best_move', value: data.bestMove },
+      { column: 'eva_depth',     value: data.depth }
     ],
     conflictColumns: ['eva_pos_id'],
     skipCache: true
@@ -170,6 +173,72 @@ export async function getEvaluationForPosition(posId: number): Promise<Evaluatio
     whereColumnValuePairs: [{ column: 'eva_pos_id', value: posId }]
   })
   return rows[0] as EvaluationRow ?? null
+}
+
+//----------------------------------------------------------------------------------
+//  upgradePositionEvaluation — merge a deeper live /analyze evaluation into an existing
+//  teva_evaluations row, keyed by FEN. Only upgrades positions the batch pipeline already
+//  tracks (never creates a tpos_positions/teva_evaluations row here) and only when the new
+//  depth exceeds what's stored. On upgrade, immediately recomputes gam_cp_change for the
+//  affected tgam_game_positions rows — deliberately not via bulkUpdateCpLoss(), since that
+//  logs a pipeline step and would make every interactive analyze click look like a new
+//  pipeline run on the Owner > Pipeline page.
+//----------------------------------------------------------------------------------
+export async function upgradePositionEvaluation(data: {
+  fen: string
+  cp: number
+  bestMove: string | null
+  depth: number
+}): Promise<boolean> {
+  const posRows = await table_query({
+    caller: 'upgradePositionEvaluation_lookup',
+    table: 'tpos_positions',
+    query: `SELECT pos_id FROM tpos_positions WHERE pos_fen = $1`,
+    params: [data.fen]
+  })
+  const posId = posRows[0]?.pos_id as number | undefined
+  if (!posId) return false
+
+  const updated = await table_query({
+    caller: 'upgradePositionEvaluation_update',
+    table: 'teva_evaluations',
+    query: `
+      UPDATE teva_evaluations
+      SET eva_cp = $1, eva_best_move = $2, eva_depth = $3
+      WHERE eva_pos_id = $4 AND eva_depth < $3
+      RETURNING eva_evaid
+    `,
+    params: [data.cp, data.bestMove, data.depth, posId],
+    isupdate: true
+  })
+  if (updated.length === 0) return false
+
+  await table_query({
+    caller: 'upgradePositionEvaluation_recompute_cp_change',
+    table: 'tgam_game_positions',
+    query: `
+      UPDATE tgam_game_positions gp
+      SET gam_cp_change =
+        CASE WHEN p.pos_color = 'w'
+          THEN e_after.eva_cp  - e_before.eva_cp
+          ELSE e_before.eva_cp - e_after.eva_cp
+        END
+      FROM tpos_positions p,
+           teva_evaluations e_before,
+           teva_evaluations e_after
+      WHERE gp.gam_pos_id          = p.pos_id
+        AND e_before.eva_pos_id     = gp.gam_pos_id
+        AND e_after.eva_pos_id      = gp.gam_resulting_pos_id
+        AND gp.gam_resulting_pos_id IS NOT NULL
+        AND e_before.eva_cp IS NOT NULL
+        AND e_after.eva_cp  IS NOT NULL
+        AND (gp.gam_pos_id = $1 OR gp.gam_resulting_pos_id = $1)
+    `,
+    params: [posId],
+    isupdate: true
+  })
+
+  return true
 }
 
 // ---------------------------------------------------------------------------

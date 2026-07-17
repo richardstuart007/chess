@@ -1,5 +1,6 @@
 'use server'
 
+import { table_query } from 'nextjs-shared/table_query'
 import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS } from '../constants'
 
 //----------------------------------------------------------------------------------
@@ -18,10 +19,7 @@ export type PipelineStatus = {
 }
 
 export async function getPipelineStatus(): Promise<PipelineStatus> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
-  const res = await db.query({
+  const rows = await table_query({
     caller: 'getPipelineStatus',
     query: `
       SELECT
@@ -47,11 +45,10 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
            ON e.eva_pos_id = p.pos_id
          WHERE e.eva_evaid IS NULL)                                                     AS evaluations_remaining
     `,
-    params: [],
-    functionName: 'getPipelineStatus'
+    params: []
   })
 
-  const r = res.rows[0]
+  const r = rows[0]
   const treeGamesEligible = parseInt(r.tree_games_eligible ?? '0')
   const treeGamesRemaining = parseInt(r.tree_games_remaining ?? '0')
   return {
@@ -72,10 +69,8 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 //----------------------------------------------------------------------------------
 
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const res = await db.query({
-    caller: 'refreshStep1', params: [], functionName: 'refreshStep1',
+  const rows = await table_query({
+    caller: 'refreshStep1', params: [],
     query: `SELECT
       (SELECT COUNT(*) FROM tgr_gamesraw r
        WHERE NOT EXISTS (
@@ -84,17 +79,15 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
        ))                                     AS pending,
       (SELECT COUNT(*) FROM tgd_gamesdecon)    AS all_decon`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
 }
 
 export async function refreshStep3(): Promise<{
   allProcessed: number; allRemaining: number
 }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const res = await db.query({
-    caller: 'refreshStep3', params: [], functionName: 'refreshStep3',
+  const rows = await table_query({
+    caller: 'refreshStep3', params: [],
     query: `SELECT
       (SELECT COUNT(*) FROM tgd_gamesdecon)                                         AS all_eligible,
       (SELECT COUNT(*) FROM tgd_gamesdecon d
@@ -102,7 +95,7 @@ export async function refreshStep3(): Promise<{
          AND NOT EXISTS (SELECT 1 FROM tgam_game_positions
            WHERE gam_gdid = d.gd_gdid)) AS all_remaining`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   const allEligible  = parseInt(r.all_eligible  ?? '0')
   const allRemaining = parseInt(r.all_remaining ?? '0')
   return {
@@ -111,30 +104,26 @@ export async function refreshStep3(): Promise<{
 }
 
 export async function refreshTposStatus(): Promise<{ positions: number; unresolved: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const res = await db.query({
-    caller: 'refreshTposStatus', params: [], functionName: 'refreshTposStatus',
+  const rows = await table_query({
+    caller: 'refreshTposStatus', params: [],
     query: `SELECT
       (SELECT COUNT(*) FROM tpos_positions)                                AS positions,
       (SELECT COUNT(*) FROM tgam_game_positions WHERE gam_pos_id IS NULL)  AS unresolved`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return { positions: parseInt(r.positions ?? '0'), unresolved: parseInt(r.unresolved ?? '0') }
 }
 
 export async function refreshStep4(): Promise<{ evaluated: number; remaining: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db   = await sql()
-  const res  = await db.query({
-    caller: 'refreshStep4', params: [], functionName: 'refreshStep4',
+  const rows = await table_query({
+    caller: 'refreshStep4', params: [],
     query: `SELECT
       (SELECT COUNT(*) FROM teva_evaluations)                                          AS evaluated,
       (SELECT COUNT(*) FROM tpos_positions p
        LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
        WHERE e.eva_evaid IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})                 AS remaining`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return {
     evaluated: parseInt(r.evaluated ?? '0'),
     remaining: parseInt(r.remaining ?? '0'),
@@ -142,10 +131,8 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
 }
 
 export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const res = await db.query({
-    caller: 'refreshCpChangeStatus', params: [], functionName: 'refreshCpChangeStatus',
+  const rows = await table_query({
+    caller: 'refreshCpChangeStatus', params: [],
     query: `SELECT COUNT(*) AS pending
       FROM tgam_game_positions gp
       JOIN tpos_positions pb ON pb.pos_id = gp.gam_pos_id
@@ -153,7 +140,7 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
       WHERE gp.gam_cp_change IS NULL
         AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP}`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return {
     pending: parseInt(r.pending ?? '0'),
   }
@@ -172,23 +159,19 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  recompute every run, not an incremental cursor.
 //----------------------------------------------------------------------------------
 export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const res = await db.query({
-    caller: 'refreshHabitsStatus', params: [], functionName: 'refreshHabitsStatus',
+  const rows = await table_query({
+    caller: 'refreshHabitsStatus', params: [],
     query: `SELECT
       (SELECT COUNT(*) FROM thab_habits)                        AS total,
       (SELECT COUNT(*) FROM thab_habits WHERE hab_dismissed)     AS dismissed`
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return { total: parseInt(r.total ?? '0'), dismissed: parseInt(r.dismissed ?? '0') }
 }
 
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db  = await sql()
-  const candidatesRes = await db.query({
-    caller: 'refreshPurgeStatus_find', params: [], functionName: 'refreshPurgeStatus',
+  const candidatesRes = await table_query({
+    caller: 'refreshPurgeStatus_find', params: [],
     query: `SELECT COUNT(*) AS cnt
       FROM tpos_positions p
       WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
@@ -207,5 +190,5 @@ export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
             AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
         )`
   })
-  return { eligible: parseInt(candidatesRes.rows[0]?.cnt ?? '0') }
+  return { eligible: parseInt(candidatesRes[0]?.cnt ?? '0') }
 }

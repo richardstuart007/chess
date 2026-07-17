@@ -11,6 +11,7 @@ import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate } from '@/src/lib/stockfish'
 import { saveGameEvaluations, saveAnalysisLine, saveAnalysisTree } from '@/src/lib/actions/games'
+import { upgradePositionEvaluation } from '@/src/lib/analysis/chessdb'
 import {
   MoveNode,
   AnalysisTree,
@@ -28,10 +29,9 @@ import AlternativeLines from './AlternativeLines'
 import MoveTree from './MoveTree'
 
 interface ChessBoardViewProps {
-  game?: ChessComGame
+  game: ChessComGame
   gdid?: number
   username: string
-  startFen?: string
   stockfishDepth?: number
   onStockfishDepthChange?: (depth: number) => void
   deepAnalysisDepth?: number | 'infinite'
@@ -39,15 +39,6 @@ interface ChessBoardViewProps {
   onDeepAnalysisDepthChange?: (depth: number | 'infinite') => void
   onDeepAnalysisMultiPvChange?: (multiPv: number) => void
   backPath: string
-}
-
-function isValidFen(fen: string): boolean {
-  try {
-    new Chess(fen)
-    return true
-  } catch {
-    return false
-  }
 }
 
 const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
@@ -64,11 +55,10 @@ function formatCp(cp: number): string {
   return cp > 0 ? `+${val}` : val
 }
 
-export default function ChessBoardView({ game, gdid, username, startFen, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
-  const isFreeAnalysis = !game
-  const playerColor = game ? getPlayerResult(game, username).color : 'white' as const
-  const result = game ? getPlayerResult(game, username).result : ''
-  const { openingName: opening, eco } = game?.pgn ? parsePgnHeaders(game.pgn) : { openingName: (game as any)?._openingName ?? '', eco: (game as any)?._ecoCode ?? '' }
+export default function ChessBoardView({ game, gdid, username, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
+  const playerColor = getPlayerResult(game, username).color
+  const result = getPlayerResult(game, username).result
+  const { openingName: opening, eco } = game.pgn ? parsePgnHeaders(game.pgn) : { openingName: (game as any)._openingName ?? '', eco: (game as any)._ecoCode ?? '' }
 
   // Tree state
   const [tree, setTree] = useState<AnalysisTree | null>(null)
@@ -91,6 +81,7 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
   // Deep analysis state
   const [deepAnalyzing, setDeepAnalyzing] = useState(false)
   const [deepAnalysisData, setDeepAnalysisData] = useState<InfiniteAnalysisUpdate | null>(null)
+  const latestDeepResultRef = useRef<{ cp: number; bestMoveUci: string; depth: number } | null>(null)
 
   // Save state
   const [saveMessage, setSaveMessage] = useState('')
@@ -99,52 +90,42 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
   const [boardKey, setBoardKey] = useState(0)
 
   // -----------------------------------------------------------------------
-  // Parse PGN on mount → build tree (or blank board for free analysis)
+  // Parse PGN on mount → build tree
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (game) {
-      const g = new Chess()
-      g.loadPgn(game.pgn)
+    const g = new Chess()
+    g.loadPgn(game.pgn)
 
-      const moves = g.history({ verbose: true })
-      const history = moves.map(m => ({ san: m.san, from: m.from, to: m.to }))
+    const moves = g.history({ verbose: true })
+    const history = moves.map(m => ({ san: m.san, from: m.from, to: m.to }))
 
-      const g2 = new Chess()
-      const fens = [g2.fen()]
-      for (const m of moves) {
-        g2.move(m.san)
-        fens.push(g2.fen())
-      }
-
-      const newTree = buildTree(history, fens, [])
-
-      const storedEvals = (game as any)._evaluations as MoveEvaluation[] | null
-      if (storedEvals && storedEvals.length > 0) {
-        for (let i = 0; i < Math.min(storedEvals.length, newTree.mainLine.length); i++) {
-          newTree.mainLine[i].evaluation = storedEvals[i]
-        }
-        setEvaluations(storedEvals)
-      } else {
-        setEvaluations([])
-      }
-
-      setTree(newTree)
-      setCurrentNode(null)
-      setFromMove(1)
-      setToMove(Math.max(1, Math.ceil(newTree.mainLine.length / 2)))
-      displayGame.current = new Chess()
-    } else {
-      const initialFen = (startFen && isValidFen(startFen)) ? startFen : new Chess().fen()
-      const newTree = buildTree([], [initialFen], [])
-      setTree(newTree)
-      setCurrentNode(null)
-      setEvaluations([])
-      setFromMove(1)
-      setToMove(Math.max(1, Math.ceil(newTree.mainLine.length / 2)))
-      displayGame.current = new Chess(initialFen)
+    const g2 = new Chess()
+    const fens = [g2.fen()]
+    for (const m of moves) {
+      g2.move(m.san)
+      fens.push(g2.fen())
     }
+
+    const newTree = buildTree(history, fens, [])
+
+    const totalFullMoves = Math.max(1, Math.ceil(newTree.mainLine.length / 2))
+    const storedEvals = (game as any)._evaluations as MoveEvaluation[] | null
+    if (storedEvals && storedEvals.length > 0) {
+      for (let i = 0; i < Math.min(storedEvals.length, newTree.mainLine.length); i++) {
+        newTree.mainLine[i].evaluation = storedEvals[i]
+      }
+      setEvaluations(storedEvals)
+    } else {
+      setEvaluations([])
+    }
+
+    setTree(newTree)
+    setCurrentNode(null)
+    setFromMove(storedEvals && storedEvals.length > 0 ? Math.min(5, totalFullMoves) : 1)
+    setToMove(totalFullMoves)
+    displayGame.current = new Chess()
     setBoardKey(k => k + 1)
-  }, [game, startFen])
+  }, [game])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -265,6 +246,12 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
       }
       setTree({ ...tree })
 
+      // First-time full analysis just completed — default the next re-analyze range to
+      // start at move 5, since re-checking opening theory is rarely useful
+      if (!isReanalyze) {
+        setFromMove(Math.min(5, totalFullMoves))
+      }
+
       // Save the full merged evaluations to DB — saveGameEvaluations deletes
       // and re-inserts by array position, so a partial array would wipe out
       // the evaluations for every move outside the re-analyzed range
@@ -273,6 +260,16 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
           await saveGameEvaluations(gdid, merged)
         } catch {
           // Non-critical — DB save failure doesn't block UI
+        }
+      }
+
+      // Merge each move's "before" position into teva_evaluations if this depth is
+      // deeper than what's already stored there — non-critical, silently caught per move
+      for (const r of results) {
+        try {
+          await upgradePositionEvaluation({ fen: r.fenBefore, cp: r.cpBefore, bestMove: r.bestMove, depth })
+        } catch {
+          // Non-critical — a failed merge doesn't block the rest
         }
       }
     } catch (err) {
@@ -360,6 +357,12 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
       }
 
       setDeepAnalysisData({ ...update, lines: display })
+
+      // Track the true best line (pre-display-reorder) for the teva merge-back on completion
+      const top = unique[0]
+      if (top) {
+        latestDeepResultRef.current = { cp: top.cp, bestMoveUci: top.bestMoveUci, depth: update.depth }
+      }
     }
 
     let engine = engineRef.current
@@ -371,13 +374,20 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
 
     setDeepAnalyzing(true)
     setDeepAnalysisData(null)
+    latestDeepResultRef.current = null
     // Request one extra line so the played move has a chance of being included
     engine.startInfiniteAnalysis(
       fen,
       numLines + 1,
       maxDepth,
       processUpdate,
-      () => setDeepAnalyzing(false)
+      () => {
+        setDeepAnalyzing(false)
+        const top = latestDeepResultRef.current
+        if (top) {
+          upgradePositionEvaluation({ fen, cp: top.cp, bestMove: top.bestMoveUci, depth: top.depth }).catch(() => {})
+        }
+      }
     )
   }
 
@@ -460,9 +470,8 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
       // Also eval before to compute cpLoss
       const beforeResult = await engine.evaluate(node.fenBefore)
       const cpBefore = isWhiteMove ? beforeResult.cp : -beforeResult.cp
-      const cpLoss = isWhiteMove
-        ? Math.max(0, cpBefore - cp)
-        : Math.max(0, cp - cpBefore)
+      const cpChange = isWhiteMove ? cp - cpBefore : cpBefore - cp
+      const cpLoss = Math.max(0, -cpChange)
 
       node.evaluation = {
         san: node.san,
@@ -474,6 +483,7 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
         bestMoveSan: '',
         bestLineSans: [],
         cpLoss,
+        cpChange,
         classification: cpLoss > 200 ? 'blunder' : cpLoss > 100 ? 'mistake' : cpLoss > 50 ? 'inaccuracy' : 'good',
         depth: 16
       }
@@ -603,9 +613,6 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
       <MyBox>
         <div className='flex items-center justify-between'>
           <MyBackHomeNav backPath={backPath} />
-          {isFreeAnalysis && (
-            <span className='text-xs font-bold text-green-700'>Free Analysis</span>
-          )}
         </div>
       </MyBox>
 
@@ -615,18 +622,12 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
           {/* Top player */}
           <div className='flex items-center justify-between rounded bg-gray-600 px-3 py-1.5 text-xs text-white'>
             <span className='font-bold'>
-              {isFreeAnalysis ? 'Black' : (
-                <>
-                  {playerColor === 'white' ? game!.black.username : game!.white.username}
-                  <span className='ml-1 font-normal text-blue-400'>
-                    ({playerColor === 'white' ? game!.black.rating : game!.white.rating})
-                  </span>
-                </>
-              )}
+              {playerColor === 'white' ? game.black.username : game.white.username}
+              <span className='ml-1 font-normal text-blue-400'>
+                ({playerColor === 'white' ? game.black.rating : game.white.rating})
+              </span>
             </span>
-            {!isFreeAnalysis && (
-              <span className='text-red-400 font-bold'>{result === 'win' ? '0' : result === 'loss' ? '1' : '1/2'}</span>
-            )}
+            <span className='text-red-400 font-bold'>{result === 'win' ? '0' : result === 'loss' ? '1' : '1/2'}</span>
           </div>
 
           {/* Board */}
@@ -650,18 +651,12 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
           {/* Bottom player */}
           <div className='flex items-center justify-between rounded bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-gray-900'>
             <span className='font-bold'>
-              {isFreeAnalysis ? 'White' : (
-                <>
-                  {playerColor === 'white' ? game!.white.username : game!.black.username}
-                  <span className='ml-1 font-normal text-blue-400'>
-                    ({playerColor === 'white' ? game!.white.rating : game!.black.rating})
-                  </span>
-                </>
-              )}
+              {playerColor === 'white' ? game.white.username : game.black.username}
+              <span className='ml-1 font-normal text-blue-400'>
+                ({playerColor === 'white' ? game.white.rating : game.black.rating})
+              </span>
             </span>
-            {!isFreeAnalysis && (
-              <span className='text-red-600 font-bold'>{result === 'win' ? '1' : result === 'loss' ? '0' : '1/2'}</span>
-            )}
+            <span className='text-red-600 font-bold'>{result === 'win' ? '1' : result === 'loss' ? '0' : '1/2'}</span>
           </div>
 
           {/* Branch indicator + save */}
@@ -698,13 +693,11 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
             <div className='h-full'>
               <div className='flex items-center justify-between border-b border-gray-200 pb-1 mb-2'>
                 <h3 className='text-xs font-bold'>Moves</h3>
-                {!isFreeAnalysis && (
-                  <span className='text-xs text-gray-500'>
-                    {opening || 'Unknown'}
-                    {eco && <span className='text-gray-400 ml-1'>({eco})</span>}
-                    <span className='ml-1 text-gray-400'>{game?.time_class}</span>
-                  </span>
-                )}
+                <span className='text-xs text-gray-500'>
+                  {opening || 'Unknown'}
+                  {eco && <span className='text-gray-400 ml-1'>({eco})</span>}
+                  <span className='ml-1 text-gray-400'>{game.time_class}</span>
+                </span>
               </div>
               <MoveTree
                 tree={tree}
@@ -758,7 +751,7 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
                   />
                 </div>
               )}
-              {!isFreeAnalysis && !analyzing && (
+              {!analyzing && (
                 <MyButton onClick={runAnalysis} overrideClass='w-full'>
                   {evaluations.length > 0
                     ? (fromMove === 1 && toMove === totalFullMoves
@@ -803,7 +796,7 @@ export default function ChessBoardView({ game, gdid, username, startFen, stockfi
               <div className='flex items-center gap-4'>
                 <MySelect
                   label='Depth'
-                  options={['20', '30', '40', 'Infinite']}
+                  options={['20', '22', '24', '26', '28', '30', '40']}
                   value={deepAnalysisDepth === 'infinite' ? 'Infinite' : String(deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth)}
                   onChange={e => onDeepAnalysisDepthChange?.(e.target.value === 'Infinite' ? 'infinite' : parseInt(e.target.value, 10))}
                 />

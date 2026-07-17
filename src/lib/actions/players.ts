@@ -4,6 +4,7 @@ import { table_fetch }  from 'nextjs-shared/table_fetch'
 import { table_write }  from 'nextjs-shared/table_write'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_upsert } from 'nextjs-shared/table_upsert'
+import { table_query }  from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES } from '../constants'
 
@@ -107,24 +108,21 @@ export async function getPlayerRatings(username: string): Promise<Record<string,
 //----------------------------------------------------------------------------------
 export async function updatePlayerRating(username: string): Promise<void> {
   await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${username}`, 2)
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   let updated = 0
   for (const timeClass of INCLUDED_TIME_CLASSES) {
-    const result = await db.query({
+    const rows = await table_query({
       caller: 'updatePlayerRating',
       query: `SELECT CASE WHEN gd_player_color = 'white' THEN gd_white_rating ELSE gd_black_rating END AS rating
               FROM tgd_gamesdecon
               WHERE gd_player = $1 AND gd_time_class = $2
               ORDER BY gd_end_time DESC LIMIT 1`,
       params: [username.toLowerCase(), timeClass],
-      functionName: 'updatePlayerRating',
       table: 'tgd_gamesdecon',
       level: 2,
       severity: 'D'
     })
-    if (result.rows.length > 0) {
-      await upsertPlayerRating(username, timeClass, Number(result.rows[0].rating), true, 2, 'D')
+    if (rows.length > 0) {
+      await upsertPlayerRating(username, timeClass, Number(rows[0].rating), true, 2, 'D')
       updated++
     }
   }

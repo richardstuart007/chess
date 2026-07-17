@@ -1,6 +1,7 @@
 'use server'
 
 import { write_logging } from 'nextjs-shared/write_logging'
+import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, HABITS_MOVE_CP_CLAMP, POSITION_INSERT_CHUNK_SIZE } from '../constants'
@@ -44,13 +45,10 @@ function chunkRows<T>(rows: T[], maxRows: number): T[][] {
 //  scores are normalized to +-10000, so a single real swing can still exceed it.
 //----------------------------------------------------------------------------------
 export async function buildHabits(level: number = 1, forceNewRun?: boolean): Promise<{ built: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   await logStart('buildHabits', 'buildHabitsRoute', 'aggregating bad-move habits', level)
   const t0 = Date.now()
 
-  const selectRes = await db.query({
+  const selectRes = await table_query({
     caller: 'buildHabits_select',
     query: `
       SELECT * FROM (
@@ -75,12 +73,11 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
       WHERE move_cp < 0
     `,
     params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR],
-    functionName: 'buildHabits',
     table: 'thab_habits',
     level, isupdate: false, severity: 'D'
   })
 
-  const aggregates: HabitAggregate[] = selectRes.rows.map((r: any) => ({
+  const aggregates: HabitAggregate[] = selectRes.map((r: any) => ({
     player:     r.player,
     posId:      Number(r.pos_id),
     moveSan:    r.move_san,
@@ -102,7 +99,7 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
       a.player, a.posId, a.moveSan, a.moveUci, a.moveNum,
       a.moveTimes, a.moveWins, a.moveLosses, a.moveCp
     ])
-    const upsertRes = await db.query({
+    const upsertRes = await table_query({
       caller: 'buildHabits_upsert',
       query: `
         INSERT INTO thab_habits
@@ -115,13 +112,13 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
           hab_move_wins   = EXCLUDED.hab_move_wins,
           hab_move_losses = EXCLUDED.hab_move_losses,
           hab_move_cp     = EXCLUDED.hab_move_cp
+        RETURNING hab_habid
       `,
       params,
-      functionName: 'buildHabits',
       table: 'thab_habits',
       level, isupdate: true, severity: 'D'
     })
-    built += upsertRes.rowCount ?? 0
+    built += upsertRes.length
   }
 
   const durationMs = Date.now() - t0

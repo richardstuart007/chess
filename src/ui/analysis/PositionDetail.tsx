@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
-import { MyButton } from 'nextjs-shared/MyButton'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
@@ -151,12 +150,6 @@ export default function PositionDetail({
               </span>
             </div>
           </div>
-          <MyButton
-            onClick={() => router.push(`/analyze?mode=free&fen=${encodeURIComponent(position.pos_fen)}&from=${encodeURIComponent(`/position/${position.pos_id}`)}`)}
-            overrideClass='w-full text-xs'
-          >
-            Analyze this position
-          </MyButton>
         </div>
 
         {/* Right: tabs */}

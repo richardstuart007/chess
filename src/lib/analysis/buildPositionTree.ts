@@ -3,6 +3,7 @@
 import { Chess } from 'chess.js'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
+import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE } from '../constants'
 
@@ -125,7 +126,7 @@ function chunkByGame(records: PositionRecord[], maxRows: number): PositionRecord
 //  a game is legitimate and gets its own row (gam_gamid's own IDENTITY makes every row
 //  distinct regardless); nothing about (gdid, pos_fen) is unique anymore.
 //----------------------------------------------------------------------------------
-async function insertGamePositions(db: any, records: PositionRecord[], level: number): Promise<void> {
+async function insertGamePositions(records: PositionRecord[], level: number): Promise<void> {
   await logStart('insertGamePositions', 'buildPositionTree', `inserting ${records.length} game-position rows`, level)
   const chunks = chunkByGame(records, POSITION_INSERT_CHUNK_SIZE)
   for (const chunk of chunks) {
@@ -137,7 +138,7 @@ async function insertGamePositions(db: any, records: PositionRecord[], level: nu
       r.gdid, r.posFen, r.movePlayed,
       r.moveUci, r.resultingFen, r.moveNum
     ])
-    await db.query({
+    await table_query({
       caller:       'insertGamePositions',
       query:        `
         INSERT INTO tgam_game_positions
@@ -146,7 +147,6 @@ async function insertGamePositions(db: any, records: PositionRecord[], level: nu
         VALUES ${values}
       `,
       params,
-      functionName: 'buildPositionTree',
       table:        'tgam_game_positions',
       level,
       isupdate:     true,
@@ -165,11 +165,11 @@ async function insertGamePositions(db: any, records: PositionRecord[], level: nu
 //  cutoff, where a resulting position is never anyone's "before") is treated as
 //  inconsequential — those positions simply read as low-reach.
 //----------------------------------------------------------------------------------
-async function recomputePosReachedByIds(db: any, posIds: number[], level: number): Promise<void> {
+async function recomputePosReachedByIds(posIds: number[], level: number): Promise<void> {
   if (posIds.length === 0) return
   for (let start = 0; start < posIds.length; start += 1000) {
     const chunk = posIds.slice(start, start + 1000)
-    await db.query({
+    await table_query({
       caller: 'recomputePosReached',
       query:  `
         UPDATE tpos_positions p
@@ -185,8 +185,9 @@ async function recomputePosReachedByIds(db: any, posIds: number[], level: number
         )
         WHERE p.pos_id = ANY($1)
       `,
-      params: [chunk],
-      functionName: 'buildPositionTree',
+      // table_query's params type doesn't declare array elements (needed for = ANY($1)),
+      // even though the underlying driver handles them fine — narrow cast, not a real risk
+      params: [chunk] as unknown as number[],
       table: 'tpos_positions',
       level,
       isupdate: true,
@@ -206,9 +207,6 @@ async function recomputePosReachedByIds(db: any, posIds: number[], level: number
 //  batch.
 //----------------------------------------------------------------------------------
 export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean): Promise<{ positionsSynced: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   await logStart('syncTposFromTgam', 'buildPositionTree', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
   const t0 = Date.now()
 
@@ -219,21 +217,20 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   // gam_pos_id IS NULL only — matches refreshTposStatus()'s "unresolved" stat exactly.
   // gam_resulting_pos_id IS NULL is deliberately excluded: once Purge nulls it, it nulls
   // gam_resulting_fen too, so that side is permanently dead, not pending work.
-  const backlogRes = await db.query({
+  const backlogRes = await table_query({
     caller: 'syncTposFromTgam_backlog',
     query:  `SELECT COUNT(*) AS cnt FROM tgam_game_positions WHERE gam_pos_id IS NULL`,
     params: [],
-    functionName: 'buildPositionTree',
     table: 'tgam_game_positions',
     level,
     severity: 'D'
   })
-  const backlogBefore = parseInt(backlogRes.rows[0]?.cnt ?? '0')
+  const backlogBefore = parseInt(backlogRes[0]?.cnt ?? '0')
 
   // Step 1 — ensure a tpos_positions row exists for every FEN still referenced by an
   // unresolved tgam row. pos_color is the FEN's own active-color field (2nd token),
   // derived directly rather than carried through as a separate column.
-  await db.query({
+  await table_query({
     caller: 'syncTposFromTgam_ensure',
     query:  `
       INSERT INTO tpos_positions (pos_fen, pos_color, pos_reached)
@@ -247,7 +244,6 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
       ON CONFLICT (pos_fen) DO NOTHING
     `,
     params: [],
-    functionName: 'buildPositionTree',
     table: 'tpos_positions',
     level,
     isupdate: true,
@@ -255,7 +251,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   })
 
   // Step 2 — backfill ids wherever still NULL, capturing which positions were touched
-  const beforeRes = await db.query({
+  const beforeRes = await table_query({
     caller: 'syncTposFromTgam_backfillBefore',
     query:  `
       UPDATE tgam_game_positions g
@@ -265,13 +261,12 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
       RETURNING p.pos_id
     `,
     params: [],
-    functionName: 'buildPositionTree',
     table: 'tgam_game_positions',
     level,
     isupdate: true,
     severity: 'D'
   })
-  const resultingRes = await db.query({
+  const resultingRes = await table_query({
     caller: 'syncTposFromTgam_backfillResulting',
     query:  `
       UPDATE tgam_game_positions g
@@ -281,7 +276,6 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
       RETURNING p.pos_id
     `,
     params: [],
-    functionName: 'buildPositionTree',
     table: 'tgam_game_positions',
     level,
     isupdate: true,
@@ -289,14 +283,14 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   })
 
   const touchedPosIds = [...new Set<number>([
-    ...beforeRes.rows.map((r: any) => Number(r.pos_id)),
-    ...resultingRes.rows.map((r: any) => Number(r.pos_id))
+    ...beforeRes.map((r: any) => Number(r.pos_id)),
+    ...resultingRes.map((r: any) => Number(r.pos_id))
   ])]
 
   // Step 3 — recompute pos_reached only for touched positions
-  await recomputePosReachedByIds(db, touchedPosIds, level)
+  await recomputePosReachedByIds(touchedPosIds, level)
 
-  const tgamBackfilled = (beforeRes.rowCount ?? 0) + (resultingRes.rowCount ?? 0)
+  const tgamBackfilled = beforeRes.length + resultingRes.length
   const durationMs     = Date.now() - t0
   await logPipelineStep({ step: 3, subStep: 'a', stepName: 'Sync tpos_positions', inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tpos_positions', outputRecs: touchedPosIds.length, durationMs, forceNewRun })
   await logPipelineStep({ step: 3, subStep: 'b', stepName: 'Backfill tgam ids', inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tgam_game_positions', outputRecs: tgamBackfilled, durationMs, forceNewRun: false })
@@ -321,9 +315,6 @@ export async function buildPositionTree(opts: {
   treeBuilt:      number
   remaining:      number
 }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   const level    = opts.level ?? 1
   const caller   = 'buildTreeRoute'
   const limit       = opts.limit ?? 100
@@ -344,7 +335,7 @@ export async function buildPositionTree(opts: {
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const whereClause = conditions.map(c => `(${c})`).join(' AND ')
 
-  const gamesRes = await db.query({
+  const gamesRes = await table_query({
     caller: 'buildPositionTree_fetch',
     query:  `
       SELECT
@@ -356,20 +347,19 @@ export async function buildPositionTree(opts: {
       ${limitClause}
     `,
     params,
-    functionName: 'buildPositionTree',
     table: 'tgd_gamesdecon',
     level,
     severity: 'D'
   })
 
-  const games: GameRecord[] = gamesRes.rows.map((r: any) => ({
+  const games: GameRecord[] = gamesRes.map((r: any) => ({
     gdid:          r.gdid,
     pgn:           r.pgn ?? ''
   }))
 
   await logStart('buildPositionTree', caller, `building position tree, ${games.length} games fetched`, level)
 
-  const snapRes = await db.query({
+  const snapRes = await table_query({
     caller: 'buildPositionTree_snap',
     query:  `SELECT
       (SELECT COUNT(*) FROM (
@@ -383,12 +373,11 @@ export async function buildPositionTree(opts: {
            WHERE gam_gdid = d.gd_gdid
          )) AS snap_remaining`,
     params:       [],
-    functionName: 'buildPositionTree',
     level,
     severity:     'D'
   })
-  const snapProcessed = parseInt(snapRes.rows[0].snap_processed ?? '0')
-  const snapRemaining = parseInt(snapRes.rows[0].snap_remaining ?? '0')
+  const snapProcessed = parseInt(snapRes[0].snap_processed ?? '0')
+  const snapRemaining = parseInt(snapRes[0].snap_remaining ?? '0')
 
   const t0    = Date.now()
 
@@ -415,7 +404,7 @@ export async function buildPositionTree(opts: {
   }
 
   // Phase A — write tgam_game_positions (self-contained, no tpos_positions dependency)
-  await insertGamePositions(db, allRecords, level + 1)
+  await insertGamePositions(allRecords, level + 1)
   // Phase B — derive tpos_positions from what Phase A just wrote
   if (!opts.skipSync) await syncTposFromTgam(level + 1)
 

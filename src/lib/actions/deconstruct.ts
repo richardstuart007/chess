@@ -3,6 +3,7 @@
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { table_count } from 'nextjs-shared/table_count'
+import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
 import { parsePgnHeaders, parsePgnOpening, countMoves } from '../parsePgn'
@@ -45,16 +46,14 @@ export async function getUndeconstructedCount(
   playerUsername: string,
   timeClasses: string[] = INCLUDED_TIME_CLASSES
 ): Promise<number> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
-  const result = await db.query({
+  const rows = await table_query({
     caller: 'getUndeconstructedCount',
+    table: RAW_TABLE,
     query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
-    params: [playerUsername.toLowerCase(), ...timeClasses],
-    functionName: 'getUndeconstructedCount'
+    params: [playerUsername.toLowerCase(), ...timeClasses]
   })
-  return Number(result.rows[0].count)
+  return Number(rows[0].count)
 }
 
 //----------------------------------------------------------------------------------
@@ -79,22 +78,16 @@ export async function deconstructGames(
   const username = playerUsername.toLowerCase()
   await logStart('deconstructGames', 'gameSyncPipeline', `deconstructing raw games for ${username}`, 2)
 
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
-  const result = await db.query({
+  const rawGames = await table_query({
     caller: 'deconstructGames',
     query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
     params: [username, ...timeClasses],
-    functionName: 'deconstructGames',
     table: RAW_TABLE,
     level: 2,
     severity: 'D'
   })
-
-  const rawGames = result.rows
   let processed = 0
   let skipped = 0
   let errors = 0

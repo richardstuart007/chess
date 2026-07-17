@@ -3,6 +3,12 @@
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { table_count } from 'nextjs-shared/table_count'
+import { table_delete } from 'nextjs-shared/table_delete'
+import { table_update } from 'nextjs-shared/table_update'
+import { table_query } from 'nextjs-shared/table_query'
+import { classifyMove } from '@/src/lib/stockfish'
+
+const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
 export type GameEvalRow = {
   san: string
@@ -14,6 +20,7 @@ export type GameEvalRow = {
   bestMoveSan: string
   bestLineSans: string[]
   cpLoss: number
+  cpChange: number
   classification: string
   depth: number
 }
@@ -94,33 +101,30 @@ export async function insertRawGame(data: {
 //  saveGameEvaluations — write per-move Stockfish evals from /analyze to tgev_game_evals
 //----------------------------------------------------------------------------------
 export async function saveGameEvaluations(gdid: number, evaluations: GameEvalRow[]): Promise<void> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-  await db.query({
+  await table_delete({
     caller: 'saveGameEvaluations_delete',
-    query: 'DELETE FROM tgev_game_evals WHERE gev_gdid = $1',
-    params: [gdid],
-    functionName: 'saveGameEvaluations'
+    table: 'tgev_game_evals',
+    whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
+    skipCache: true
   })
   for (let i = 0; i < evaluations.length; i++) {
     const e = evaluations[i]
-    await db.query({
+    await table_write({
       caller: 'saveGameEvaluations_insert',
-      query: `INSERT INTO tgev_game_evals (
-        gev_gdid, gev_move_num,
-        gev_san, gev_fen_before, gev_fen_after,
-        gev_cp, gev_cp_before, gev_cp_loss,
-        gev_best_move, gev_best_move_san, gev_best_line,
-        gev_classification, gev_depth
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      params: [
-        gdid, i,
-        e.san, e.fenBefore, e.fen,
-        e.cp, e.cpBefore, e.cpLoss,
-        e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans),
-        e.classification, e.depth
+      table: 'tgev_game_evals',
+      columnValuePairs: [
+        { column: 'gev_gdid', value: gdid },
+        { column: 'gev_ply', value: i },
+        { column: 'gev_san', value: e.san },
+        { column: 'gev_fen_after', value: e.fen },
+        { column: 'gev_cp', value: e.cp },
+        { column: 'gev_cp_change', value: e.cpChange },
+        { column: 'gev_best_move', value: e.bestMove },
+        { column: 'gev_best_move_san', value: e.bestMoveSan },
+        { column: 'gev_best_line', value: JSON.stringify(e.bestLineSans) },
+        { column: 'gev_depth', value: e.depth }
       ],
-      functionName: 'saveGameEvaluations'
+      skipCache: true
     })
   }
 }
@@ -129,32 +133,33 @@ export async function saveGameEvaluations(gdid: number, evaluations: GameEvalRow
 //  getGameEvals — fetch stored per-move evals from tgev_game_evals
 //----------------------------------------------------------------------------------
 export async function getGameEvals(gdid: number): Promise<GameEvalRow[]> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-  const res = await db.query({
+  const rows = await table_fetch({
     caller: 'getGameEvals',
-    query: `SELECT gev_san, gev_fen_after, gev_fen_before,
-      gev_cp, gev_cp_before, gev_best_move, gev_best_move_san,
-      gev_best_line, gev_cp_loss, gev_classification, gev_depth
-      FROM tgev_game_evals
-      WHERE gev_gdid = $1
-      ORDER BY gev_move_num`,
-    params: [gdid],
-    functionName: 'getGameEvals'
+    table: 'tgev_game_evals',
+    whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
+    orderBy: 'gev_ply',
+    columns: ['gev_san', 'gev_fen_after', 'gev_cp', 'gev_cp_change', 'gev_best_move', 'gev_best_move_san', 'gev_best_line', 'gev_depth'],
+    skipCache: true
   })
-  return res.rows.map((r: any) => ({
-    san:           r.gev_san,
-    fen:           r.gev_fen_after,
-    fenBefore:     r.gev_fen_before,
-    cp:            r.gev_cp      ?? 0,
-    cpBefore:      r.gev_cp_before ?? 0,
-    bestMove:      r.gev_best_move    ?? '',
-    bestMoveSan:   r.gev_best_move_san ?? '',
-    bestLineSans:  Array.isArray(r.gev_best_line) ? r.gev_best_line : [],
-    cpLoss:        r.gev_cp_loss ?? 0,
-    classification: r.gev_classification ?? 'good',
-    depth:         r.gev_depth ?? 0
-  }))
+  return rows.map((r: any, i: number) => {
+    const cp = r.gev_cp ?? 0
+    const cpChange = r.gev_cp_change ?? 0
+    const cpLoss = Math.max(0, -cpChange)
+    return {
+      san:           r.gev_san,
+      fen:           r.gev_fen_after,
+      fenBefore:     i === 0 ? STARTING_FEN : rows[i - 1].gev_fen_after,
+      cp,
+      cpBefore:      i === 0 ? 0 : (rows[i - 1].gev_cp ?? 0),
+      bestMove:      r.gev_best_move    ?? '',
+      bestMoveSan:   r.gev_best_move_san ?? '',
+      bestLineSans:  Array.isArray(r.gev_best_line) ? r.gev_best_line : [],
+      cpLoss,
+      cpChange,
+      classification: classifyMove(cpLoss),
+      depth:         r.gev_depth ?? 0
+    }
+  })
 }
 
 // -----------------------------------------------------------------------
@@ -359,8 +364,6 @@ export async function getOpeningScores(
   dateFrom?: string,
   dateTo?: string
 ): Promise<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const params: (string | number)[] = [username.toLowerCase(), minGames]
   let colorFilter = ''
@@ -377,8 +380,9 @@ export async function getOpeningScores(
     params.push(Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000))
     dateFilter += ` AND gd_end_time <= $${params.length}`
   }
-  const result = await db.query({
+  const rows = await table_query({
     caller: 'getOpeningScores',
+    table: DECON_TABLE,
     query: `
       SELECT
         gd_eco_code,
@@ -398,10 +402,9 @@ export async function getOpeningScores(
       ORDER BY score_pct ${sortDir}
       ${limitClause}
     `,
-    params,
-    functionName: 'getOpeningScores'
+    params
   })
-  return result.rows.map((r: any) => ({
+  return rows.map((r: any) => ({
     eco_code: r.gd_eco_code ?? '',
     opening_name: r.gd_opening_name ?? '',
     games: Number(r.games),
@@ -415,8 +418,6 @@ export async function getTerminationStats(
   dateTo?: string,
   color?: string
 ): Promise<{ termination: string; win: number; loss: number; draw: number; total: number }[]> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const params: (string | number)[] = [username.toLowerCase()]
   let filters = ''
   if (color) {
@@ -431,8 +432,9 @@ export async function getTerminationStats(
     params.push(Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000))
     filters += ` AND gd_end_time <= $${params.length}`
   }
-  const result = await db.query({
+  const rows = await table_query({
     caller: 'getTerminationStats',
+    table: DECON_TABLE,
     query: `
       SELECT
         gd_termination AS termination,
@@ -448,10 +450,9 @@ export async function getTerminationStats(
       GROUP BY gd_termination
       ORDER BY total DESC
     `,
-    params,
-    functionName: 'getTerminationStats'
+    params
   })
-  return result.rows.map((r: any) => ({
+  return rows.map((r: any) => ({
     termination: r.termination,
     win:   Number(r.win),
     loss:  Number(r.loss),
@@ -464,56 +465,54 @@ export async function backfillOpeningMoves(
   username: string,
   batchSize: number = 500
 ): Promise<{ updated: number; remaining: number }> {
-  const { sql } = await import('nextjs-shared/db')
   const { parsePgnOpening } = await import('../parsePgn')
-  const db = await sql()
 
-  const rows = await db.query({
+  const rows = await table_fetch({
     caller: 'backfillOpeningMoves',
-    query: `SELECT gd_gdid, gd_pgn FROM tgd_gamesdecon
-            WHERE gd_player = $1
-              AND gd_opening_moves IS NULL
-            LIMIT $2`,
-    params: [username.toLowerCase(), batchSize],
-    functionName: 'backfillOpeningMoves'
+    table: DECON_TABLE,
+    whereColumnValuePairs: [
+      { column: 'gd_player', value: username.toLowerCase() },
+      { column: 'gd_opening_moves', operator: 'IS NULL', value: null }
+    ],
+    columns: ['gd_gdid', 'gd_pgn'],
+    limit: batchSize
   })
 
-  for (const row of rows.rows) {
+  for (const row of rows) {
     const moves = parsePgnOpening(row.gd_pgn ?? '')
-    await db.query({
+    await table_update({
       caller: 'backfillOpeningMoves_update',
-      query: `UPDATE tgd_gamesdecon SET gd_opening_moves = $1 WHERE gd_gdid = $2`,
-      params: [moves, row.gd_gdid],
-      functionName: 'backfillOpeningMoves'
+      table: DECON_TABLE,
+      columnValuePairs: [{ column: 'gd_opening_moves', value: moves }],
+      whereColumnValuePairs: [{ column: 'gd_gdid', value: row.gd_gdid }]
     })
   }
 
-  const remaining = await db.query({
+  // table_count has no IS NULL support (unlike table_fetch) — table_query needed here
+  const remaining = await table_query({
     caller: 'backfillOpeningMoves_count',
+    table: DECON_TABLE,
     query: `SELECT COUNT(*) FROM tgd_gamesdecon
             WHERE gd_player = $1
               AND gd_opening_moves IS NULL`,
-    params: [username.toLowerCase()],
-    functionName: 'backfillOpeningMoves'
+    params: [username.toLowerCase()]
   })
 
   return {
-    updated: rows.rows.length,
-    remaining: Number(remaining.rows[0]?.count ?? 0)
+    updated: rows.length,
+    remaining: Number(remaining[0]?.count ?? 0)
   }
 }
 
 export async function getEarliestGameDate(usernames: string[]): Promise<string | null> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const placeholders = usernames.map((_, i) => `$${i + 1}`).join(', ')
-  const result = await db.query({
+  const rows = await table_query({
     caller: 'getEarliestGameDate',
+    table: DECON_TABLE,
     query: `SELECT MIN(gd_end_time) AS min_time FROM tgd_gamesdecon WHERE gd_player IN (${placeholders})`,
-    params: usernames.map(u => u.toLowerCase()),
-    functionName: 'getEarliestGameDate'
+    params: usernames.map(u => u.toLowerCase())
   })
-  const minTime = result.rows[0]?.min_time
+  const minTime = rows[0]?.min_time
   if (!minTime) return null
   return new Date(Number(minTime) * 1000).toISOString().slice(0, 10)
 }
@@ -533,9 +532,6 @@ export async function getPlayerRatingOverTime(
   dateFrom?: string,
   dateTo?: string
 ): Promise<RatingDataPoint[]> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   const params: (string | number)[] = [username.toLowerCase()]
   let timeClassFilter = ''
   if (timeClass && timeClass !== '') {
@@ -609,9 +605,9 @@ export async function getPlayerRatingOverTime(
     `
   }
 
-  const result = await db.query({ caller: 'getPlayerRatingOverTime', query, params, functionName: 'getPlayerRatingOverTime' })
+  const rows = await table_query({ caller: 'getPlayerRatingOverTime', table: DECON_TABLE, query, params })
 
-  return result.rows.map((r: any) => ({
+  return rows.map((r: any) => ({
     date: r.date,
     avgRating: r.avg_rating,
     games: r.games

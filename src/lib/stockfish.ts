@@ -11,6 +11,7 @@ export interface MoveEvaluation {
   bestMoveSan: string
   bestLineSans: string[]
   cpLoss: number
+  cpChange: number
   classification: 'blunder' | 'mistake' | 'inaccuracy' | 'good'
   depth: number
 }
@@ -43,7 +44,7 @@ export const STOCKFISH_DEFAULTS = {
   deepAnalysisMultiPv: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_MULTIPV ?? '3', 10)
 }
 
-function classifyMove(cpLoss: number): MoveEvaluation['classification'] {
+export function classifyMove(cpLoss: number): MoveEvaluation['classification'] {
   if (cpLoss > STOCKFISH_DEFAULTS.blunderCp) return 'blunder'
   if (cpLoss > STOCKFISH_DEFAULTS.mistakeCp) return 'mistake'
   if (cpLoss > STOCKFISH_DEFAULTS.inaccuracyCp) return 'inaccuracy'
@@ -325,12 +326,14 @@ export class StockfishEngine {
       const cpBefore = positionEvals[i].cp     // eval before this move (white's perspective)
       const cpAfter = positionEvals[i + 1].cp  // eval after this move (white's perspective)
 
-      // cpLoss from the moving side's perspective
-      // White wants cpAfter >= cpBefore (maintain or increase advantage)
-      // Black wants cpAfter <= cpBefore (decrease white's advantage)
-      const cpLoss = isWhiteMove
-        ? Math.max(0, cpBefore - cpAfter)
-        : Math.max(0, cpAfter - cpBefore)
+      // cpChange from the mover's own perspective — positive = good for the mover,
+      // negative = bad for the mover (matches tgam_game_positions.gam_cp_change's convention)
+      const cpChange = isWhiteMove
+        ? cpAfter - cpBefore
+        : cpBefore - cpAfter
+
+      // cpLoss is just the "how bad was this move" magnitude — never negative
+      const cpLoss = Math.max(0, -cpChange)
 
       // Best move from the position before (engine's recommendation)
       const beforeEval = positionEvals[i]
@@ -353,6 +356,7 @@ export class StockfishEngine {
         bestMoveSan,
         bestLineSans,
         cpLoss,
+        cpChange,
         classification: classifyMove(cpLoss),
         depth: depth ?? STOCKFISH_DEFAULTS.depth
       })

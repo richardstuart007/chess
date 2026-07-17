@@ -1,6 +1,8 @@
 'use server'
 
 import { write_logging } from 'nextjs-shared/write_logging'
+import { table_query } from 'nextjs-shared/table_query'
+import { table_truncate } from 'nextjs-shared/table_truncate'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP } from '../constants'
@@ -22,21 +24,11 @@ import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP } from '../constants'
 //  the same run, so there's no per-run row cap; every eligible candidate is purged.
 //----------------------------------------------------------------------------------
 export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun?: boolean): Promise<{ purged: number }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-
   await logStart('purgeStaleReachOnePositions', 'purgeRoute', 'checking for stale low-reach positions', level)
   const t0 = Date.now()
 
   // Always start clean — tpur_workfile holds only the current run's candidates.
-  await db.query({
-    caller: 'purgeStaleReachOnePositions_truncate',
-    query: `TRUNCATE TABLE tpur_workfile`,
-    params: [],
-    functionName: 'purgeStaleReachOnePositions',
-    table: 'tpur_workfile',
-    level, isupdate: true, severity: 'D'
-  })
+  await table_truncate('tpur_workfile', 'purgeStaleReachOnePositions', true, level, 'D')
 
   // Stage 1 — cheap, indexed reach filter. Stage 2 — confirm every occurrence (before
   // and resulting side, checked as two separate NOT EXISTS rather than one OR'd
@@ -45,7 +37,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   // across two different indexed columns) is outside the grace period. NOT EXISTS
   // rather than a single date check so this stays correct if MIN_REACH_TO_KEEP is ever
   // raised further (multiple occurrences, all must be old).
-  const insertRes = await db.query({
+  const insertRes = await table_query({
     caller: 'purgeStaleReachOnePositions_seed',
     query: `
       INSERT INTO tpur_workfile (pur_pos_id, pur_pos_fen, pur_pos_reached)
@@ -66,14 +58,14 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
           WHERE g.gam_resulting_pos_id = p.pos_id
             AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
         )
+      RETURNING pur_pos_id
     `,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'tpur_workfile',
     level, isupdate: true, severity: 'D'
   })
 
-  const purgedCount = insertRes.rowCount ?? 0
+  const purgedCount = insertRes.length
 
   if (!purgedCount) {
     const durationMs = Date.now() - t0
@@ -86,21 +78,19 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   }
 
   // 1. Delete evaluations for the candidate set
-  const evalsRes = await db.query({
+  const evalsRes = await table_query({
     caller: 'purgeStaleReachOnePositions_evals',
-    query: `DELETE FROM teva_evaluations WHERE eva_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,
+    query: `DELETE FROM teva_evaluations WHERE eva_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING eva_evaid`,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'teva_evaluations',
     level, isupdate: true, severity: 'D'
   })
 
   // 2. Full-delete tgam rows whose own before-position is a candidate.
-  const tgamDeleteRes = await db.query({
+  const tgamDeleteRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tgam_delete',
-    query: `DELETE FROM tgam_game_positions WHERE gam_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,
+    query: `DELETE FROM tgam_game_positions WHERE gam_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING gam_gamid`,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'tgam_game_positions',
     level, isupdate: true, severity: 'D'
   })
@@ -113,30 +103,30 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   // re-qualifies for purge immediately (same old, low-reach position) — a
   // self-perpetuating resurrection cycle. Clearing the FEN here removes what that
   // backfill query keys off.
-  const tgamNullRes = await db.query({
+  const tgamNullRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tgam_null',
     query: `
       UPDATE tgam_game_positions
       SET gam_resulting_pos_id = NULL, gam_resulting_fen = NULL
       WHERE gam_resulting_pos_id IN (SELECT pur_pos_id FROM tpur_workfile)
+      RETURNING gam_gamid
     `,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'tgam_game_positions',
     level, isupdate: true, severity: 'D'
   })
 
   // 4. Resurrection guard — stamp any game now left with zero tgam rows
-  const guardRes = await db.query({
+  const guardRes = await table_query({
     caller: 'purgeStaleReachOnePositions_guard',
     query: `
       UPDATE tgd_gamesdecon d
       SET gd_positions_purged = true
       WHERE NOT d.gd_positions_purged
         AND NOT EXISTS (SELECT 1 FROM tgam_game_positions g WHERE g.gam_gdid = d.gd_gdid)
+      RETURNING d.gd_gdid
     `,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'tgd_gamesdecon',
     level, isupdate: true, severity: 'D'
   })
@@ -145,20 +135,19 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   // every reference to them was either removed with its row (step 2) or nulled out
   // (step 3). tpur_workfile itself is intentionally left populated — an inspectable
   // record of exactly what this run purged, until the next run truncates it.
-  const tposRes = await db.query({
+  const tposRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tpos',
-    query: `DELETE FROM tpos_positions WHERE pos_id IN (SELECT pur_pos_id FROM tpur_workfile)`,
+    query: `DELETE FROM tpos_positions WHERE pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING pos_id`,
     params: [],
-    functionName: 'purgeStaleReachOnePositions',
     table: 'tpos_positions',
     level, isupdate: true, severity: 'D'
   })
 
   const durationMs = Date.now() - t0
-  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge teva_evaluations', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'teva_evaluations', outputRecs: evalsRes.rowCount ?? 0, durationMs, forceNewRun })
-  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: (tgamDeleteRes.rowCount ?? 0) + (tgamNullRes.rowCount ?? 0), durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.rowCount ?? 0, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.rowCount ?? 0, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge teva_evaluations', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'teva_evaluations', outputRecs: evalsRes.length, durationMs, forceNewRun })
+  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.length + tgamNullRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.length, durationMs, forceNewRun: false })
 
   await write_logging({
     lg_functionname: 'purgeStaleReachOnePositions',

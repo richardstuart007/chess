@@ -14,8 +14,6 @@ function AnalyzeContent() {
 
   const gdidParam = searchParams.get('game')
   const username = searchParams.get('user') ?? ''
-  const isFree = searchParams.get('mode') === 'free'
-  const startFen = searchParams.get('fen') ?? undefined
   const fromParam = searchParams.get('from')
   const backPath = fromParam ? decodeURIComponent(fromParam) : '/'
 
@@ -29,8 +27,6 @@ function AnalyzeContent() {
   const [deepAnalysisMultiPv, setDeepAnalysisMultiPv] = useState(STOCKFISH_DEFAULTS.deepAnalysisMultiPv)
 
   useEffect(() => {
-    if (isFree) return
-
     if (!gdidParam) {
       setError('No game specified')
       return
@@ -86,7 +82,7 @@ function AnalyzeContent() {
     }
 
     loadGame()
-  }, [gdidParam, isFree])
+  }, [gdidParam])
 
   if (loading) {
     return <MyLoadingMessage message1='Loading game...' />
@@ -101,12 +97,15 @@ function AnalyzeContent() {
     )
   }
 
+  if (!game) {
+    return <MyLoadingMessage message1='Loading game...' />
+  }
+
   return (
     <ChessBoardView
-      game={isFree ? undefined : (game ?? undefined)}
+      game={game}
       gdid={gdid}
       username={username}
-      startFen={isFree ? startFen : undefined}
       stockfishDepth={stockfishDepth}
       onStockfishDepthChange={setStockfishDepth}
       deepAnalysisDepth={deepAnalysisDepth}

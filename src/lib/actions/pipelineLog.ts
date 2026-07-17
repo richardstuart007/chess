@@ -1,5 +1,7 @@
 'use server'
 
+import { table_query } from 'nextjs-shared/table_query'
+
 //----------------------------------------------------------------------------------
 //  resolvePipRunId — step 1a (the very first sub-step of Fetch & Insert Raw Games)
 //  always allocates a new run id (max + 1), same as any standalone manual step click
@@ -10,18 +12,16 @@
 //  allocated moments earlier.
 //----------------------------------------------------------------------------------
 async function resolvePipRunId(step: number, subStep: string, forceNew: boolean = false): Promise<number> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const isAllocator = step === 1 && subStep === 'a'
-  const res = await db.query({
+  const rows = await table_query({
     caller:       'resolvePipRunId',
+    table:        'tpip_pipelinelog',
     query:        (isAllocator || forceNew)
       ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog`
       : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog`,
-    params:       [],
-    functionName: 'resolvePipRunId'
+    params:       []
   })
-  return res.rows[0].run_id as number
+  return rows[0].run_id as number
 }
 
 //----------------------------------------------------------------------------------
@@ -40,11 +40,10 @@ export async function logPipelineStep(params: {
   durationMs:   number
   forceNewRun?: boolean
 }): Promise<number> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
   const runId = await resolvePipRunId(params.step, params.subStep, params.forceNewRun)
-  const res = await db.query({
+  const rows = await table_query({
     caller:       'logPipelineStep',
+    table:        'tpip_pipelinelog',
     query:        `
       INSERT INTO tpip_pipelinelog
         (pip_step, pip_sub_step, pip_step_name, pip_run_id, pip_input_table, pip_input_recs, pip_output_table, pip_output_recs, pip_duration_ms)
@@ -56,9 +55,9 @@ export async function logPipelineStep(params: {
       params.inputTable, params.inputRecs, params.outputTable, params.outputRecs,
       params.durationMs
     ],
-    functionName: 'logPipelineStep'
+    isupdate:     true
   })
-  return res.rows[0].pip_pipid as number
+  return rows[0].pip_pipid as number
 }
 
 //----------------------------------------------------------------------------------
@@ -75,10 +74,9 @@ export async function getPipelineRates(): Promise<{
   step5: number | null
   step6: number | null
 }> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-  const res = await db.query({
+  const rows = await table_query({
     caller: 'getPipelineRates',
+    table: 'tpip_pipelinelog',
     query: `
       SELECT
         SUM(CASE WHEN pip_step = 1 AND rn <= 10 THEN pip_duration_ms END)::float
@@ -100,10 +98,9 @@ export async function getPipelineRates(): Promise<{
         WHERE pip_output_recs > 0
       ) ranked
     `,
-    params:       [],
-    functionName: 'getPipelineRates'
+    params:       []
   })
-  const r = res.rows[0]
+  const r = rows[0]
   return {
     step1: r.rate1 != null ? Number(r.rate1) : null,
     step2: r.rate2 != null ? Number(r.rate2) : null,
@@ -137,10 +134,9 @@ export async function getLatestPipelineRuns(): Promise<{
   pip_output_recs: number
   pip_duration_ms: number
 }[]> {
-  const { sql } = await import('nextjs-shared/db')
-  const db = await sql()
-  const res = await db.query({
+  const rows = await table_query({
     caller:       'getLatestPipelineRuns',
+    table:        'tpip_pipelinelog',
     query:        `
       SELECT
         pip_step, pip_sub_step, pip_step_name, pip_created, pip_run_id,
@@ -150,8 +146,7 @@ export async function getLatestPipelineRuns(): Promise<{
       WHERE pip_run_id = (SELECT MAX(pip_run_id) FROM tpip_pipelinelog)
       ORDER BY pip_step, pip_sub_step
     `,
-    params:       [],
-    functionName: 'getLatestPipelineRuns'
+    params:       []
   })
-  return res.rows
+  return rows
 }
