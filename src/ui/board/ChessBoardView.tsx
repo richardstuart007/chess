@@ -16,6 +16,7 @@ import { upgradePositionEvaluation, getMovePlayCounts, getGamesForPosition, getM
 import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
+import { formatCp } from '@/src/lib/formatCp'
 import {
   MoveNode,
   AnalysisTree,
@@ -51,12 +52,27 @@ const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
   inaccuracy: 'rgba(234, 179, 8, 0.5)'
 }
 
-function formatCp(cp: number): string {
-  if (Math.abs(cp) >= 10000) {
-    return cp > 0 ? `M${10000 - cp}` : `-M${10000 + cp}`
-  }
-  const val = (cp / 100).toFixed(1)
-  return cp > 0 ? `+${val}` : val
+//----------------------------------------------------------------------------------
+//  getCurrentMoveLabel — "16. Ng6" / "16...Ng6" for whatever position is currently on
+//  the board (matching MoveTree.tsx's own move-number notation), "Starting position"
+//  at the root (no move played yet)
+//----------------------------------------------------------------------------------
+function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
+  if (!currentNode) return 'Starting position'
+  const moveNum = Math.floor((currentPly - 1) / 2) + 1
+  const isWhite = (currentPly - 1) % 2 === 0
+  return `${moveNum}${isWhite ? '.' : '...'} ${currentNode.san}`
+}
+
+//----------------------------------------------------------------------------------
+//  getNextMoveLabel — "8. Nbd2" / "8...Nbd2" for a move about to be played FROM the
+//  position currently on the board (the opposite direction from getCurrentMoveLabel,
+//  which labels the move that led here)
+//----------------------------------------------------------------------------------
+function getNextMoveLabel(currentPly: number, san: string): string {
+  const moveNum = Math.floor(currentPly / 2) + 1
+  const isWhite = currentPly % 2 === 0
+  return `${moveNum}${isWhite ? '.' : '...'} ${san}`
 }
 
 //----------------------------------------------------------------------------------
@@ -202,21 +218,21 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
   }, [currentNode, tree])
 
   // -----------------------------------------------------------------------
-  // Games From This Position — every tracked game (any player) that reached
-  // whatever position is currently on the board. Loads automatically on every
-  // position change; filtered client-side by selectedPositionMove for display.
+  // Games From This Position — this player's own games that reached whatever
+  // position is currently on the board. Loads automatically on every position
+  // change; filtered client-side by selectedPositionMove for display.
   // -----------------------------------------------------------------------
   useEffect(() => {
     const fen = currentNode?.fen ?? tree?.root.fen
     if (!fen) { setPositionGames([]); return }
     let cancelled = false
 
-    getGamesForPosition(fen, gdid).then(games => {
+    getGamesForPosition(fen, username, gdid).then(games => {
       if (!cancelled) setPositionGames(games)
     }).catch(() => { if (!cancelled) setPositionGames([]) })
 
     return () => { cancelled = true }
-  }, [currentNode, tree, gdid])
+  }, [currentNode, tree, gdid, username])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -675,6 +691,10 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
   // Current ply for move numbering
   const currentPly = currentNode ? getPath(currentNode).length : 0
 
+  // Label for whatever position is currently on the board, shown on the Position Analysis /
+  // Moves From This Position box titles
+  const currentMoveLabel = getCurrentMoveLabel(currentNode, currentPly)
+
   // Highlight squares
   const customSquareStyles: Record<string, React.CSSProperties> = {}
   if (currentNode) {
@@ -890,7 +910,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
           </MyBox>
 
           {/* Position Analysis: current-position analysis, live/capped depth */}
-          <MyBox title='Position Analysis'>
+          <MyBox title={`Position Analysis — ${currentMoveLabel}`}>
             <div className='space-y-2'>
               <div className='flex items-center gap-4'>
                 <MySelect
@@ -951,7 +971,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
 
           {/* Moves From This Position: one row per move played from the current board
               position, across all tracked players — click a row to reveal its games below */}
-          <MyBox title='Moves From This Position'>
+          <MyBox title={`Moves From This Position — ${currentMoveLabel}`}>
             {moveSummary.length === 0 ? (
               <p className='text-xs text-gray-400'>No games reached this position.</p>
             ) : (
@@ -962,7 +982,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                       <th className='py-1 pr-2'>Move</th>
                       <th className='py-1 pr-2 text-right'>Times</th>
                       <th className='py-1 pr-2 text-right'>Win%</th>
-                      <th className='py-1 text-right'>CP</th>
+                      <th className='py-1 text-right'>Eval</th>
                     </tr>
                   </thead>
                   <tbody className='divide-y divide-gray-100'>
@@ -979,7 +999,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                           <td className='py-1 pr-2 text-right tabular-nums'>{m.mov_times}</td>
                           <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{wp}%</td>
                           <td className={`py-1 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                            {m.mov_result_cp != null ? (m.mov_result_cp > 0 ? `+${m.mov_result_cp}` : `${m.mov_result_cp}`) : '—'}
+                            {m.mov_result_cp != null ? formatCp(m.mov_result_cp) : '—'}
                           </td>
                         </tr>
                       )
@@ -993,7 +1013,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
           {/* Games — <move>: individual games that played the clicked move, filtered
               client-side from positionGames — click a row to switch the board to that game */}
           {selectedPositionMove && (
-            <MyBox title={`Games — ${selectedPositionMove}`}>
+            <MyBox title={`Games — ${getNextMoveLabel(currentPly, selectedPositionMove)}`}>
               {(() => {
                 const filteredGames = positionGames.filter(g => g.move_played === selectedPositionMove)
                 if (filteredGames.length === 0) {
@@ -1004,8 +1024,11 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                     <table className='w-full text-xs'>
                       <thead>
                         <tr className='text-left text-gray-500 border-b border-gray-200'>
-                          <th className='py-1 pr-2'>Player</th>
                           <th className='py-1 pr-2 text-center'>Result</th>
+                          <th className='py-1 pr-2'>Date</th>
+                          <th className='py-1 pr-2 text-right'>Opp Rating</th>
+                          <th className='py-1 pr-2'>Termination</th>
+                          <th className='py-1 pr-2 text-right'>Final Eval</th>
                           <th className='py-1 text-right'>Game</th>
                         </tr>
                       </thead>
@@ -1019,9 +1042,14 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                               router.push(`/analyze?game=${g.gameId}&user=${g.player}&from=${encodeURIComponent(backPath)}`)
                             }}
                           >
-                            <td className='py-1 pr-2 font-medium'>{g.player}</td>
                             <td className='py-1 pr-2 text-center'>
                               {g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : g.result === 'draw' ? 'D' : '—'}
+                            </td>
+                            <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>
+                            <td className='py-1 pr-2 text-right tabular-nums'>{g.opponentRating ?? '—'}</td>
+                            <td className='py-1 pr-2 text-gray-500'>{g.termination ?? '—'}</td>
+                            <td className={`py-1 pr-2 text-right tabular-nums font-mono ${g.finalEval != null && g.finalEval < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                              {g.finalEval != null ? formatCp(g.finalEval) : '—'}
                             </td>
                             <td className='py-1 text-right text-gray-500'>{g.gameId ?? '—'}</td>
                           </tr>

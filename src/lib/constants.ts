@@ -103,6 +103,15 @@ export const HABITS_ITEMS_PER_PAGE = 10
 //
 export const POSITION_GAMES_LIMIT = 50
 
+//
+//  GAME_ENDINGS_CONCURRENCY — number of concurrent Stockfish processes used by
+//  evaluateGameEndings for games whose final position isn't already tracked (native
+//  binary path only — the WASM path stays single-instance since lite-single is
+//  explicitly single-threaded with no worker-thread offload, so parallel WASM
+//  instances would just interleave on one thread, not run concurrently).
+//
+export const GAME_ENDINGS_CONCURRENCY = 4
+
 export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
   stricade: ['blitz'],
   astarrboy: ['blitz', 'rapid']

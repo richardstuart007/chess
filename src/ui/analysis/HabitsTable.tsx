@@ -9,6 +9,7 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { MIN_ANALYSIS_MOVE } from '@/src/lib/constants'
 import { winPct } from '@/src/lib/winPct'
+import { formatCp } from '@/src/lib/formatCp'
 
 interface HabitRow {
   pos_id:      number
@@ -51,12 +52,6 @@ function cpClass(cp: number | null): string {
   if (cp === null) return 'text-gray-400'
   if (cp < 0) return 'text-red-600 font-semibold'
   return 'text-green-700'
-}
-
-function cpLabel(cp: number | null): string {
-  if (cp === null) return '—'
-  const pawns = cp / 100
-  return `${pawns > 0 ? '+' : ''}${pawns.toFixed(1)}`
 }
 
 //----------------------------------------------------------------------------------
@@ -110,7 +105,7 @@ export default function HabitsTable({
             <th className="px-3 py-2 w-16">Quality</th>
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
-                Pos CP
+                Pos Eval
                 <MyHelpField text="Stockfish's evaluation of the position before your move, independent of what you played." />
               </span>
             </th>
@@ -130,7 +125,7 @@ export default function HabitsTable({
             </th>
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
-                CP
+                Eval
                 <MyHelpField text="Stockfish's evaluation of the position after this move, white's perspective." />
               </span>
             </th>
@@ -224,7 +219,7 @@ export default function HabitsTable({
             <tr
               key={`${row.pos_id}-${row.move_san}-${i}`}
               className="hover:bg-gray-50 cursor-pointer"
-              onClick={() => router.push(`/position/${row.pos_id}`)}
+              onClick={() => router.push(`/position/${row.pos_id}?player=${row.player}`)}
             >
               {/* Player */}
               <td className="px-3 py-2 text-gray-600">
@@ -250,7 +245,7 @@ export default function HabitsTable({
 
               {/* Position CP — score before the move */}
               <td className={`px-3 py-2 text-right tabular-nums font-mono text-xs ${cpClass(row.pos_cp)}`}>
-                {cpLabel(row.pos_cp)}
+                {row.pos_cp != null ? formatCp(row.pos_cp) : '—'}
               </td>
 
               {/* Move */}
@@ -275,7 +270,7 @@ export default function HabitsTable({
 
               {/* CP */}
               <td className={`px-3 py-2 text-right tabular-nums font-mono ${cpClass(row.move_cp)}`}>
-                {cpLabel(row.move_cp)}
+                {row.move_cp != null ? formatCp(row.move_cp) : '—'}
               </td>
 
               {/* Dismiss / Restore */}

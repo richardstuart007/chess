@@ -2,12 +2,14 @@
 
 import { spawn } from 'child_process'
 import { createInterface } from 'readline'
+import { Chess } from 'chess.js'
 import { saveEvaluation } from './chessdb'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_REACH_TO_KEEP } from '../constants'
+import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY } from '../constants'
+import { truncateFen } from '../fen'
 
 //----------------------------------------------------------------------------------
 //  StockfishEngineBase — shared UCI line protocol (queueing, evaluate parsing);
@@ -310,4 +312,189 @@ export async function enrichPositionsStockfish(opts: {
   const remaining = await countRemainingPositions(level)
   await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
   return { processed, errors, remaining }
+}
+
+//----------------------------------------------------------------------------------
+//  getGamesNeedingFinalEval — games whose actual final position hasn't been evaluated
+//  yet, latest games first. Independent of the position-tree pipeline (tpos_positions /
+//  tgam_game_positions) entirely — reads/writes tgd_gamesdecon directly, since the
+//  final position of most games falls well past MAX_ANALYSIS_MOVE, the position tree's
+//  own tracking ceiling. No gd_pgn IS NULL check needed — deconstructGames() already
+//  skips any raw game with no PGN before it's ever written to tgd_gamesdecon.
+//----------------------------------------------------------------------------------
+async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{ gdid: number; pgn: string }[]> {
+  const params: number[] = []
+  if (limit > 0) params.push(limit)
+  const rows = await table_query({
+    caller: 'getGamesNeedingFinalEval',
+    query: `
+      SELECT gd_gdid, gd_pgn
+      FROM tgd_gamesdecon
+      WHERE gd_final_eval IS NULL
+      ORDER BY gd_gdid DESC
+      ${limit > 0 ? `LIMIT $${params.length}` : ''}
+    `,
+    params,
+    table: 'tgd_gamesdecon',
+    level,
+    severity: 'D'
+  })
+  return rows.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
+}
+
+//----------------------------------------------------------------------------------
+//  findExistingEval — exact-FEN lookup against the already-evaluated position tree;
+//  returns the stored eva_cp if this exact position is already tracked/evaluated
+//  (common for games that ended within the tracked move range), avoiding a redundant
+//  Stockfish call.
+//----------------------------------------------------------------------------------
+async function findExistingEval(truncatedFen: string, level: number): Promise<number | null> {
+  const rows = await table_query({
+    caller: 'findExistingEval',
+    query: `
+      SELECT e.eva_cp
+      FROM tpos_positions p
+      JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+      WHERE p.pos_fen = $1 AND e.eva_cp IS NOT NULL
+    `,
+    params: [truncatedFen],
+    table: 'tpos_positions',
+    level,
+    severity: 'D'
+  })
+  return rows[0]?.eva_cp != null ? Number(rows[0].eva_cp) : null
+}
+
+//----------------------------------------------------------------------------------
+//  evaluateGameEndings — populates tgd_gamesdecon.gd_final_eval for each game's actual
+//  final position (replayed in full via chess.js, not capped like the position-tree
+//  pipeline). Two phases: (1) reuse — an exact-FEN match against the already-evaluated
+//  position tree, free, common for games that ended within the tracked move range; (2)
+//  fresh Stockfish evaluation for whatever's left, run across multiple concurrent
+//  engine instances when using the native binary (real OS processes, genuine
+//  parallelism) — the WASM path stays single-instance since lite-single is explicitly
+//  single-threaded with no worker-thread offload, so parallel WASM instances would only
+//  interleave on one thread, not actually run concurrently.
+//----------------------------------------------------------------------------------
+export async function evaluateGameEndings(opts: {
+  limit?:       number
+  depth?:       number
+  level?:       number
+  forceNewRun?: boolean
+}): Promise<{ processed: number; reused: number; errors: number; remaining: number }> {
+  const binPath = process.env.STOCKFISH_PATH ?? ''
+
+  const depth       = opts.depth ?? 16
+  const limit       = opts.limit ?? DEFAULT_BATCH_SIZE
+  const level       = opts.level ?? 1
+  const concurrency = binPath ? GAME_ENDINGS_CONCURRENCY : 1
+
+  await logStart('evaluateGameEndings', 'evaluateGameEndingsRoute', `evaluating game endings at depth ${depth}`, level)
+  const t0 = Date.now()
+
+  const games = await getGamesNeedingFinalEval(limit, level)
+
+  if (games.length === 0) {
+    await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', inputTable: 'tgd_gamesdecon', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logEnd('evaluateGameEndings', 'evaluateGameEndingsRoute', '0 processed, 0 errors, 0 remaining', level)
+    return { processed: 0, reused: 0, errors: 0, remaining: 0 }
+  }
+
+  let reused = 0
+  let errors = 0
+  const needsEval: { gdid: number; fen: string }[] = []
+
+  // Phase 1 — exact-match reuse pass (cheap DB lookups only, no engine involved)
+  for (const game of games) {
+    try {
+      const chess       = new Chess()
+      chess.loadPgn(game.pgn)
+      const finalFen    = chess.fen()
+      const finalFenKey = truncateFen(finalFen)
+
+      const existingCp = await findExistingEval(finalFenKey, level)
+      if (existingCp != null) {
+        await table_query({
+          caller: 'evaluateGameEndings_reuse',
+          table: 'tgd_gamesdecon',
+          query: `UPDATE tgd_gamesdecon SET gd_final_eval = $1 WHERE gd_gdid = $2`,
+          params: [existingCp, game.gdid],
+          isupdate: true
+        })
+        reused++
+      } else {
+        needsEval.push({ gdid: game.gdid, fen: finalFen })
+      }
+    } catch (err) {
+      console.error(`evaluateGameEndings: error on game ${game.gdid}`, err)
+      await write_logging({
+        lg_functionname: 'evaluateGameEndings',
+        lg_caller: 'evaluateGameEndingsRoute',
+        lg_msg: `error on game ${game.gdid}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
+      errors++
+    }
+  }
+
+  // Phase 2 — fresh Stockfish evaluation for whatever wasn't already tracked,
+  // spread across concurrent engine instances
+  let processed = reused
+
+  async function evaluateWorker(engine: StockfishEngineBase, items: { gdid: number; fen: string }[]): Promise<void> {
+    for (const item of items) {
+      try {
+        const sideToMove = item.fen.split(' ')[1]
+        const { cp: rawCp } = await engine.evaluate(item.fen, depth)
+        const whiteCp = sideToMove === 'b' ? -rawCp : rawCp
+
+        await table_query({
+          caller: 'evaluateGameEndings_update',
+          table: 'tgd_gamesdecon',
+          query: `UPDATE tgd_gamesdecon SET gd_final_eval = $1 WHERE gd_gdid = $2`,
+          params: [whiteCp, item.gdid],
+          isupdate: true
+        })
+        processed++
+      } catch (err) {
+        console.error(`evaluateGameEndings: error on game ${item.gdid}`, err)
+        await write_logging({
+          lg_functionname: 'evaluateGameEndings',
+          lg_caller: 'evaluateGameEndingsRoute',
+          lg_msg: `error on game ${item.gdid}: ` + (err as Error).message,
+          lg_severity: 'E'
+        })
+        errors++
+      }
+    }
+  }
+
+  if (needsEval.length > 0) {
+    const engineCount = Math.min(concurrency, needsEval.length)
+    const engines: StockfishEngineBase[] = Array.from({ length: engineCount }, () =>
+      binPath ? new StockfishProcess(binPath) : new StockfishWasm()
+    )
+    await Promise.all(engines.map(e => e.init()))
+
+    const buckets: { gdid: number; fen: string }[][] = Array.from({ length: engineCount }, () => [])
+    needsEval.forEach((item, i) => buckets[i % engineCount].push(item))
+
+    await Promise.all(engines.map((engine, i) => evaluateWorker(engine, buckets[i])))
+    engines.forEach(e => e.quit())
+  }
+
+  await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgd_gamesdecon', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+
+  const remainingRes = await table_query({
+    caller: 'evaluateGameEndings_remaining',
+    query: `SELECT COUNT(*) AS cnt FROM tgd_gamesdecon WHERE gd_final_eval IS NULL`,
+    params: [],
+    table: 'tgd_gamesdecon',
+    level,
+    severity: 'D'
+  })
+  const remaining = parseInt(remainingRes[0]?.cnt ?? '0')
+
+  await logEnd('evaluateGameEndings', 'evaluateGameEndingsRoute', `${processed} processed (${reused} reused), ${errors} errors, ${remaining} remaining`, level)
+  return { processed, reused, errors, remaining }
 }

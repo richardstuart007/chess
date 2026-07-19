@@ -9,7 +9,7 @@ import PipelineHelp from '@/src/ui/analysis/PipelineHelp'
 import { MyHelpStep } from 'nextjs-shared/MyHelpStep'
 import { getPlayers } from '@/src/lib/actions/players'
 import { runGameSync } from '@/src/lib/actions/sync'
-import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
+import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, refreshGameEndingsStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
 import { getPipelineRates, getLatestPipelineRuns } from '@/src/lib/actions/pipelineLog'
 import EvalProgress from '@/src/ui/analysis/EvalProgress'
 import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS } from '@/src/lib/constants'
@@ -66,6 +66,9 @@ const JOB_GROUPS: {
   { step: 7, groupLabel: 'Build Habits', schedule: '5:00am', subJobs: [
       { subStep: 'a', label: 'Build Habits' },
     ] },
+  { step: 8, groupLabel: 'Evaluate Game Endings', schedule: '5:20am', subJobs: [
+      { subStep: 'a', label: 'Evaluate Game Endings' },
+    ] },
 ]
 
 function n(val: number | undefined): string {
@@ -114,6 +117,9 @@ WHERE gp.gam_cp_change IS NULL
 const SQL_STATUS_HABITS =
 `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE hab_dismissed) AS dismissed FROM thab_habits;`
 
+const SQL_STATUS_GAME_ENDINGS =
+`SELECT COUNT(*) AS remaining FROM tgd_gamesdecon WHERE gd_final_eval IS NULL;`
+
 const SQL_STATUS_PURGE =
 `SELECT COUNT(*) AS eligible
 FROM tpos_positions p
@@ -159,6 +165,7 @@ export default function PipelinePage() {
   const [sCp, setSCp] = useState<{ pending: number } | null>(null)
   const [sPurge, setSPurge] = useState<{ eligible: number } | null>(null)
   const [sHabits, setSHabits] = useState<{ total: number; dismissed: number } | null>(null)
+  const [sGameEndings, setSGameEndings] = useState<{ evaluated: number; remaining: number } | null>(null)
   const [s1Loading, setS1Loading] = useState(false)
   const [s3Loading, setS3Loading] = useState(false)
   const [s3bLoading, setS3bLoading] = useState(false)
@@ -166,7 +173,8 @@ export default function PipelinePage() {
   const [sCpLoading, setSCpLoading] = useState(false)
   const [sPurgeLoading, setSPurgeLoading] = useState(false)
   const [sHabitsLoading, setSHabitsLoading] = useState(false)
-  const [rates, setRates] = useState<{ step1: number|null; step2: number|null; step3: number|null; step4: number|null; step5: number|null; step6: number|null } | null>(null)
+  const [sGameEndingsLoading, setSGameEndingsLoading] = useState(false)
+  const [rates, setRates] = useState<{ step1: number|null; step2: number|null; step3: number|null; step4: number|null; step5: number|null; step6: number|null; step8: number|null } | null>(null)
   const [runs, setRuns] = useState<LatestRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runAllRunning, setRunAllRunning] = useState(false)
@@ -179,12 +187,13 @@ export default function PipelinePage() {
   async function doRefreshCp() { setSCpLoading(true); setSCp(await refreshCpChangeStatus()); setSCpLoading(false) }
   async function doRefreshPurge() { setSPurgeLoading(true); setSPurge(await refreshPurgeStatus()); setSPurgeLoading(false) }
   async function doRefreshHabits() { setSHabitsLoading(true); setSHabits(await refreshHabitsStatus()); setSHabitsLoading(false) }
+  async function doRefreshGameEndings() { setSGameEndingsLoading(true); setSGameEndings(await refreshGameEndingsStatus()); setSGameEndingsLoading(false) }
 
   const [refreshAllLoading, setRefreshAllLoading] = useState(false)
   async function doRefreshAll() {
     setRefreshAllLoading(true)
-    setS1Loading(true); setS3Loading(true); setS3bLoading(true); setS4Loading(true); setSCpLoading(true); setSPurgeLoading(true); setSHabitsLoading(true)
-    const [r1, r3, r3b, r4, rCp, rPurge, rHabits] = await Promise.all([
+    setS1Loading(true); setS3Loading(true); setS3bLoading(true); setS4Loading(true); setSCpLoading(true); setSPurgeLoading(true); setSHabitsLoading(true); setSGameEndingsLoading(true)
+    const [r1, r3, r3b, r4, rCp, rPurge, rHabits, rGameEndings] = await Promise.all([
       refreshStep1(),
       refreshStep3(),
       refreshTposStatus(),
@@ -192,9 +201,10 @@ export default function PipelinePage() {
       refreshCpChangeStatus(),
       refreshPurgeStatus(),
       refreshHabitsStatus(),
+      refreshGameEndingsStatus(),
     ])
-    setS1(r1); setS3(r3); setS3b(r3b); setS4(r4); setSCp(rCp); setSPurge(rPurge); setSHabits(rHabits)
-    setS1Loading(false); setS3Loading(false); setS3bLoading(false); setS4Loading(false); setSCpLoading(false); setSPurgeLoading(false); setSHabitsLoading(false)
+    setS1(r1); setS3(r3); setS3b(r3b); setS4(r4); setSCp(rCp); setSPurge(rPurge); setSHabits(rHabits); setSGameEndings(rGameEndings)
+    setS1Loading(false); setS3Loading(false); setS3bLoading(false); setS4Loading(false); setSCpLoading(false); setSPurgeLoading(false); setSHabitsLoading(false); setSGameEndingsLoading(false)
     doRefreshRuns()
     setRefreshAllLoading(false)
   }
@@ -216,6 +226,8 @@ export default function PipelinePage() {
       setSPurge(purgeInit)
       const habitsInit = await refreshHabitsStatus()
       setSHabits(habitsInit)
+      const gameEndingsInit = await refreshGameEndingsStatus()
+      setSGameEndings(gameEndingsInit)
       setRuns(await getLatestPipelineRuns())
     }
     load()
@@ -391,6 +403,32 @@ export default function PipelinePage() {
     }
   }
 
+  // ── Step 8: Evaluate Game Endings ──────────────────────────────────────────
+  const [gameEndingsRunning, setGameEndingsRunning] = useState(false)
+  const [gameEndingsResult,  setGameEndingsResult]  = useState<{ processed: number; reused: number; errors: number; remaining: number } | null>(null)
+  const [gameEndingsError,   setGameEndingsError]   = useState('')
+
+  async function handleEvaluateGameEndings(forceNewRun: boolean = true) {
+    setGameEndingsRunning(true)
+    setGameEndingsResult(null)
+    setGameEndingsError('')
+    try {
+      const params = new URLSearchParams({ depth: String(globalDepth), limit: String(globalBatchSize) })
+      if (forceNewRun) params.set('newRun', 'true')
+      const res  = await fetch(`/api/analysis/evaluate-game-endings?${params}`)
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error ?? 'Failed')
+      setGameEndingsResult(data)
+      doRefreshGameEndings()
+      getPipelineRates().then(setRates)
+      doRefreshRuns()
+    } catch (err) {
+      setGameEndingsError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setGameEndingsRunning(false)
+    }
+  }
+
   // ── Run All: every job in scheduled order, continuing past a failed step ──
   async function handleRunAll() {
     setRunAllRunning(true)
@@ -408,6 +446,8 @@ export default function PipelinePage() {
     await handleUpdateCp(false)
     await doRefreshRuns()
     await handleBuildHabits(false)
+    await doRefreshRuns()
+    await handleEvaluateGameEndings(false)
     await doRefreshRuns()
     setRunAllRunning(false)
   }
@@ -807,6 +847,47 @@ export default function PipelinePage() {
           {habitsResult && (
             <p className={`text-xs ${habitsResult.ok ? 'text-green-600' : 'text-red-600'}`}>
               {habitsResult.ok ? `Done — ${habitsResult.built} habit rows built/refreshed` : `Error: ${habitsResult.error}`}
+            </p>
+          )}
+        </div>
+      </MyBox>
+
+      {/* Step 8 */}
+      <MyBox>
+        <div className='space-y-2'>
+          <div className='flex items-center gap-2 mb-2'>
+            <h3 className='text-xs font-bold'>8. Evaluate Game Endings</h3>
+            <MyHelpStep
+              title='8. Evaluate Game Endings'
+              input={['tgd_gamesdecon — games with a PGN whose gd_final_eval is still NULL']}
+              processing="Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE — then evaluates it with Stockfish and normalizes to white's perspective. Independent of tpos_positions/tgam_game_positions entirely: reads and writes tgd_gamesdecon directly. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings)."
+              output={['tgd_gamesdecon.gd_final_eval — Stockfish evaluation (white perspective) of each game\'s actual final position']}
+              consumers={[
+                'Analyze page — "Games From This Position" panel\'s Final Eval column',
+              ]}
+            />
+            <MyButton onClick={doRefreshGameEndings} disabled={sGameEndingsLoading} overrideClass='h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sGameEndingsLoading ? '…' : '↻'}</MyButton>
+          </div>
+          <div className='space-y-1'>
+            <div className='flex items-center gap-3 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-md text-xs text-gray-600'>
+              <span>remaining: <strong className='text-gray-800'>{n(sGameEndings?.remaining)}</strong></span>
+              {eta(sGameEndings?.remaining, rates?.step8 ?? null) && <span className='text-gray-400 text-xs'>{eta(sGameEndings?.remaining, rates?.step8 ?? null)}</span>}
+              <span className='text-gray-300'>·</span>
+              <StatusBadge complete={sGameEndings === null ? null : sGameEndings.remaining === 0} />
+              <MyHelp label='SQL' text={SQL_STATUS_GAME_ENDINGS} />
+            </div>
+          </div>
+          <div className='flex flex-wrap items-end gap-2'>
+            <MyButton onClick={() => handleEvaluateGameEndings()} disabled={gameEndingsRunning} overrideClass={gameEndingsRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}>
+              {gameEndingsRunning ? 'Running...' : 'Evaluate Game Endings'}
+            </MyButton>
+          </div>
+          {gameEndingsError && <p className='text-xs text-red-600'>{gameEndingsError}</p>}
+          {gameEndingsResult && (
+            <p className={`text-xs ${gameEndingsResult.remaining === 0 ? 'text-green-600' : 'text-blue-700'}`}>
+              Done — {gameEndingsResult.processed} evaluated ({gameEndingsResult.reused} reused from tracked positions)
+              {gameEndingsResult.errors > 0 ? `, ${gameEndingsResult.errors} errors` : ''}
+              {' · '}{gameEndingsResult.remaining > 0 ? `${gameEndingsResult.remaining.toLocaleString()} remaining — run again` : 'all done'}
             </p>
           )}
         </div>

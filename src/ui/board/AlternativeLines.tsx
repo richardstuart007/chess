@@ -4,6 +4,7 @@ import { useState } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MultiPvResult } from '@/src/lib/analysisTree'
 import { getMovePlayCount } from '@/src/lib/analysis/chessdb'
+import { formatCp } from '@/src/lib/formatCp'
 
 interface AlternativeLinesProps {
   results: MultiPvResult[]
@@ -12,14 +13,6 @@ interface AlternativeLinesProps {
   onSelectLine: (line: MultiPvResult) => void
   positionFen?: string
   username: string
-}
-
-function formatCp(cp: number): string {
-  if (Math.abs(cp) >= 10000) {
-    return cp > 0 ? `M${10000 - cp}` : `-M${10000 + cp}`
-  }
-  const val = (cp / 100).toFixed(1)
-  return cp > 0 ? `+${val}` : val
 }
 
 function formatLine(lineSans: string[], ply: number): string {

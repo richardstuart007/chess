@@ -94,6 +94,18 @@ const STEPS = [
       'thab_habits — one row per player/position/move habit: times played, wins, losses, worst-occurrence CP change, dismissed flag',
     ],
   },
+  {
+    num: '8',
+    title: 'Evaluate Game Endings',
+    input: [
+      'tgd_gamesdecon — games whose gd_final_eval is still NULL, latest games (gd_gdid DESC) first',
+    ],
+    processing:
+      "Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE. Phase 1: an exact-FEN lookup against the already-evaluated position tree (tpos_positions/teva_evaluations) reuses that eval for free when the game ended within the tracked move range — common for quick checkmates/resignations. Phase 2: whatever's left gets a fresh Stockfish evaluation, normalized to white's perspective, spread across GAME_ENDINGS_CONCURRENCY concurrent engine instances when running the native binary (real parallelism); the WASM path stays single-instance since lite-single has no worker-thread offload. Independent of tpos_positions/tgam_game_positions as a write target: reads and writes tgd_gamesdecon directly. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings).",
+    output: [
+      "tgd_gamesdecon.gd_final_eval — Stockfish evaluation (white perspective) of each game's actual final position",
+    ],
+  },
 ]
 
 const ROW_COUNT_SQL =

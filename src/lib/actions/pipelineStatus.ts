@@ -169,6 +169,24 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
   return { total: parseInt(r.total ?? '0'), dismissed: parseInt(r.dismissed ?? '0') }
 }
 
+//----------------------------------------------------------------------------------
+//  refreshGameEndingsStatus — evaluated/remaining counts for tgd_gamesdecon.gd_final_eval,
+//  independent of the position-tree pipeline entirely (reads tgd_gamesdecon directly).
+//----------------------------------------------------------------------------------
+export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; remaining: number }> {
+  const rows = await table_query({
+    caller: 'refreshGameEndingsStatus', params: [],
+    query: `SELECT
+      (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NOT NULL)  AS evaluated,
+      (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NULL)      AS remaining`
+  })
+  const r = rows[0]
+  return {
+    evaluated: parseInt(r.evaluated ?? '0'),
+    remaining: parseInt(r.remaining ?? '0'),
+  }
+}
+
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const candidatesRes = await table_query({
     caller: 'refreshPurgeStatus_find', params: [],

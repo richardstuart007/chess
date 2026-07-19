@@ -20,7 +20,7 @@ const STORAGE_KEY = 'habits_filters'
 const HABITS_ITEMS = [
   { heading: 'What is shown',  body: 'Moves you play repeatedly from the same position — good or bad. Use the Quality filter to switch between habits that cost you centipawns and ones that gained them. Clicking a row opens all moves (good and bad) for that position.' },
   { heading: 'Click a row',    body: 'Opens Position Detail: see every move you\'ve played from that position, win/loss stats, the Stockfish best move, AI coaching advice, and your full game history there.' },
-  { heading: 'CP column',      body: 'Stockfish\'s evaluation of the position after you play this move (white\'s perspective). Sorted by biggest impact first by default.' },
+  { heading: 'Eval column',    body: 'Stockfish\'s evaluation of the position after you play this move (white\'s perspective). Sorted by biggest impact first by default.' },
   { heading: 'Prerequisites',  body: 'Build Position Tree then Evaluate Positions must both be run via the Pipeline tab.' },
 ]
 

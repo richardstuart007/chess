@@ -73,6 +73,7 @@ export async function getPipelineRates(): Promise<{
   step4: number | null
   step5: number | null
   step6: number | null
+  step8: number | null
 }> {
   const rows = await table_query({
     caller: 'getPipelineRates',
@@ -90,7 +91,9 @@ export async function getPipelineRates(): Promise<{
         SUM(CASE WHEN pip_step = 5 AND rn <= 10 THEN pip_duration_ms END)::float
           / NULLIF(SUM(CASE WHEN pip_step = 5 AND rn <= 10 THEN pip_output_recs END), 0) AS rate5,
         SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_duration_ms END)::float
-          / NULLIF(SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_output_recs END), 0) AS rate6
+          / NULLIF(SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_output_recs END), 0) AS rate6,
+        SUM(CASE WHEN pip_step = 8 AND rn <= 10 THEN pip_duration_ms END)::float
+          / NULLIF(SUM(CASE WHEN pip_step = 8 AND rn <= 10 THEN pip_output_recs END), 0) AS rate8
       FROM (
         SELECT pip_step, pip_output_recs, pip_duration_ms,
                ROW_NUMBER() OVER (PARTITION BY pip_step ORDER BY pip_pipid DESC) AS rn
@@ -108,6 +111,7 @@ export async function getPipelineRates(): Promise<{
     step4: r.rate4 != null ? Number(r.rate4) : null,
     step5: r.rate5 != null ? Number(r.rate5) : null,
     step6: r.rate6 != null ? Number(r.rate6) : null,
+    step8: r.rate8 != null ? Number(r.rate8) : null,
   }
 }
 

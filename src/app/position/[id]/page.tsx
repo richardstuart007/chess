@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import PositionDetail from '@/src/ui/analysis/PositionDetail'
 import { getPositionDetail } from '@/src/lib/analysis/chessdb'
@@ -9,16 +9,18 @@ import { getPositionDetail } from '@/src/lib/analysis/chessdb'
 function PositionDetailContent() {
   const params = useParams()
   const posId = Number(params.id)
+  const searchParams = useSearchParams()
+  const player = searchParams.get('player') ?? undefined
 
   const [data, setData]     = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getPositionDetail(posId).then(d => {
+    getPositionDetail(posId, player).then(d => {
       setData(d)
       setLoading(false)
     })
-  }, [posId])
+  }, [posId, player])
 
   if (loading) return <MyLoadingMessage message1="Loading position…" />
 

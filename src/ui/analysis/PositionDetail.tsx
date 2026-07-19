@@ -8,6 +8,7 @@ import MyBox from 'nextjs-shared/MyBox'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 import { winPct } from '@/src/lib/winPct'
+import { formatCp } from '@/src/lib/formatCp'
 
 interface GameHit {
   player:      string
@@ -128,9 +129,9 @@ export default function PositionDetail({
               <span className="font-medium">{playerColor}</span>
             </div>
             <div className="flex justify-between px-3 py-1.5">
-              <span className="text-gray-500">Position CP</span>
+              <span className="text-gray-500">Position Eval</span>
               <span className={`font-mono font-medium ${positionCp != null && positionCp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                {positionCp != null ? (positionCp > 0 ? `+${positionCp}` : `${positionCp}`) : '—'}
+                {positionCp != null ? formatCp(positionCp) : '—'}
               </span>
             </div>
             <div className="flex justify-between px-3 py-1.5">
@@ -142,7 +143,7 @@ export default function PositionDetail({
               <span className="font-mono font-medium">
                 {bestMoveSan ?? '—'}
                 {positionCp != null && (
-                  <span className="ml-1 text-gray-400 text-xs">({positionCp} cp)</span>
+                  <span className="ml-1 text-gray-400 text-xs">({formatCp(positionCp)})</span>
                 )}
               </span>
             </div>
@@ -177,7 +178,7 @@ export default function PositionDetail({
                     <th className="py-1.5 pr-3">Move</th>
                     <th className="py-1.5 pr-3 text-right">Times</th>
                     <th className="py-1.5 pr-3 text-right">Win%</th>
-                    <th className="py-1.5 text-right">CP</th>
+                    <th className="py-1.5 text-right">Eval</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -202,7 +203,7 @@ export default function PositionDetail({
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{wp}%</td>
                         <td className={`py-1.5 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {m.mov_result_cp != null ? (m.mov_result_cp > 0 ? `+${m.mov_result_cp}` : `${m.mov_result_cp}`) : '—'}
+                          {m.mov_result_cp != null ? formatCp(m.mov_result_cp) : '—'}
                         </td>
                       </tr>
                     )

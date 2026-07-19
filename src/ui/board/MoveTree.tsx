@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { AnalysisTree, MoveNode } from '@/src/lib/analysisTree'
 import { MoveEvaluation } from '@/src/lib/stockfish'
+import { formatCp } from '@/src/lib/formatCp'
 
 interface MoveTreeProps {
   tree: AnalysisTree
@@ -24,14 +25,6 @@ function annotationSymbol(ev?: MoveEvaluation): string {
   if (ev.classification === 'mistake') return '?'
   if (ev.classification === 'inaccuracy') return '?!'
   return ''
-}
-
-function formatEval(cp: number): string {
-  if (Math.abs(cp) >= 10000) {
-    return cp > 0 ? `M${10000 - cp}` : `-M${10000 + cp}`
-  }
-  const val = (cp / 100).toFixed(1)
-  return cp > 0 ? `+${val}` : val
 }
 
 function evalColor(cp: number): string {
@@ -81,7 +74,7 @@ function EvalCell({ node }: { node?: MoveNode }) {
   const cp = node.evaluation.cp
   return (
     <td className={`py-0.5 pl-1 font-mono text-xxs ${evalColor(cp)}`}>
-      {formatEval(cp)}
+      {formatCp(cp)}
     </td>
   )
 }
@@ -131,7 +124,7 @@ function InlineVariation({
             />
             {n.evaluation && (
               <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
-                {formatEval(n.evaluation.cp)}
+                {formatCp(n.evaluation.cp)}
               </span>
             )}
           </span>

@@ -243,21 +243,26 @@ export async function getMoveSummaryForPosition(fen: string): Promise<MoveRow[]>
 }
 
 export interface PositionGameHit {
-  player:      string
-  move_played: string
-  move_num:    number | null
-  result:      string | null
-  gameId:      number | null
+  player:         string
+  move_played:    string
+  move_num:       number | null
+  result:         string | null
+  gameId:         number | null
+  date:           string | null
+  opponentRating: number | null
+  termination:    string | null
+  finalEval:      number | null
 }
 
 //----------------------------------------------------------------------------------
-//  getGamesForPosition — every tracked game (any player) that reached this exact
-//  position, keyed by FEN like getMovePlayCount/getMovePlayCounts. Used by the
-//  Analyze page's "Games From This Position" panel, which can show any position
-//  currently on the board — not just ones with a known pos_id.
+//  getGamesForPosition — every game the given player reached this exact position in,
+//  keyed by FEN like getMovePlayCount/getMovePlayCounts. Used by the Analyze page's
+//  "Games From This Position" panel, which can show any position currently on the
+//  board — not just ones with a known pos_id. Ordered by game number descending
+//  (latest first).
 //----------------------------------------------------------------------------------
-export async function getGamesForPosition(fen: string, excludeGdid?: number): Promise<PositionGameHit[]> {
-  const params: (string | number)[] = [truncateFen(fen)]
+export async function getGamesForPosition(fen: string, player: string, excludeGdid?: number): Promise<PositionGameHit[]> {
+  const params: (string | number)[] = [truncateFen(fen), player.toLowerCase()]
   let excludeFilter = ''
   if (excludeGdid) {
     params.push(excludeGdid)
@@ -272,25 +277,34 @@ export async function getGamesForPosition(fen: string, excludeGdid?: number): Pr
         gp.gam_move_played,
         gp.gam_move_num,
         d.gd_player_result,
-        d.gd_gdid
+        d.gd_gdid,
+        TO_CHAR(TO_TIMESTAMP(d.gd_end_time), 'YYYY-MM-DD') AS game_date,
+        d.gd_opponent_rating,
+        d.gd_termination,
+        d.gd_final_eval
       FROM tpos_positions p
       JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
       JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
       WHERE p.pos_fen = $1
         AND gp.gam_move_num > 0
+        AND d.gd_player = $2
         ${excludeFilter}
-      ORDER BY gp.gam_gamid
+      ORDER BY d.gd_gdid DESC
       LIMIT ${POSITION_GAMES_LIMIT}
     `,
     params
   })
 
   return rows.map((r: any) => ({
-    player:      r.gd_player,
-    move_played: r.gam_move_played,
-    move_num:    r.gam_move_num != null ? Number(r.gam_move_num) : null,
-    result:      r.gd_player_result ?? null,
-    gameId:      r.gd_gdid != null ? Number(r.gd_gdid) : null
+    player:         r.gd_player,
+    move_played:    r.gam_move_played,
+    move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
+    result:         r.gd_player_result ?? null,
+    gameId:         r.gd_gdid != null ? Number(r.gd_gdid) : null,
+    date:           r.game_date ?? null,
+    opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
+    termination:    r.gd_termination ?? null,
+    finalEval:      r.gd_final_eval != null ? Number(r.gd_final_eval) : null
   }))
 }
 
@@ -615,9 +629,12 @@ export async function undismissHabit(player: string, posId: number, moveSan: str
 // ---------------------------------------------------------------------------
 
 //----------------------------------------------------------------------------------
-//  getPositionDetail — all data for the position detail page (5 parallel fetches)
+//  getPositionDetail — all data for the position detail page (5 parallel fetches).
+//  When player is given, gameCount and games are scoped to that player's own games
+//  only (and ordered by game number descending, latest first) — otherwise falls back
+//  to every tracked player, for backward compatibility with links that omit it.
 //----------------------------------------------------------------------------------
-export async function getPositionDetail(posId: number): Promise<{
+export async function getPositionDetail(posId: number, player?: string): Promise<{
   position: PositionRow | null
   moves: MoveRow[]
   posEval: EvaluationRow | null
@@ -630,6 +647,20 @@ export async function getPositionDetail(posId: number): Promise<{
     gameId:      number | null
   }>
 }> {
+  const gameCountParams: (number | string)[] = [posId]
+  let gameCountPlayerFilter = ''
+  if (player) {
+    gameCountParams.push(player.toLowerCase())
+    gameCountPlayerFilter = `AND d.gd_player = $${gameCountParams.length}`
+  }
+
+  const gamesParams: (number | string)[] = [posId]
+  let gamesPlayerFilter = ''
+  if (player) {
+    gamesParams.push(player.toLowerCase())
+    gamesPlayerFilter = `AND d.gd_player = $${gamesParams.length}`
+  }
+
   const [posRows, movRows, posEvalRows, gameCountRows, gamesRows] = await Promise.all([
     table_fetch({
       caller: 'getPositionDetail',
@@ -667,12 +698,14 @@ export async function getPositionDetail(posId: number): Promise<{
     table_query({
       caller: 'getPositionDetail',
       query: `
-        SELECT COUNT(DISTINCT gam_gdid)::int AS game_count
-        FROM tgam_game_positions
-        WHERE gam_pos_id = $1
-          AND gam_move_num > 0
+        SELECT COUNT(DISTINCT gp.gam_gdid)::int AS game_count
+        FROM tgam_game_positions gp
+        LEFT JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+        WHERE gp.gam_pos_id = $1
+          AND gp.gam_move_num > 0
+          ${gameCountPlayerFilter}
       `,
-      params: [posId]
+      params: gameCountParams
     }),
     table_query({
       caller: 'getPositionDetail',
@@ -687,10 +720,11 @@ export async function getPositionDetail(posId: number): Promise<{
         LEFT JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
         WHERE gp.gam_pos_id = $1
           AND gp.gam_move_num > 0
-        ORDER BY gp.gam_gamid
+          ${gamesPlayerFilter}
+        ORDER BY d.gd_gdid DESC
         LIMIT 50
       `,
-      params: [posId]
+      params: gamesParams
     })
   ])
 
