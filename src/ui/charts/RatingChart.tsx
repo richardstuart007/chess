@@ -102,9 +102,15 @@ interface RatingChartProps {
   filters: GameFilters
   limit: number
   onLoadingChange?: (loading: boolean) => void
+  //
+  //  Bumped by the caller on every Refresh click, even when filters/limit are
+  //  unchanged — forces the fetch effect below to re-run so "Refresh" always
+  //  reloads rather than only reacting to an actual value change.
+  //
+  refreshNonce?: number
 }
 
-export default function RatingChart({ players, playerFilter, filters, limit, onLoadingChange }: RatingChartProps) {
+export default function RatingChart({ players, playerFilter, filters, limit, onLoadingChange, refreshNonce }: RatingChartProps) {
   const [games, setGames] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -150,7 +156,7 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
 
     load().catch(() => { if (!cancelled) finish() })
     return () => { cancelled = true }
-  }, [usernamesToFetch, graphFilters, limit])
+  }, [usernamesToFetch, graphFilters, limit, refreshNonce])
 
   // Derive unique (username, timeClass) series from the game data
   const allSeries = useMemo(() => {

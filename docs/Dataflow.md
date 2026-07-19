@@ -65,9 +65,13 @@ cutoff timestamp is ever updated.
 
 ### Consumers
 
-#### Home dashboard / game sync
+#### Shared PlayerProfile header / game sync
 
-`getPlayers` — the player list driving both the UI and the cron sync loop.
+`getPlayers` — the player list driving both the cron sync loop and the shared PlayerProfile
+header/nav (`AppShell.tsx`, rendered from the root layout), which reads `getPlayer`/
+`getPlayerRatings` per player once and shows it above every page except `/owner/*`. Player
+selection there writes to a shared `?player=` URL query param, which `HomeDashboard`, the Habits
+page, and the Graph page all read instead of each keeping their own player-selection state.
 
 #### tgr_gamesraw
 
@@ -201,7 +205,20 @@ a side effect whenever both are present — write-only today, nothing reads it b
 
 #### Home dashboard
 
-Games list, rating chart, opening/termination stats — all read via `games.ts`.
+Games list, opening/termination stats — all read via `games.ts`. Which player's games show is
+read from the shared `?player=` URL param (see `tpl_players` Consumers above), not local state.
+
+#### Graph page
+
+Own top-level page/route (`/graph`, separate from the Home dashboard's tab set) — reads
+`fetchFilteredGames` live via `games.ts` for the "Rating Over Time" chart, same as Home
+dashboard's Games list does, but with its own filter state (date range/time class/records limit;
+player comes from the shared `?player=` param, same as every other page) instead of the shared
+`GameFilterPanel`/filters object. Separated the same way Habits was (own route, own filters) —
+but unlike Habits, not backed by a materialized/pipeline-built table, since this query is a plain
+indexed read, not an expensive derived computation. The `AppNav`/PlayerProfile header itself is no
+longer rendered per-page — it comes from the root layout's `AppShell` (see `tpl_players`
+Consumers).
 
 #### tpl_players
 

@@ -1,10 +1,11 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyHelp } from 'nextjs-shared/MyHelp'
 import MyPagination from 'nextjs-shared/MyPagination'
-import AppNav from '@/src/ui/AppNav'
+import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
@@ -27,8 +28,13 @@ type Color  = 'all' | 'w' | 'b'
 type SortBy = 'cpLoss' | 'reached'
 
 function HabitsContent() {
+  const searchParams = useSearchParams()
   const [players,     setPlayers]     = useState<{ username: string; display_name: string | null }[]>([])
-  const [player,      setPlayer]      = useState('')
+  const playerFilter = searchParams.get('player') ?? ''
+  const usernamesToFetch = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.username),
+    [playerFilter, players]
+  )
   const [color,       setColor]       = useState<Color>('all')
   const [sortBy,      setSortBy]      = useState<SortBy>('cpLoss')
   const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE)
@@ -44,7 +50,6 @@ function HabitsContent() {
     if (saved) {
       try {
         const s = JSON.parse(saved)
-        if (s.player)     setPlayer(s.player)
         if (s.color)      setColor(s.color)
         if (s.sortBy)     setSortBy(s.sortBy)
         if (s.minMove)    setMinMove(s.minMove)
@@ -55,9 +60,8 @@ function HabitsContent() {
   }, [])
 
   useEffect(() => {
-    if (!player) return
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ player, color, sortBy, minMove, minReached, showDismissed }))
-  }, [player, color, sortBy, minMove, minReached, showDismissed])
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ color, sortBy, minMove, minReached, showDismissed }))
+  }, [color, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
@@ -67,10 +71,8 @@ function HabitsContent() {
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)
-      if (ps.length > 0 && !player) setPlayer(ps[0].username)
     }
     loadPlayers()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   //
@@ -79,13 +81,13 @@ function HabitsContent() {
   //
   useEffect(() => {
     setCurrentPage(1)
-  }, [player, color, sortBy, minMove, minReached, showDismissed])
+  }, [usernamesToFetch, color, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     async function loadCount() {
-      if (!player) { setTotalCount(0); return }
+      if (usernamesToFetch.length === 0) { setTotalCount(0); return }
       const count = await getHabitsCount({
-        player,
+        players: usernamesToFetch,
         color: color === 'all' ? undefined : color,
         minReached,
         dismissed: showDismissed
@@ -93,16 +95,16 @@ function HabitsContent() {
       setTotalCount(count)
     }
     loadCount()
-  }, [player, color, minMove, minReached, showDismissed])
+  }, [usernamesToFetch, color, minMove, minReached, showDismissed])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / HABITS_ITEMS_PER_PAGE))
 
   const load = useCallback(async () => {
-    if (!player) return
+    if (usernamesToFetch.length === 0) return
     setLoading(true)
     try {
       const data = await getHabitsData({
-        player,
+        players:    usernamesToFetch,
         color:      color === 'all' ? undefined : color,
         sortBy,
         limit:      HABITS_ITEMS_PER_PAGE,
@@ -114,7 +116,7 @@ function HabitsContent() {
     } finally {
       setLoading(false)
     }
-  }, [player, color, sortBy, minMove, minReached, showDismissed, currentPage])
+  }, [usernamesToFetch, color, sortBy, minMove, minReached, showDismissed, currentPage])
 
   useEffect(() => { load() }, [load])
 
@@ -122,115 +124,61 @@ function HabitsContent() {
   //  handleToggleDismiss — dismisses or restores depending on which view is showing,
   //  then drops the row from the current page locally instead of refetching (avoids a
   //  page/offset shift for the other rows still on screen) — either direction removes
-  //  the row from whichever view is currently active.
+  //  the row from whichever view is currently active. Uses the row's own player (not the
+  //  page-level filter) since "All" can show rows from multiple players at once.
   //
-  const handleToggleDismiss = useCallback(async (posId: number, moveSan: string) => {
+  const handleToggleDismiss = useCallback(async (posId: number, moveSan: string, rowPlayer: string) => {
     if (showDismissed) {
-      await undismissHabit(player, posId, moveSan)
+      await undismissHabit(rowPlayer, posId, moveSan)
     } else {
-      await dismissHabit(player, posId, moveSan)
+      await dismissHabit(rowPlayer, posId, moveSan)
     }
     setRows(rows => rows.filter(r => !(r.pos_id === posId && r.move_san === moveSan)))
     setTotalCount(c => Math.max(0, c - 1))
-  }, [player, showDismissed])
+  }, [showDismissed])
 
   return (
-    <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <AppNav />
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold">Blunder Habits</h1>
+    <div className="space-y-4">
+      <MyBox>
+        <h3 className="text-xs font-bold mb-2 flex items-center gap-2">
+          Blunder Habits
           <MyHelp title='Blunder Habits' items={HABITS_ITEMS} />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Player */}
-          <select
-            value={player}
-            onChange={e => setPlayer(e.target.value)}
-            className="border rounded px-2 py-1 text-sm font-medium"
-          >
-            {players.map(p => (
-              <option key={p.username} value={p.username}>
-                {p.display_name ?? p.username}
-              </option>
-            ))}
-          </select>
+        </h3>
 
-          {/* Color filter */}
-          <div className="flex rounded border overflow-hidden text-sm">
-            {(['all', 'w', 'b'] as Color[]).map(c => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={`px-3 py-1 ${color === c ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              >
-                {c === 'all' ? 'All' : c === 'w' ? 'As White' : 'As Black'}
-              </button>
-            ))}
-          </div>
-
-          {/* Min reached */}
-          <select
-            value={minReached}
-            onChange={e => setMinReached(Number(e.target.value))}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value={2}>Min 2×</option>
-            <option value={3}>Min 3×</option>
-            <option value={5}>Min 5×</option>
-            <option value={10}>Min 10×</option>
-          </select>
-
-          {/* Min move */}
-          <select
-            value={minMove}
-            onChange={e => setMinMove(Number(e.target.value))}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value={MIN_ANALYSIS_MOVE}>{`From move ${MIN_ANALYSIS_MOVE}`}</option>
-          </select>
-
-          {/* Sort */}
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as SortBy)}
-            className="border rounded px-2 py-1 text-sm"
-          >
-            <option value="cpLoss">Sort: Worst CP first</option>
-            <option value="reached">Sort: Most played first</option>
-          </select>
-
-          {/* Show dismissed */}
-          <button
-            onClick={() => setShowDismissed(v => !v)}
-            className={`px-3 py-1 rounded border text-sm ${showDismissed ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-          >
-            Show dismissed
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <MyLoadingMessage message1="Loading habits…" />
-      ) : (
-        <div className="bg-white border rounded-lg overflow-hidden">
-          <HabitsTable rows={rows} dismissedView={showDismissed} onToggleDismiss={handleToggleDismiss} />
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <div />
-        {totalPages > 1 && (
-          <MyPagination
-            totalPages={totalPages}
-            statecurrentPage={currentPage}
-            setStateCurrentPage={setCurrentPage}
+        {loading ? (
+          <MyLoadingMessage message1="Loading habits…" />
+        ) : (
+          <HabitsTable
+            rows={rows}
+            dismissedView={showDismissed}
+            onToggleDismiss={handleToggleDismiss}
+            players={players}
+            color={color}
+            onColorChange={setColor}
+            minMove={minMove}
+            onMinMoveChange={setMinMove}
+            minReached={minReached}
+            onMinReachedChange={setMinReached}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            onShowDismissedToggle={() => setShowDismissed(v => !v)}
           />
         )}
-        <span className="text-xs text-gray-400">
-          Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : 'bad'} move{totalCount !== 1 ? 's' : ''})
-        </span>
-      </div>
+
+        <div className="flex items-center justify-between mt-3">
+          <div />
+          {totalPages > 1 && (
+            <MyPagination
+              totalPages={totalPages}
+              statecurrentPage={currentPage}
+              setStateCurrentPage={setCurrentPage}
+            />
+          )}
+          <span className="text-xs text-gray-400">
+            Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : 'bad'} move{totalCount !== 1 ? 's' : ''})
+          </span>
+        </div>
+      </MyBox>
     </div>
   )
 }

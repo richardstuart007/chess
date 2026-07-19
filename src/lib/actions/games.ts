@@ -252,7 +252,7 @@ export async function getDeconGameCount(playerUsername: string): Promise<number>
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import type { Filter } from 'nextjs-shared/structures'
-import { GAMES_ITEMS_PER_PAGE } from '../constants'
+import { GAMES_ITEMS_PER_PAGE, TERMINATION_CHART_TYPES } from '../constants'
 
 export type GameFilters = {
   opponent?: string
@@ -356,16 +356,20 @@ export async function getGamesPageCount(
 }
 
 export async function getOpeningScores(
-  username: string,
+  usernames: string[],
   color: 'white' | 'black' | 'both',
   minGames: number = 100,
   limit: number = 20,
   sortDir: 'ASC' | 'DESC' = 'DESC',
-  dateFrom?: string,
-  dateTo?: string
+  dateFrom?: string
 ): Promise<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]> {
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
-  const params: (string | number)[] = [username.toLowerCase(), minGames]
+  const params: (string | number)[] = []
+  const playerPlaceholders = usernames
+    .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
+    .join(', ')
+  params.push(minGames)
+  const minGamesPlaceholder = `$${params.length}`
   let colorFilter = ''
   if (color !== 'both') {
     params.push(color)
@@ -375,10 +379,6 @@ export async function getOpeningScores(
   if (dateFrom) {
     params.push(Math.floor(new Date(dateFrom).getTime() / 1000))
     dateFilter += ` AND gd_end_time >= $${params.length}`
-  }
-  if (dateTo) {
-    params.push(Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000))
-    dateFilter += ` AND gd_end_time <= $${params.length}`
   }
   const rows = await table_query({
     caller: 'getOpeningScores',
@@ -394,11 +394,11 @@ export async function getOpeningScores(
           ELSE 0
         END)) AS score_pct
       FROM tgd_gamesdecon
-      WHERE gd_player = $1
+      WHERE gd_player IN (${playerPlaceholders})
         ${colorFilter}
         ${dateFilter}
       GROUP BY gd_eco_code, gd_opening_name
-      HAVING COUNT(*) >= $2
+      HAVING COUNT(*) >= ${minGamesPlaceholder}
       ORDER BY score_pct ${sortDir}
       ${limitClause}
     `,
@@ -413,12 +413,17 @@ export async function getOpeningScores(
 }
 
 export async function getTerminationStats(
-  username: string,
+  usernames: string[],
   dateFrom?: string,
-  dateTo?: string,
   color?: string
-): Promise<{ termination: string; win: number; loss: number; draw: number; total: number }[]> {
-  const params: (string | number)[] = [username.toLowerCase()]
+): Promise<{ termination: string; win: number; loss: number; total: number }[]> {
+  const params: (string | number)[] = []
+  const playerPlaceholders = usernames
+    .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
+    .join(', ')
+  const terminationPlaceholders = TERMINATION_CHART_TYPES
+    .map(t => { params.push(t); return `$${params.length}` })
+    .join(', ')
   let filters = ''
   if (color) {
     params.push(color)
@@ -428,10 +433,6 @@ export async function getTerminationStats(
     params.push(Math.floor(new Date(dateFrom).getTime() / 1000))
     filters += ` AND gd_end_time >= $${params.length}`
   }
-  if (dateTo) {
-    params.push(Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000))
-    filters += ` AND gd_end_time <= $${params.length}`
-  }
   const rows = await table_query({
     caller: 'getTerminationStats',
     table: DECON_TABLE,
@@ -440,12 +441,10 @@ export async function getTerminationStats(
         gd_termination AS termination,
         COUNT(*) FILTER (WHERE gd_player_result = 'win')  AS win,
         COUNT(*) FILTER (WHERE gd_player_result = 'loss') AS loss,
-        COUNT(*) FILTER (WHERE gd_player_result = 'draw') AS draw,
         COUNT(*) AS total
       FROM tgd_gamesdecon
-      WHERE gd_player = $1
-        AND gd_termination IS NOT NULL
-        AND gd_termination != ''
+      WHERE gd_player IN (${playerPlaceholders})
+        AND gd_termination IN (${terminationPlaceholders})
         ${filters}
       GROUP BY gd_termination
       ORDER BY total DESC
@@ -456,7 +455,6 @@ export async function getTerminationStats(
     termination: r.termination,
     win:   Number(r.win),
     loss:  Number(r.loss),
-    draw:  Number(r.draw),
     total: Number(r.total)
   }))
 }

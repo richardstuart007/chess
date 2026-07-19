@@ -1,95 +1,97 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import MyBox from 'nextjs-shared/MyBox'
-import MySelect from 'nextjs-shared/MySelect'
-import { MyInput } from 'nextjs-shared/MyInput'
-import { MyButton } from 'nextjs-shared/MyButton'
+import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
+import FilterSelect from '@/src/ui/filters/FilterSelect'
+import FilterDateInput from '@/src/ui/filters/FilterDateInput'
+import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import { getTerminationStats } from '@/src/lib/actions/games'
+import { DEFAULT_DATE_FROM } from '@/src/lib/constants'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
 interface TerminationChartProps {
-  players: string[]
+  players: { username: string; display_name: string | null }[]
+}
+
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
 export default function TerminationChart({ players }: TerminationChartProps) {
-  const [username, setUsername] = useState(players[0] ?? '')
-  const [color, setColor] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [data, setData] = useState<{ termination: string; win: number; loss: number; draw: number; total: number }[]>([])
+  const searchParams = useSearchParams()
+  const playerFilter = searchParams.get('player') ?? ''
+  const usernames = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.username),
+    [playerFilter, players]
+  )
+
+  const [color, setColor] = useState(() => ss('chess-tc-color', ''))
+  const [dateFrom, setDateFrom] = useState(() => ss('chess-tc-dateFrom', DEFAULT_DATE_FROM))
+  const [data, setData] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!username) return
+    if (usernames.length === 0) return
     let cancelled = false
     setLoading(true)
     async function load() {
       const rows = await getTerminationStats(
-        username,
+        usernames,
         dateFrom || undefined,
-        dateTo || undefined,
         color || undefined
       )
       if (!cancelled) { setData(rows); setLoading(false) }
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [username, color, dateFrom, dateTo])
+  }, [usernames, color, dateFrom])
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('chess-tc-color', JSON.stringify(color))
+      sessionStorage.setItem('chess-tc-dateFrom', JSON.stringify(dateFrom))
+    } catch {}
+  }, [color, dateFrom])
 
   const chartData = data.map(r => ({
     name: r.termination,
     Win:  r.win,
     Loss: r.loss,
-    Draw: r.draw,
     total: r.total
   }))
 
   return (
     <MyBox title='How Games End'>
       <div className='mb-3 flex flex-wrap items-center gap-3'>
-        {players.length > 1 && (
-          <MySelect
-            label='Player'
-            options={players}
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-          />
-        )}
-        <MySelect
+        <FilterPlayerSelect players={players} width='w-24' />
+        <FilterSelect
           label='Colour'
-          options={['Both', 'White', 'Black']}
-          value={color === 'white' ? 'White' : color === 'black' ? 'Black' : 'Both'}
-          onChange={e => setColor(e.target.value === 'Both' ? '' : e.target.value.toLowerCase())}
+          options={[{ value: '', label: 'All' }, { value: 'white', label: 'White' }, { value: 'black', label: 'Black' }]}
+          value={color}
+          onChange={setColor}
+          width='w-20'
         />
-        <MyInput
-          type='date'
+        <FilterDateInput
+          label='From'
           value={dateFrom}
-          onChange={e => setDateFrom(e.target.value)}
-          overrideClass='w-32 text-xxs'
-          placeholder='From'
+          onChange={setDateFrom}
           max={TODAY}
+          width='w-32'
         />
-        <MyInput
-          type='date'
-          value={dateTo}
-          onChange={e => setDateTo(e.target.value)}
-          overrideClass='w-32 text-xxs'
-          placeholder='To'
-          max={TODAY}
-        />
-        {(dateFrom || dateTo) && (
-          <MyButton
-            onClick={() => { setDateFrom(''); setDateTo('') }}
-            overrideClass='text-xxs px-2 h-5 bg-gray-400 hover:bg-gray-500'
+        {dateFrom && (
+          <FilterActionButton
+            onClick={() => setDateFrom('')}
+            variant='secondary'
           >
             Clear
-          </MyButton>
+          </FilterActionButton>
         )}
       </div>
 
@@ -124,7 +126,6 @@ export default function TerminationChart({ players }: TerminationChartProps) {
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey='Win'  stackId='a' fill='#16a34a' />
-            <Bar dataKey='Draw' stackId='a' fill='#6b7280' />
             <Bar dataKey='Loss' stackId='a' fill='#dc2626' radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

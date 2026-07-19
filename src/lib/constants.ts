@@ -6,11 +6,26 @@ export const DEFAULT_MIN_GAMES = '25'
 export const DEFAULT_FILTER_TERMINATIONS = ['Checkmate', 'Resignation']
 
 //
+//  TERMINATION_CHART_TYPES — the only termination reasons shown on the Endings chart;
+//  every other reason (Repetition, Agreement, Stalemate, etc.) has too few games to be
+//  visually meaningful and is filtered out entirely, both in the SQL and the chart.
+//
+export const TERMINATION_CHART_TYPES = ['Resignation', 'Checkmate', 'Time']
+
+//
 //  MIN_ANALYSIS_MOVE — positions before this move number are opening theory and
 //  are never tracked, displayed, or quizzed anywhere in the app. Single source
 //  of truth for every "skip the opening" check in the analysis pipeline/UI.
 //
 export const MIN_ANALYSIS_MOVE = 4
+
+//
+//  MOVE_COUNT_MIN_MOVE — the Analyze page's "×N" move-play-count badge/check only
+//  applies from this move number onward. Deliberately separate from MIN_ANALYSIS_MOVE
+//  (a different, pipeline-wide "skip opening theory" threshold) — this one is specific
+//  to the Analyze page's move-count display.
+//
+export const MOVE_COUNT_MIN_MOVE = 6
 
 //
 //  MAX_ANALYSIS_MOVE — positions past this move number are almost never revisited

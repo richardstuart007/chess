@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { DevHeader } from '@/src/ui/DevHeader'
+import AppShell from '@/src/ui/AppShell'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -34,7 +35,7 @@ export default function RootLayout({
       <body className='min-h-full flex flex-col bg-background text-foreground'>
         {IS_DEV && <DevHeader dbLocation={DB_LOCATION} />}
         <main className='w-full flex-1 px-4 py-6'>
-          {children}
+          <AppShell>{children}</AppShell>
         </main>
       </body>
     </html>

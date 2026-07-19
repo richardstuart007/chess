@@ -136,6 +136,77 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
   }) as MoveRow[]
 }
 
+//----------------------------------------------------------------------------------
+//  truncateFen — keep only the 4 positional fields, matching tpos_positions.pos_fen's
+//  own storage format (see buildPositionTree.ts's truncateFen) — halfmove clock and
+//  fullmove number are bookkeeping, not part of what makes two positions "the same"
+//----------------------------------------------------------------------------------
+function truncateFen(fen: string): string {
+  return fen.split(' ').slice(0, 4).join(' ')
+}
+
+//----------------------------------------------------------------------------------
+//  getMovePlayCount — how many times a specific move was played from a position,
+//  across the given player's own synced games (either color, opponent-agnostic —
+//  matches getMovesForPosition's existing counting convention: COUNT(*) of plies)
+//----------------------------------------------------------------------------------
+export async function getMovePlayCount(fen: string, moveSan: string, player: string): Promise<number> {
+  const rows = await table_query({
+    caller: 'getMovePlayCount',
+    query: `
+      SELECT COUNT(*)::int AS times
+      FROM tpos_positions p
+      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
+      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+      WHERE p.pos_fen = $1
+        AND gp.gam_move_played = $2
+        AND gp.gam_move_num > 0
+        AND d.gd_player = $3
+    `,
+    params: [truncateFen(fen), moveSan, player.toLowerCase()]
+  }) as { times: number }[]
+  return rows.length > 0 ? Number(rows[0].times) : 0
+}
+
+//----------------------------------------------------------------------------------
+//  getMovePlayCounts — batched version of getMovePlayCount for a whole move tree in
+//  one round trip. Keyed by the same truncated FEN tpos_positions.pos_fen stores, so
+//  callers must truncate their own FEN lookups the same way before matching keys.
+//----------------------------------------------------------------------------------
+export async function getMovePlayCounts(fens: string[], player: string): Promise<Record<string, Record<string, number>>> {
+  const uniqueFens = [...new Set(fens.map(truncateFen))]
+  if (uniqueFens.length === 0) return {}
+
+  const params: (string | number)[] = []
+  const fenPlaceholders = uniqueFens
+    .map(f => { params.push(f); return `$${params.length}` })
+    .join(', ')
+  params.push(player.toLowerCase())
+  const playerPlaceholder = `$${params.length}`
+
+  const rows = await table_query({
+    caller: 'getMovePlayCounts',
+    query: `
+      SELECT p.pos_fen, gp.gam_move_played AS mov_san, COUNT(*)::int AS times
+      FROM tpos_positions p
+      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
+      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+      WHERE p.pos_fen IN (${fenPlaceholders})
+        AND gp.gam_move_num > 0
+        AND d.gd_player = ${playerPlaceholder}
+      GROUP BY p.pos_fen, gp.gam_move_played
+    `,
+    params
+  }) as { pos_fen: string; mov_san: string; times: number }[]
+
+  const result: Record<string, Record<string, number>> = {}
+  for (const row of rows) {
+    if (!result[row.pos_fen]) result[row.pos_fen] = {}
+    result[row.pos_fen][row.mov_san] = Number(row.times)
+  }
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // Evaluations
 // ---------------------------------------------------------------------------
@@ -272,21 +343,34 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
 //  player-specific and don't need duplicating into thab_habits.
 //----------------------------------------------------------------------------------
 function buildHabitsFilter(opts: {
-  player?: string
+  players?: string[]
   color?: 'w' | 'b'
   minReached?: number
   dismissed?: boolean
-}): { params: (string | number | boolean)[]; colorFilter: string } {
-  const player     = (opts.player ?? '').toLowerCase()
+}): {
+  params: (string | number | boolean)[]
+  playerPlaceholders: string
+  dismissedPlaceholder: string
+  minReachedPlaceholder: string
+  colorFilter: string
+} {
+  const players    = (opts.players ?? []).map(p => p.toLowerCase())
   const minReached = opts.minReached ?? 3
   const dismissed  = opts.dismissed ?? false
-  const params: (string | number | boolean)[] = [player, dismissed, minReached]
+  const params: (string | number | boolean)[] = []
+  const playerPlaceholders = players
+    .map(p => { params.push(p); return `$${params.length}` })
+    .join(', ')
+  params.push(dismissed)
+  const dismissedPlaceholder = `$${params.length}`
+  params.push(minReached)
+  const minReachedPlaceholder = `$${params.length}`
   const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
-  return { params, colorFilter }
+  return { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter }
 }
 
 export async function getHabitsData(opts: {
-  player?: string
+  players?: string[]
   color?: 'w' | 'b'
   sortBy?: 'cpLoss' | 'reached'
   limit?: number
@@ -298,6 +382,7 @@ export async function getHabitsData(opts: {
   pos_fen:     string
   pos_color:   string | null
   pos_cp:      number | null
+  player:      string
   move_san:    string
   move_uci:    string | null
   move_num:    number | null
@@ -306,9 +391,9 @@ export async function getHabitsData(opts: {
   move_losses: number
   move_cp:     number | null
 }>> {
-  if (!opts.player) return []
+  if (!opts.players || opts.players.length === 0) return []
 
-  const { params, colorFilter } = buildHabitsFilter(opts)
+  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter } = buildHabitsFilter(opts)
   const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
   const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
@@ -323,6 +408,7 @@ export async function getHabitsData(opts: {
         p.pos_fen,
         p.pos_color,
         e.eva_cp                                          AS pos_cp,
+        h.hab_player                                      AS player,
         h.hab_move_san                                    AS move_san,
         h.hab_move_uci                                    AS move_uci,
         h.hab_move_num                                    AS move_num,
@@ -333,9 +419,9 @@ export async function getHabitsData(opts: {
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
       LEFT JOIN teva_evaluations e ON e.eva_pos_id = h.hab_pos_id
-      WHERE h.hab_player = $1
-        AND h.hab_dismissed = $2
-        AND h.hab_move_times >= $3
+      WHERE h.hab_player IN (${playerPlaceholders})
+        AND h.hab_dismissed = ${dismissedPlaceholder}
+        AND h.hab_move_times >= ${minReachedPlaceholder}
         ${colorFilter}
       ORDER BY ${orderClause}
       ${limitClause}
@@ -348,6 +434,7 @@ export async function getHabitsData(opts: {
     pos_fen:     r.pos_fen,
     pos_color:   r.pos_color,
     pos_cp:      r.pos_cp  != null ? Number(r.pos_cp)  : null,
+    player:      r.player,
     move_san:    r.move_san,
     move_uci:    r.move_uci ?? null,
     move_num:    r.move_num != null ? Number(r.move_num) : null,
@@ -363,14 +450,14 @@ export async function getHabitsData(opts: {
 //  MyPagination's total-pages calculation
 //----------------------------------------------------------------------------------
 export async function getHabitsCount(opts: {
-  player?: string
+  players?: string[]
   color?: 'w' | 'b'
   minReached?: number
   dismissed?: boolean
 }): Promise<number> {
-  if (!opts.player) return 0
+  if (!opts.players || opts.players.length === 0) return 0
 
-  const { params, colorFilter } = buildHabitsFilter(opts)
+  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter } = buildHabitsFilter(opts)
 
   const rows = await table_query({
     caller: 'getHabitsCount',
@@ -378,9 +465,9 @@ export async function getHabitsCount(opts: {
       SELECT COUNT(*)::int AS total
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
-      WHERE h.hab_player = $1
-        AND h.hab_dismissed = $2
-        AND h.hab_move_times >= $3
+      WHERE h.hab_player IN (${playerPlaceholders})
+        AND h.hab_dismissed = ${dismissedPlaceholder}
+        AND h.hab_move_times >= ${minReachedPlaceholder}
         ${colorFilter}
     `,
     params

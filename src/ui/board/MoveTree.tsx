@@ -8,6 +8,7 @@ interface MoveTreeProps {
   tree: AnalysisTree
   currentNode: MoveNode | null
   onSelectNode: (node: MoveNode) => void
+  moveCounts?: Record<string, number>
 }
 
 const CLASSIFICATION_TEXT_COLORS: Record<string, string> = {
@@ -41,11 +42,13 @@ function evalColor(cp: number): string {
 function MoveBadge({
   node,
   isActive,
-  onClick
+  onClick,
+  count
 }: {
   node: MoveNode
   isActive: boolean
   onClick: () => void
+  count?: number
 }) {
   const ev = node.evaluation
   const textColor = ev
@@ -66,6 +69,9 @@ function MoveBadge({
     >
       <span>{node.san}</span>
       {ann && <span className='text-xxs text-blue-500'>{ann}</span>}
+      {count !== undefined && count > 1 && (
+        <span className='text-xxs text-gray-400 font-mono'>×{count}</span>
+      )}
     </button>
   )
 }
@@ -84,12 +90,14 @@ function InlineVariation({
   startNode,
   startPly,
   currentNode,
-  onSelectNode
+  onSelectNode,
+  moveCounts
 }: {
   startNode: MoveNode
   startPly: number
   currentNode: MoveNode | null
   onSelectNode: (node: MoveNode) => void
+  moveCounts?: Record<string, number>
 }) {
   const moves: { node: MoveNode; ply: number }[] = []
   let node: MoveNode | null = startNode
@@ -119,6 +127,7 @@ function InlineVariation({
               node={n}
               isActive={currentNode?.id === n.id}
               onClick={() => onSelectNode(n)}
+              count={moveCounts?.[n.id]}
             />
             {n.evaluation && (
               <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
@@ -132,7 +141,7 @@ function InlineVariation({
   )
 }
 
-export default function MoveTree({ tree, currentNode, onSelectNode }: MoveTreeProps) {
+export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }: MoveTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -158,6 +167,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode }: MoveTreePr
             node={whiteNode}
             isActive={currentNode?.id === whiteNode.id}
             onClick={() => onSelectNode(whiteNode)}
+            count={moveCounts?.[whiteNode.id]}
           />
         </td>
         <EvalCell node={whiteNode} />
@@ -167,6 +177,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode }: MoveTreePr
               node={blackNode}
               isActive={currentNode?.id === blackNode.id}
               onClick={() => onSelectNode(blackNode)}
+              count={moveCounts?.[blackNode.id]}
             />
           )}
         </td>
@@ -187,6 +198,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode }: MoveTreePr
                 startPly={i}
                 currentNode={currentNode}
                 onSelectNode={onSelectNode}
+                moveCounts={moveCounts}
               />
             </td>
           </tr>
@@ -206,6 +218,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode }: MoveTreePr
                 startPly={i + 1}
                 currentNode={currentNode}
                 onSelectNode={onSelectNode}
+                moveCounts={moveCounts}
               />
             </td>
           </tr>

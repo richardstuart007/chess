@@ -11,7 +11,8 @@ import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate } from '@/src/lib/stockfish'
 import { saveGameEvaluations, saveAnalysisLine, saveAnalysisTree } from '@/src/lib/actions/games'
-import { upgradePositionEvaluation } from '@/src/lib/analysis/chessdb'
+import { upgradePositionEvaluation, getMovePlayCounts } from '@/src/lib/analysis/chessdb'
+import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
 import {
   MoveNode,
   AnalysisTree,
@@ -55,6 +56,33 @@ function formatCp(cp: number): string {
   return cp > 0 ? `+${val}` : val
 }
 
+//----------------------------------------------------------------------------------
+//  truncateFen — matches tpos_positions.pos_fen's own storage format (see
+//  buildPositionTree.ts / chessdb.ts's own truncateFen) so lookups by FEN actually match
+//----------------------------------------------------------------------------------
+function truncateFen(fen: string): string {
+  return fen.split(' ').slice(0, 4).join(' ')
+}
+
+//----------------------------------------------------------------------------------
+//  collectNodesFromMove — walks the whole tree (main line + every variation) and
+//  returns every node whose full-move number is >= minMove
+//----------------------------------------------------------------------------------
+function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
+  const result: MoveNode[] = []
+  function walk(node: MoveNode, ply: number) {
+    if (ply > 0) {
+      const moveNum = Math.floor((ply - 1) / 2) + 1
+      if (moveNum >= minMove) result.push(node)
+    }
+    for (const child of node.children) {
+      walk(child, ply + 1)
+    }
+  }
+  walk(root, 0)
+  return result
+}
+
 export default function ChessBoardView({ game, gdid, username, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
   const playerColor = getPlayerResult(game, username).color
   const result = getPlayerResult(game, username).result
@@ -63,6 +91,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
   // Tree state
   const [tree, setTree] = useState<AnalysisTree | null>(null)
   const [currentNode, setCurrentNode] = useState<MoveNode | null>(null)
+  const [moveCounts, setMoveCounts] = useState<Record<string, number>>({})
 
   // Display chess instance
   const displayGame = useRef(new Chess())
@@ -126,6 +155,33 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
     displayGame.current = new Chess()
     setBoardKey(k => k + 1)
   }, [game])
+
+  // -----------------------------------------------------------------------
+  // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE
+  // onward, main line + every variation) was played from its position, across
+  // this player's own synced games. One batched lookup per tree change.
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!tree) { setMoveCounts({}); return }
+    let cancelled = false
+
+    const nodes = collectNodesFromMove(tree.root, MOVE_COUNT_MIN_MOVE)
+    const fens = nodes.map(n => truncateFen(n.fenBefore))
+
+    if (fens.length === 0) { setMoveCounts({}); return }
+
+    getMovePlayCounts(fens, username).then(countsByFen => {
+      if (cancelled) return
+      const byNodeId: Record<string, number> = {}
+      for (const n of nodes) {
+        const c = countsByFen[truncateFen(n.fenBefore)]?.[n.san]
+        if (c) byNodeId[n.id] = c
+      }
+      setMoveCounts(byNodeId)
+    }).catch(() => { if (!cancelled) setMoveCounts({}) })
+
+    return () => { cancelled = true }
+  }, [tree, username])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -418,17 +474,24 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
   // -----------------------------------------------------------------------
   function handlePieceDrop(sourceSquare: string, targetSquare: string): boolean {
     if (!tree) return false
+    if (sourceSquare === targetSquare) return false
 
     const g = new Chess(displayGame.current.fen())
     const piece = g.get(sourceSquare as Square)
     const isPromotion = piece?.type === 'p' &&
       ((piece.color === 'w' && targetSquare[1] === '8') ||
        (piece.color === 'b' && targetSquare[1] === '1'))
-    const moveResult = g.move({
-      from: sourceSquare as Square,
-      to: targetSquare as Square,
-      ...(isPromotion && { promotion: 'q' })
-    })
+
+    let moveResult
+    try {
+      moveResult = g.move({
+        from: sourceSquare as Square,
+        to: targetSquare as Square,
+        ...(isPromotion && { promotion: 'q' })
+      })
+    } catch {
+      return false
+    }
 
     if (!moveResult) return false
 
@@ -703,6 +766,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                 tree={tree}
                 currentNode={currentNode}
                 onSelectNode={handleSelectNode}
+                moveCounts={moveCounts}
               />
             </div>
           )}
@@ -844,6 +908,8 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                 loading={deepAnalyzing && !deepAnalysisData}
                 positionPly={currentPly}
                 onSelectLine={handleSelectPvLine}
+                positionFen={getCurrentPositionFen()}
+                username={username}
               />
             </div>
           </MyBox>
