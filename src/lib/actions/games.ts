@@ -7,8 +7,9 @@ import { table_delete } from 'nextjs-shared/table_delete'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
 import { classifyMove } from '@/src/lib/stockfish'
+import { truncateFen } from '@/src/lib/fen'
 
-const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -'
 
 export type GameEvalRow = {
   san: string
@@ -116,7 +117,7 @@ export async function saveGameEvaluations(gdid: number, evaluations: GameEvalRow
         { column: 'gev_gdid', value: gdid },
         { column: 'gev_ply', value: i },
         { column: 'gev_san', value: e.san },
-        { column: 'gev_fen_after', value: e.fen },
+        { column: 'gev_fen_after', value: truncateFen(e.fen) },
         { column: 'gev_cp', value: e.cp },
         { column: 'gev_cp_change', value: e.cpChange },
         { column: 'gev_best_move', value: e.bestMove },
@@ -187,7 +188,7 @@ export async function saveAnalysisLine(data: {
       { column: 'sa_notes', value: data.notes ?? '' },
       { column: 'sa_line_pgn', value: data.line_pgn },
       { column: 'sa_line_moves', value: JSON.stringify(data.line_moves) },
-      { column: 'sa_starting_fen', value: data.starting_fen },
+      { column: 'sa_starting_fen', value: truncateFen(data.starting_fen) },
       { column: 'sa_starting_ply', value: data.starting_ply },
       { column: 'sa_eco_code', value: data.eco_code ?? '' },
       { column: 'sa_opening_name', value: data.opening_name ?? '' }

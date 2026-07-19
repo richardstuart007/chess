@@ -6,15 +6,7 @@ import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE } from '../constants'
-
-//----------------------------------------------------------------------------------
-//  truncateFen — keep only the 4 positional fields (piece placement, active color,
-//  castling rights, en passant target); drop halfmove clock + fullmove number, which
-//  are bookkeeping, not part of what makes two positions "the same"
-//----------------------------------------------------------------------------------
-function truncateFen(fen: string): string {
-  return fen.split(' ').slice(0, 4).join(' ')
-}
+import { truncateFen } from '../fen'
 
 interface GameRecord {
   gdid:          number

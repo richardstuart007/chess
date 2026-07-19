@@ -20,6 +20,7 @@ import { table_count }  from 'nextjs-shared/table_count'
 import { table_check }  from 'nextjs-shared/table_check'
 import { table_query }  from 'nextjs-shared/table_query'
 import { table_update } from 'nextjs-shared/table_update'
+import { truncateFen }  from '../fen'
 
 export interface PositionRow {
   pos_id: number
@@ -134,15 +135,6 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
     `,
     params
   }) as MoveRow[]
-}
-
-//----------------------------------------------------------------------------------
-//  truncateFen — keep only the 4 positional fields, matching tpos_positions.pos_fen's
-//  own storage format (see buildPositionTree.ts's truncateFen) — halfmove clock and
-//  fullmove number are bookkeeping, not part of what makes two positions "the same"
-//----------------------------------------------------------------------------------
-function truncateFen(fen: string): string {
-  return fen.split(' ').slice(0, 4).join(' ')
 }
 
 //----------------------------------------------------------------------------------
@@ -265,7 +257,7 @@ export async function upgradePositionEvaluation(data: {
     caller: 'upgradePositionEvaluation_lookup',
     table: 'tpos_positions',
     query: `SELECT pos_id FROM tpos_positions WHERE pos_fen = $1`,
-    params: [data.fen]
+    params: [truncateFen(data.fen)]
   })
   const posId = posRows[0]?.pos_id as number | undefined
   if (!posId) return false

@@ -13,6 +13,7 @@ import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUp
 import { saveGameEvaluations, saveAnalysisLine, saveAnalysisTree } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getMovePlayCounts } from '@/src/lib/analysis/chessdb'
 import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
+import { truncateFen } from '@/src/lib/fen'
 import {
   MoveNode,
   AnalysisTree,
@@ -54,14 +55,6 @@ function formatCp(cp: number): string {
   }
   const val = (cp / 100).toFixed(1)
   return cp > 0 ? `+${val}` : val
-}
-
-//----------------------------------------------------------------------------------
-//  truncateFen — matches tpos_positions.pos_fen's own storage format (see
-//  buildPositionTree.ts / chessdb.ts's own truncateFen) so lookups by FEN actually match
-//----------------------------------------------------------------------------------
-function truncateFen(fen: string): string {
-  return fen.split(' ').slice(0, 4).join(' ')
 }
 
 //----------------------------------------------------------------------------------
