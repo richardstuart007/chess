@@ -57,7 +57,7 @@ function MoveCountCheck({ fen, moveSan, username }: { fen?: string; moveSan: str
   }
 
   if (count !== null) {
-    return <span className='text-xxs text-gray-400 font-mono'>×{count}</span>
+    return <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
   }
 
   return (

@@ -8,6 +8,7 @@ import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { MIN_ANALYSIS_MOVE } from '@/src/lib/constants'
+import { winPct } from '@/src/lib/winPct'
 
 interface HabitRow {
   pos_id:      number
@@ -24,8 +25,9 @@ interface HabitRow {
   move_cp:     number | null
 }
 
-type Color  = 'all' | 'w' | 'b'
-type SortBy = 'cpLoss' | 'reached'
+type Color   = 'all' | 'w' | 'b'
+type SortBy  = 'cpLoss' | 'reached'
+type Quality = 'bad' | 'good'
 
 interface HabitsTableProps {
   rows: HabitRow[]
@@ -34,6 +36,8 @@ interface HabitsTableProps {
   players: { username: string; display_name: string | null }[]
   color: Color
   onColorChange: (c: Color) => void
+  quality: Quality
+  onQualityChange: (q: Quality) => void
   minMove: number
   onMinMoveChange: (v: number) => void
   minReached: number
@@ -53,11 +57,6 @@ function cpLabel(cp: number | null): string {
   if (cp === null) return '—'
   const pawns = cp / 100
   return `${pawns > 0 ? '+' : ''}${pawns.toFixed(1)}`
-}
-
-function pctLabel(n: number, total: number): string {
-  if (total === 0) return '0.00%'
-  return `${((n / total) * 100).toFixed(2)}%`
 }
 
 //----------------------------------------------------------------------------------
@@ -88,6 +87,8 @@ export default function HabitsTable({
   players,
   color,
   onColorChange,
+  quality,
+  onQualityChange,
   minMove,
   onMinMoveChange,
   minReached,
@@ -106,6 +107,7 @@ export default function HabitsTable({
             <th className="px-3 py-2">Player</th>
             <th className="px-3 py-2 w-20">Position</th>
             <th className="px-3 py-2 w-8">Colour</th>
+            <th className="px-3 py-2 w-16">Quality</th>
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
                 Pos CP
@@ -129,7 +131,7 @@ export default function HabitsTable({
             <th className="px-3 py-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">
                 CP
-                <MyHelpField text="Centipawns lost by playing this move instead of the best move (the largest-magnitude occurrence, if you've played it more than once)." />
+                <MyHelpField text="Stockfish's evaluation of the position after this move, white's perspective." />
               </span>
             </th>
             <th className="px-3 py-2 w-8" />
@@ -144,6 +146,14 @@ export default function HabitsTable({
                 options={[{ value: 'all', label: 'All' }, { value: 'w', label: 'White' }, { value: 'b', label: 'Black' }]}
                 value={color}
                 onChange={v => onColorChange(v as Color)}
+                width="w-20"
+              />
+            </th>
+            <th className="px-3 py-1.5">
+              <FilterSelect
+                options={[{ value: 'bad', label: 'Bad' }, { value: 'good', label: 'Good' }]}
+                value={quality}
+                onChange={v => onQualityChange(v as Quality)}
                 width="w-20"
               />
             </th>
@@ -179,7 +189,7 @@ export default function HabitsTable({
               <div className="flex justify-end">
                 <FilterSelect
                   options={[
-                    { value: 'cpLoss', label: 'Worst first' },
+                    { value: 'cpLoss', label: 'Biggest impact first' },
                     { value: 'reached', label: 'Most played' }
                   ]}
                   value={sortBy}
@@ -203,10 +213,10 @@ export default function HabitsTable({
         <tbody className="divide-y divide-gray-100">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={10} className="text-center py-12 text-gray-500 text-sm">
+              <td colSpan={11} className="text-center py-12 text-gray-500 text-sm">
                 {dismissedView
                   ? 'No dismissed habits.'
-                  : 'No bad habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.'}
+                  : `No ${quality} habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.`}
               </td>
             </tr>
           )}
@@ -231,6 +241,13 @@ export default function HabitsTable({
                 <ColorSwatch color={row.pos_color} />
               </td>
 
+              {/* Quality — matches the page-level Bad/Good filter, since every row shares it */}
+              <td className="px-3 py-2">
+                <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${quality === 'good' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {quality === 'good' ? 'Good' : 'Bad'}
+                </span>
+              </td>
+
               {/* Position CP — score before the move */}
               <td className={`px-3 py-2 text-right tabular-nums font-mono text-xs ${cpClass(row.pos_cp)}`}>
                 {cpLabel(row.pos_cp)}
@@ -253,7 +270,7 @@ export default function HabitsTable({
 
               {/* Win% */}
               <td className="px-3 py-2 text-right tabular-nums text-green-700">
-                {pctLabel(row.move_wins, row.move_times)}
+                {winPct(row.move_wins, row.move_losses, row.move_times)}%
               </td>
 
               {/* CP */}

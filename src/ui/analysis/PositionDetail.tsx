@@ -7,12 +7,12 @@ import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MyBox from 'nextjs-shared/MyBox'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
+import { winPct } from '@/src/lib/winPct'
 
 interface GameHit {
   player:      string
   move_played: string
   move_num:    number | null
-  cp_loss:     number | null
   result:      string | null
   gameId:      number | null
 }
@@ -26,14 +26,6 @@ interface PositionDetailProps {
 }
 
 type Tab = 'moves' | 'history'
-
-function cpBadge(cpDelta: number | null): { label: string; cls: string } {
-  if (cpDelta === null) return { label: '—',   cls: 'text-gray-400' }
-  if (cpDelta < -150)  return { label: 'BAD',  cls: 'bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (cpDelta < -75)   return { label: 'POOR', cls: 'bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (cpDelta < -25)   return { label: 'OK',   cls: 'bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  return { label: 'GOOD', cls: 'bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-}
 
 function resultBadge(result: string | null): { label: string; cls: string } {
   if (result === 'win')  return { label: 'W', cls: 'bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
@@ -185,16 +177,12 @@ export default function PositionDetail({
                     <th className="py-1.5 pr-3">Move</th>
                     <th className="py-1.5 pr-3 text-right">Times</th>
                     <th className="py-1.5 pr-3 text-right">Win%</th>
-                    <th className="py-1.5 pr-3 text-right">Loss%</th>
-                    <th className="py-1.5 pr-3 text-right">CP</th>
-                    <th className="py-1.5">Rating</th>
+                    <th className="py-1.5 text-right">CP</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {moves.map(m => {
-                    const badge   = cpBadge(m.mov_avg_cp)
-                    const winPct  = m.mov_times > 0 ? Math.round((m.mov_wins  / m.mov_times) * 100) : 0
-                    const lossPct = m.mov_times > 0 ? Math.round((m.mov_losses / m.mov_times) * 100) : 0
+                    const wp      = winPct(m.mov_wins, m.mov_losses, m.mov_times)
                     const isSelected = selectedMove === m.mov_san
                     return (
                       <tr
@@ -212,13 +200,9 @@ export default function PositionDetail({
                             ({totalTimes > 0 ? Math.round((m.mov_times / totalTimes) * 100) : 0}%)
                           </span>
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{winPct}%</td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums text-red-600">{lossPct}%</td>
-                        <td className={`py-1.5 pr-3 text-right tabular-nums font-mono ${m.mov_avg_cp != null && m.mov_avg_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {m.mov_avg_cp != null ? (m.mov_avg_cp > 0 ? `+${m.mov_avg_cp}` : `${m.mov_avg_cp}`) : '—'}
-                        </td>
-                        <td className="py-1.5">
-                          <span className={badge.cls}>{badge.label}</span>
+                        <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{wp}%</td>
+                        <td className={`py-1.5 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                          {m.mov_result_cp != null ? (m.mov_result_cp > 0 ? `+${m.mov_result_cp}` : `${m.mov_result_cp}`) : '—'}
                         </td>
                       </tr>
                     )
@@ -252,8 +236,7 @@ export default function PositionDetail({
                     <tr className="text-xs text-gray-500 uppercase text-left border-b">
                       <th className="py-1.5 pr-3">Game ID</th>
                       <th className="py-1.5 pr-3">Move</th>
-                      <th className="py-1.5 pr-3 text-center">Result</th>
-                      <th className="py-1.5 text-right">CP</th>
+                      <th className="py-1.5 text-center">Result</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -270,11 +253,8 @@ export default function PositionDetail({
                             {g.gameId ?? '—'}
                           </td>
                           <td className="py-1.5 pr-3 font-mono">{g.move_played}</td>
-                          <td className="py-1.5 pr-3 text-center">
+                          <td className="py-1.5 text-center">
                             <span className={rb.cls}>{rb.label}</span>
-                          </td>
-                          <td className={`py-1.5 text-right tabular-nums font-mono ${g.cp_loss != null && g.cp_loss < 0 ? 'text-red-600' : g.cp_loss != null ? 'text-green-700' : 'text-gray-400'}`}>
-                            {g.cp_loss != null ? (g.cp_loss > 0 ? `+${g.cp_loss}` : `${g.cp_loss}`) : '—'}
                           </td>
                         </tr>
                       )

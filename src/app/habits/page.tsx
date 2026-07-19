@@ -18,14 +18,15 @@ function ss<T>(key: string, fallback: T): T {
 const STORAGE_KEY = 'habits_filters'
 
 const HABITS_ITEMS = [
-  { heading: 'What is shown',  body: 'Moves you play repeatedly from the same position where you lose centipawns (CP). Only losing moves are shown here — clicking a row opens all moves (good and bad) for that position.' },
+  { heading: 'What is shown',  body: 'Moves you play repeatedly from the same position — good or bad. Use the Quality filter to switch between habits that cost you centipawns and ones that gained them. Clicking a row opens all moves (good and bad) for that position.' },
   { heading: 'Click a row',    body: 'Opens Position Detail: see every move you\'ve played from that position, win/loss stats, the Stockfish best move, AI coaching advice, and your full game history there.' },
-  { heading: 'CP column',      body: 'Average CP change when you play this move. Negative (red) = you lose advantage. Sorted worst first by default.' },
+  { heading: 'CP column',      body: 'Stockfish\'s evaluation of the position after you play this move (white\'s perspective). Sorted by biggest impact first by default.' },
   { heading: 'Prerequisites',  body: 'Build Position Tree then Evaluate Positions must both be run via the Pipeline tab.' },
 ]
 
-type Color  = 'all' | 'w' | 'b'
-type SortBy = 'cpLoss' | 'reached'
+type Color   = 'all' | 'w' | 'b'
+type SortBy  = 'cpLoss' | 'reached'
+type Quality = 'bad' | 'good'
 
 function HabitsContent() {
   const searchParams = useSearchParams()
@@ -36,6 +37,7 @@ function HabitsContent() {
     [playerFilter, players]
   )
   const [color,       setColor]       = useState<Color>('all')
+  const [quality,     setQuality]     = useState<Quality>('bad')
   const [sortBy,      setSortBy]      = useState<SortBy>('cpLoss')
   const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE)
   const [minReached,  setMinReached]  = useState(3)
@@ -51,6 +53,7 @@ function HabitsContent() {
       try {
         const s = JSON.parse(saved)
         if (s.color)      setColor(s.color)
+        if (s.quality)    setQuality(s.quality)
         if (s.sortBy)     setSortBy(s.sortBy)
         if (s.minMove)    setMinMove(s.minMove)
         if (s.minReached) setMinReached(s.minReached)
@@ -60,8 +63,8 @@ function HabitsContent() {
   }, [])
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ color, sortBy, minMove, minReached, showDismissed }))
-  }, [color, sortBy, minMove, minReached, showDismissed])
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ color, quality, sortBy, minMove, minReached, showDismissed }))
+  }, [color, quality, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
@@ -81,7 +84,7 @@ function HabitsContent() {
   //
   useEffect(() => {
     setCurrentPage(1)
-  }, [usernamesToFetch, color, sortBy, minMove, minReached, showDismissed])
+  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed])
 
   useEffect(() => {
     async function loadCount() {
@@ -89,13 +92,14 @@ function HabitsContent() {
       const count = await getHabitsCount({
         players: usernamesToFetch,
         color: color === 'all' ? undefined : color,
+        quality,
         minReached,
         dismissed: showDismissed
       })
       setTotalCount(count)
     }
     loadCount()
-  }, [usernamesToFetch, color, minMove, minReached, showDismissed])
+  }, [usernamesToFetch, color, quality, minMove, minReached, showDismissed])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / HABITS_ITEMS_PER_PAGE))
 
@@ -106,6 +110,7 @@ function HabitsContent() {
       const data = await getHabitsData({
         players:    usernamesToFetch,
         color:      color === 'all' ? undefined : color,
+        quality,
         sortBy,
         limit:      HABITS_ITEMS_PER_PAGE,
         offset:     (currentPage - 1) * HABITS_ITEMS_PER_PAGE,
@@ -116,7 +121,7 @@ function HabitsContent() {
     } finally {
       setLoading(false)
     }
-  }, [usernamesToFetch, color, sortBy, minMove, minReached, showDismissed, currentPage])
+  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage])
 
   useEffect(() => { load() }, [load])
 
@@ -141,8 +146,8 @@ function HabitsContent() {
     <div className="space-y-4">
       <MyBox>
         <h3 className="text-xs font-bold mb-2 flex items-center gap-2">
-          Blunder Habits
-          <MyHelp title='Blunder Habits' items={HABITS_ITEMS} />
+          Habits
+          <MyHelp title='Habits' items={HABITS_ITEMS} />
         </h3>
 
         {loading ? (
@@ -155,6 +160,8 @@ function HabitsContent() {
             players={players}
             color={color}
             onColorChange={setColor}
+            quality={quality}
+            onQualityChange={setQuality}
             minMove={minMove}
             onMinMoveChange={setMinMove}
             minReached={minReached}
@@ -175,7 +182,7 @@ function HabitsContent() {
             />
           )}
           <span className="text-xs text-gray-400">
-            Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : 'bad'} move{totalCount !== 1 ? 's' : ''})
+            Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : quality} move{totalCount !== 1 ? 's' : ''})
           </span>
         </div>
       </MyBox>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Chess, Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
@@ -11,9 +12,10 @@ import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate } from '@/src/lib/stockfish'
 import { saveGameEvaluations, saveAnalysisLine, saveAnalysisTree } from '@/src/lib/actions/games'
-import { upgradePositionEvaluation, getMovePlayCounts } from '@/src/lib/analysis/chessdb'
+import { upgradePositionEvaluation, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
 import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
+import { winPct } from '@/src/lib/winPct'
 import {
   MoveNode,
   AnalysisTree,
@@ -77,6 +79,7 @@ function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
 }
 
 export default function ChessBoardView({ game, gdid, username, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
+  const router = useRouter()
   const playerColor = getPlayerResult(game, username).color
   const result = getPlayerResult(game, username).result
   const { openingName: opening, eco } = game.pgn ? parsePgnHeaders(game.pgn) : { openingName: (game as any)._openingName ?? '', eco: (game as any)._ecoCode ?? '' }
@@ -85,6 +88,9 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
   const [tree, setTree] = useState<AnalysisTree | null>(null)
   const [currentNode, setCurrentNode] = useState<MoveNode | null>(null)
   const [moveCounts, setMoveCounts] = useState<Record<string, number>>({})
+  const [positionGames, setPositionGames] = useState<PositionGameHit[]>([])
+  const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
+  const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
 
   // Display chess instance
   const displayGame = useRef(new Chess())
@@ -175,6 +181,42 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
 
     return () => { cancelled = true }
   }, [tree, username])
+
+  // -----------------------------------------------------------------------
+  // Moves From This Position — one row per move played from whatever position
+  // is currently on the board, aggregated across all tracked players. Loads
+  // automatically on every position change; a click on a row reveals the
+  // matching games below (see positionGames + selectedPositionMove).
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    const fen = currentNode?.fen ?? tree?.root.fen
+    setSelectedPositionMove(null)
+    if (!fen) { setMoveSummary([]); return }
+    let cancelled = false
+
+    getMoveSummaryForPosition(fen).then(rows => {
+      if (!cancelled) setMoveSummary(rows)
+    }).catch(() => { if (!cancelled) setMoveSummary([]) })
+
+    return () => { cancelled = true }
+  }, [currentNode, tree])
+
+  // -----------------------------------------------------------------------
+  // Games From This Position — every tracked game (any player) that reached
+  // whatever position is currently on the board. Loads automatically on every
+  // position change; filtered client-side by selectedPositionMove for display.
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    const fen = currentNode?.fen ?? tree?.root.fen
+    if (!fen) { setPositionGames([]); return }
+    let cancelled = false
+
+    getGamesForPosition(fen, gdid).then(games => {
+      if (!cancelled) setPositionGames(games)
+    }).catch(() => { if (!cancelled) setPositionGames([]) })
+
+    return () => { cancelled = true }
+  }, [currentNode, tree, gdid])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -906,6 +948,91 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
               />
             </div>
           </MyBox>
+
+          {/* Moves From This Position: one row per move played from the current board
+              position, across all tracked players — click a row to reveal its games below */}
+          <MyBox title='Moves From This Position'>
+            {moveSummary.length === 0 ? (
+              <p className='text-xs text-gray-400'>No games reached this position.</p>
+            ) : (
+              <div className='overflow-x-auto'>
+                <table className='w-full text-xs'>
+                  <thead>
+                    <tr className='text-left text-gray-500 border-b border-gray-200'>
+                      <th className='py-1 pr-2'>Move</th>
+                      <th className='py-1 pr-2 text-right'>Times</th>
+                      <th className='py-1 pr-2 text-right'>Win%</th>
+                      <th className='py-1 text-right'>CP</th>
+                    </tr>
+                  </thead>
+                  <tbody className='divide-y divide-gray-100'>
+                    {moveSummary.map(m => {
+                      const wp = winPct(m.mov_wins, m.mov_losses, m.mov_times)
+                      const isSelected = selectedPositionMove === m.mov_san
+                      return (
+                        <tr
+                          key={m.mov_san}
+                          className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                          onClick={() => setSelectedPositionMove(isSelected ? null : m.mov_san)}
+                        >
+                          <td className='py-1 pr-2 font-mono font-medium'>{m.mov_san}</td>
+                          <td className='py-1 pr-2 text-right tabular-nums'>{m.mov_times}</td>
+                          <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{wp}%</td>
+                          <td className={`py-1 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                            {m.mov_result_cp != null ? (m.mov_result_cp > 0 ? `+${m.mov_result_cp}` : `${m.mov_result_cp}`) : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </MyBox>
+
+          {/* Games — <move>: individual games that played the clicked move, filtered
+              client-side from positionGames — click a row to switch the board to that game */}
+          {selectedPositionMove && (
+            <MyBox title={`Games — ${selectedPositionMove}`}>
+              {(() => {
+                const filteredGames = positionGames.filter(g => g.move_played === selectedPositionMove)
+                if (filteredGames.length === 0) {
+                  return <p className='text-xs text-gray-400'>No other games reached this position.</p>
+                }
+                return (
+                  <div className='overflow-x-auto'>
+                    <table className='w-full text-xs'>
+                      <thead>
+                        <tr className='text-left text-gray-500 border-b border-gray-200'>
+                          <th className='py-1 pr-2'>Player</th>
+                          <th className='py-1 pr-2 text-center'>Result</th>
+                          <th className='py-1 text-right'>Game</th>
+                        </tr>
+                      </thead>
+                      <tbody className='divide-y divide-gray-100'>
+                        {filteredGames.map((g, i) => (
+                          <tr
+                            key={i}
+                            className={g.gameId != null ? 'cursor-pointer hover:bg-gray-50' : ''}
+                            onClick={() => {
+                              if (g.gameId == null) return
+                              router.push(`/analyze?game=${g.gameId}&user=${g.player}&from=${encodeURIComponent(backPath)}`)
+                            }}
+                          >
+                            <td className='py-1 pr-2 font-medium'>{g.player}</td>
+                            <td className='py-1 pr-2 text-center'>
+                              {g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : g.result === 'draw' ? 'D' : '—'}
+                            </td>
+                            <td className='py-1 text-right text-gray-500'>{g.gameId ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })()}
+            </MyBox>
+          )}
         </div>
       </div>
     </div>

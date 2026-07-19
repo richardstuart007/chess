@@ -21,6 +21,7 @@ import { table_check }  from 'nextjs-shared/table_check'
 import { table_query }  from 'nextjs-shared/table_query'
 import { table_update } from 'nextjs-shared/table_update'
 import { truncateFen }  from '../fen'
+import { POSITION_GAMES_LIMIT } from '../constants'
 
 export interface PositionRow {
   pos_id: number
@@ -30,12 +31,12 @@ export interface PositionRow {
 }
 
 export interface MoveRow {
-  mov_san:    string
-  mov_uci:    string | null
-  mov_times:  number
-  mov_wins:   number
-  mov_losses: number
-  mov_avg_cp: number | null
+  mov_san:       string
+  mov_uci:       string | null
+  mov_times:     number
+  mov_wins:      number
+  mov_losses:    number
+  mov_result_cp: number | null
 }
 
 export interface EvaluationRow {
@@ -108,7 +109,10 @@ export async function getPositionCount(): Promise<number> {
 
 //----------------------------------------------------------------------------------
 //  getMovesForPosition — distinct moves played from a position, aggregated from
-//  tgam_game_positions, ordered by frequency.
+//  tgam_game_positions, ordered by frequency. mov_result_cp is the Stockfish eval of
+//  the position resulting from each move (deterministic per position+move — every
+//  game sharing a move from this position reaches the identical resulting position),
+//  not an average — looked up once via the subquery's resulting_pos_id, not aggregated.
 //----------------------------------------------------------------------------------
 export async function getMovesForPosition(posId: number, player?: string): Promise<MoveRow[]> {
   const params: (number | string)[] = [posId]
@@ -118,20 +122,24 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
   return await table_query({
     caller: 'getMovesForPosition',
     query: `
-      SELECT
-        gp.gam_move_played                                   AS mov_san,
-        gp.gam_move_uci                                      AS mov_uci,
-        COUNT(*)::int                                        AS mov_times,
-        COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
-        COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
-        ROUND(AVG(gp.gam_cp_change))::int                    AS mov_avg_cp
-      FROM tgam_game_positions gp
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      WHERE gp.gam_pos_id = $1
-        AND gp.gam_move_num > 0
-        ${playerFilter}
-      GROUP BY gp.gam_move_played, gp.gam_move_uci
-      ORDER BY mov_times DESC
+      SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+      FROM (
+        SELECT
+          gp.gam_move_played                                   AS mov_san,
+          gp.gam_move_uci                                      AS mov_uci,
+          COUNT(*)::int                                        AS mov_times,
+          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
+          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+          MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
+        FROM tgam_game_positions gp
+        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+        WHERE gp.gam_pos_id = $1
+          AND gp.gam_move_num > 0
+          ${playerFilter}
+        GROUP BY gp.gam_move_played, gp.gam_move_uci
+      ) sub
+      LEFT JOIN teva_evaluations e ON e.eva_pos_id = sub.resulting_pos_id
+      ORDER BY sub.mov_times DESC
     `,
     params
   }) as MoveRow[]
@@ -197,6 +205,93 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
     result[row.pos_fen][row.mov_san] = Number(row.times)
   }
   return result
+}
+
+//----------------------------------------------------------------------------------
+//  getMoveSummaryForPosition — one row per move played from this exact position,
+//  aggregated across all tracked players. FEN-keyed version of getMovesForPosition's
+//  aggregation query (via tpos_positions.pos_fen, like getGamesForPosition), used by
+//  the Analyze page's "Moves From This Position" panel for any position on the board.
+//  mov_result_cp is the resulting position's Stockfish eval (deterministic per
+//  position+move), not an average — see getMovesForPosition's comment.
+//----------------------------------------------------------------------------------
+export async function getMoveSummaryForPosition(fen: string): Promise<MoveRow[]> {
+  return await table_query({
+    caller: 'getMoveSummaryForPosition',
+    query: `
+      SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+      FROM (
+        SELECT
+          gp.gam_move_played                                   AS mov_san,
+          gp.gam_move_uci                                      AS mov_uci,
+          COUNT(*)::int                                        AS mov_times,
+          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
+          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+          MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
+        FROM tpos_positions p
+        JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
+        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+        WHERE p.pos_fen = $1
+          AND gp.gam_move_num > 0
+        GROUP BY gp.gam_move_played, gp.gam_move_uci
+      ) sub
+      LEFT JOIN teva_evaluations e ON e.eva_pos_id = sub.resulting_pos_id
+      ORDER BY sub.mov_times DESC
+    `,
+    params: [truncateFen(fen)]
+  }) as MoveRow[]
+}
+
+export interface PositionGameHit {
+  player:      string
+  move_played: string
+  move_num:    number | null
+  result:      string | null
+  gameId:      number | null
+}
+
+//----------------------------------------------------------------------------------
+//  getGamesForPosition — every tracked game (any player) that reached this exact
+//  position, keyed by FEN like getMovePlayCount/getMovePlayCounts. Used by the
+//  Analyze page's "Games From This Position" panel, which can show any position
+//  currently on the board — not just ones with a known pos_id.
+//----------------------------------------------------------------------------------
+export async function getGamesForPosition(fen: string, excludeGdid?: number): Promise<PositionGameHit[]> {
+  const params: (string | number)[] = [truncateFen(fen)]
+  let excludeFilter = ''
+  if (excludeGdid) {
+    params.push(excludeGdid)
+    excludeFilter = `AND d.gd_gdid != $${params.length}`
+  }
+
+  const rows = await table_query({
+    caller: 'getGamesForPosition',
+    query: `
+      SELECT
+        d.gd_player,
+        gp.gam_move_played,
+        gp.gam_move_num,
+        d.gd_player_result,
+        d.gd_gdid
+      FROM tpos_positions p
+      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
+      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+      WHERE p.pos_fen = $1
+        AND gp.gam_move_num > 0
+        ${excludeFilter}
+      ORDER BY gp.gam_gamid
+      LIMIT ${POSITION_GAMES_LIMIT}
+    `,
+    params
+  })
+
+  return rows.map((r: any) => ({
+    player:      r.gd_player,
+    move_played: r.gam_move_played,
+    move_num:    r.gam_move_num != null ? Number(r.gam_move_num) : null,
+    result:      r.gd_player_result ?? null,
+    gameId:      r.gd_gdid != null ? Number(r.gd_gdid) : null
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -327,28 +422,33 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
 // ---------------------------------------------------------------------------
 
 //----------------------------------------------------------------------------------
-//  getHabitsData — one row per (position × move) where avg CP is negative (loss).
-//  Only bad moves are returned; the position detail page shows all moves. Reads from
-//  thab_habits (built/refreshed by buildHabits() on the Pipeline page) rather than
-//  live-aggregating tgam_game_positions on every request — pos_fen/pos_color/pos_cp
-//  still come from tpos_positions/teva_evaluations via join since those aren't
-//  player-specific and don't need duplicating into thab_habits.
+//  getHabitsData — one row per (position × move) recurring habit, good or bad
+//  (see quality). The position detail page separately shows all moves regardless of
+//  habit status. Reads from thab_habits (built/refreshed by buildHabits() on the
+//  Pipeline page) rather than live-aggregating tgam_game_positions on every request —
+//  pos_fen/pos_color/pos_cp still come from tpos_positions/teva_evaluations via join
+//  since those aren't player-specific and don't need duplicating into thab_habits.
+//  move_cp is the resulting position's eva_cp (via hab_resulting_pos_id), not the
+//  hab_move_cp delta — that delta stays internal, driving the quality filter/sort only.
 //----------------------------------------------------------------------------------
 function buildHabitsFilter(opts: {
   players?: string[]
   color?: 'w' | 'b'
   minReached?: number
   dismissed?: boolean
+  quality?: 'bad' | 'good'
 }): {
   params: (string | number | boolean)[]
   playerPlaceholders: string
   dismissedPlaceholder: string
   minReachedPlaceholder: string
   colorFilter: string
+  qualityFilter: string
 } {
   const players    = (opts.players ?? []).map(p => p.toLowerCase())
   const minReached = opts.minReached ?? 3
   const dismissed  = opts.dismissed ?? false
+  const quality    = opts.quality ?? 'bad'
   const params: (string | number | boolean)[] = []
   const playerPlaceholders = players
     .map(p => { params.push(p); return `$${params.length}` })
@@ -358,7 +458,8 @@ function buildHabitsFilter(opts: {
   params.push(minReached)
   const minReachedPlaceholder = `$${params.length}`
   const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
-  return { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter }
+  const qualityFilter = quality === 'good' ? 'AND h.hab_move_cp > 0' : 'AND h.hab_move_cp < 0'
+  return { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter }
 }
 
 export async function getHabitsData(opts: {
@@ -369,6 +470,7 @@ export async function getHabitsData(opts: {
   offset?: number
   minReached?: number
   dismissed?: boolean
+  quality?: 'bad' | 'good'
 }): Promise<Array<{
   pos_id:      number
   pos_fen:     string
@@ -385,12 +487,12 @@ export async function getHabitsData(opts: {
 }>> {
   if (!opts.players || opts.players.length === 0) return []
 
-  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter } = buildHabitsFilter(opts)
+  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter } = buildHabitsFilter(opts)
   const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
   const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
-    ? 'h.hab_move_times DESC, h.hab_move_cp ASC NULLS LAST'
-    : 'h.hab_move_cp ASC NULLS LAST'
+    ? 'h.hab_move_times DESC, ABS(h.hab_move_cp) DESC NULLS LAST'
+    : 'ABS(h.hab_move_cp) DESC NULLS LAST'
 
   const rows = await table_query({
     caller: 'getHabitsData',
@@ -407,14 +509,16 @@ export async function getHabitsData(opts: {
         h.hab_move_times                                  AS move_times,
         h.hab_move_wins                                   AS move_wins,
         h.hab_move_losses                                 AS move_losses,
-        h.hab_move_cp                                     AS move_cp
+        e2.eva_cp                                          AS move_cp
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
-      LEFT JOIN teva_evaluations e ON e.eva_pos_id = h.hab_pos_id
+      LEFT JOIN teva_evaluations e  ON e.eva_pos_id  = h.hab_pos_id
+      LEFT JOIN teva_evaluations e2 ON e2.eva_pos_id = h.hab_resulting_pos_id
       WHERE h.hab_player IN (${playerPlaceholders})
         AND h.hab_dismissed = ${dismissedPlaceholder}
         AND h.hab_move_times >= ${minReachedPlaceholder}
         ${colorFilter}
+        ${qualityFilter}
       ORDER BY ${orderClause}
       ${limitClause}
       ${offsetClause}
@@ -446,10 +550,11 @@ export async function getHabitsCount(opts: {
   color?: 'w' | 'b'
   minReached?: number
   dismissed?: boolean
+  quality?: 'bad' | 'good'
 }): Promise<number> {
   if (!opts.players || opts.players.length === 0) return 0
 
-  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter } = buildHabitsFilter(opts)
+  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter } = buildHabitsFilter(opts)
 
   const rows = await table_query({
     caller: 'getHabitsCount',
@@ -461,6 +566,7 @@ export async function getHabitsCount(opts: {
         AND h.hab_dismissed = ${dismissedPlaceholder}
         AND h.hab_move_times >= ${minReachedPlaceholder}
         ${colorFilter}
+        ${qualityFilter}
     `,
     params
   })
@@ -520,7 +626,6 @@ export async function getPositionDetail(posId: number): Promise<{
     player:      string
     move_played: string
     move_num:    number | null
-    cp_loss:     number | null
     result:      string | null
     gameId:      number | null
   }>
@@ -534,19 +639,23 @@ export async function getPositionDetail(posId: number): Promise<{
     table_query({
       caller: 'getPositionDetail',
       query: `
-        SELECT
-          gp.gam_move_played                                   AS mov_san,
-          gp.gam_move_uci                                      AS mov_uci,
-          COUNT(*)::int                                        AS mov_times,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
-          ROUND(AVG(gp.gam_cp_change))::int                    AS mov_avg_cp
-        FROM tgam_game_positions gp
-        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-        WHERE gp.gam_pos_id = $1
-          AND gp.gam_move_num > 0
-        GROUP BY gp.gam_move_played, gp.gam_move_uci
-        ORDER BY mov_times DESC
+        SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+        FROM (
+          SELECT
+            gp.gam_move_played                                   AS mov_san,
+            gp.gam_move_uci                                      AS mov_uci,
+            COUNT(*)::int                                        AS mov_times,
+            COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
+            COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+            MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
+          FROM tgam_game_positions gp
+          JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+          WHERE gp.gam_pos_id = $1
+            AND gp.gam_move_num > 0
+          GROUP BY gp.gam_move_played, gp.gam_move_uci
+        ) sub
+        LEFT JOIN teva_evaluations e ON e.eva_pos_id = sub.resulting_pos_id
+        ORDER BY sub.mov_times DESC
       `,
       params: [posId]
     }),
@@ -572,7 +681,6 @@ export async function getPositionDetail(posId: number): Promise<{
           d.gd_player,
           gp.gam_move_played,
           gp.gam_move_num,
-          gp.gam_cp_change,
           d.gd_player_result,
           d.gd_gdid
         FROM tgam_game_positions gp
@@ -595,7 +703,6 @@ export async function getPositionDetail(posId: number): Promise<{
       player:      r.gd_player,
       move_played: r.gam_move_played,
       move_num:    r.gam_move_num != null ? Number(r.gam_move_num) : null,
-      cp_loss:     r.gam_cp_change  != null ? Number(r.gam_cp_change)  : null,
       result:      r.gd_player_result ?? null,
       gameId:      r.gd_gdid      != null ? Number(r.gd_gdid)      : null
     }))

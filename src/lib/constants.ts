@@ -97,6 +97,12 @@ export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 //
 export const HABITS_ITEMS_PER_PAGE = 10
 
+//
+//  POSITION_GAMES_LIMIT — max rows returned by getGamesForPosition, the Analyze
+//  page's "Games From This Position" panel.
+//
+export const POSITION_GAMES_LIMIT = 50
+
 export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
   stricade: ['blitz'],
   astarrboy: ['blitz', 'rapid']

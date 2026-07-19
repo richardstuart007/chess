@@ -70,7 +70,7 @@ function MoveBadge({
       <span>{node.san}</span>
       {ann && <span className='text-xxs text-blue-500'>{ann}</span>}
       {count !== undefined && count > 1 && (
-        <span className='text-xxs text-gray-400 font-mono'>×{count}</span>
+        <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
       )}
     </button>
   )
