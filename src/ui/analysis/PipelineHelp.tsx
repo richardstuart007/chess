@@ -106,6 +106,19 @@ const STEPS = [
       "tgd_gamesdecon.gd_final_eval — Stockfish evaluation (white perspective) of each game's actual final position",
     ],
   },
+  {
+    num: '9',
+    title: 'Deepen Popular Positions',
+    input: [
+      'tpos_positions/teva_evaluations — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current eva_depth',
+    ],
+    processing:
+      "Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: pos_reached >= 50 -> depth 30, >= 30 -> depth 24, >= 10 -> depth 22. Each qualifying position is re-evaluated at its own tier's depth — not one uniform depth for the whole batch, since different rows can qualify for different tiers — then merged via upgradePositionEvaluation, the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions).",
+    output: [
+      'teva_evaluations — eva_cp/eva_best_move/eva_depth upgraded for qualifying positions',
+      'tgam_game_positions.gam_cp_change — recomputed for rows touching an upgraded position',
+    ],
+  },
 ]
 
 const ROW_COUNT_SQL =

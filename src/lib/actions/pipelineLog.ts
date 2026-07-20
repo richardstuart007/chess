@@ -19,7 +19,8 @@ async function resolvePipRunId(step: number, subStep: string, forceNew: boolean 
     query:        (isAllocator || forceNew)
       ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog`
       : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog`,
-    params:       []
+    params:       [],
+    skipCache:    true
   })
   return rows[0].run_id as number
 }
@@ -74,6 +75,7 @@ export async function getPipelineRates(): Promise<{
   step5: number | null
   step6: number | null
   step8: number | null
+  step9: number | null
 }> {
   const rows = await table_query({
     caller: 'getPipelineRates',
@@ -93,7 +95,9 @@ export async function getPipelineRates(): Promise<{
         SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_duration_ms END)::float
           / NULLIF(SUM(CASE WHEN pip_step = 6 AND rn <= 10 THEN pip_output_recs END), 0) AS rate6,
         SUM(CASE WHEN pip_step = 8 AND rn <= 10 THEN pip_duration_ms END)::float
-          / NULLIF(SUM(CASE WHEN pip_step = 8 AND rn <= 10 THEN pip_output_recs END), 0) AS rate8
+          / NULLIF(SUM(CASE WHEN pip_step = 8 AND rn <= 10 THEN pip_output_recs END), 0) AS rate8,
+        SUM(CASE WHEN pip_step = 9 AND rn <= 10 THEN pip_duration_ms END)::float
+          / NULLIF(SUM(CASE WHEN pip_step = 9 AND rn <= 10 THEN pip_output_recs END), 0) AS rate9
       FROM (
         SELECT pip_step, pip_output_recs, pip_duration_ms,
                ROW_NUMBER() OVER (PARTITION BY pip_step ORDER BY pip_pipid DESC) AS rn
@@ -101,7 +105,8 @@ export async function getPipelineRates(): Promise<{
         WHERE pip_output_recs > 0
       ) ranked
     `,
-    params:       []
+    params:       [],
+    skipCache:    true
   })
   const r = rows[0]
   return {
@@ -112,6 +117,7 @@ export async function getPipelineRates(): Promise<{
     step5: r.rate5 != null ? Number(r.rate5) : null,
     step6: r.rate6 != null ? Number(r.rate6) : null,
     step8: r.rate8 != null ? Number(r.rate8) : null,
+    step9: r.rate9 != null ? Number(r.rate9) : null,
   }
 }
 
@@ -126,7 +132,7 @@ export async function getPipelineRates(): Promise<{
 //  (which allocates its own new run_id) will make every other step show "—" until
 //  the next coordinated run repopulates them all together.
 //----------------------------------------------------------------------------------
-export async function getLatestPipelineRuns(): Promise<{
+export async function getLatestPipelineRuns(runId?: number): Promise<{
   pip_step:        number
   pip_sub_step:    string
   pip_step_name:   string
@@ -147,10 +153,31 @@ export async function getLatestPipelineRuns(): Promise<{
         pip_input_table, pip_input_recs, pip_output_table, pip_output_recs,
         pip_duration_ms
       FROM tpip_pipelinelog
-      WHERE pip_run_id = (SELECT MAX(pip_run_id) FROM tpip_pipelinelog)
+      WHERE pip_run_id = ${runId != null ? '$1' : '(SELECT MAX(pip_run_id) FROM tpip_pipelinelog)'}
       ORDER BY pip_step, pip_sub_step
     `,
-    params:       []
+    params:       runId != null ? [runId] : [],
+    skipCache:    true
   })
   return rows
+}
+
+//----------------------------------------------------------------------------------
+//  getRecentRunIds — the last N distinct pip_run_id values, descending (most recent
+//  first), for the Pipeline page's Run # selector.
+//----------------------------------------------------------------------------------
+export async function getRecentRunIds(limit: number = 5): Promise<number[]> {
+  const rows = await table_query({
+    caller:       'getRecentRunIds',
+    table:        'tpip_pipelinelog',
+    query:        `
+      SELECT DISTINCT pip_run_id
+      FROM tpip_pipelinelog
+      ORDER BY pip_run_id DESC
+      LIMIT $1
+    `,
+    params:       [limit],
+    skipCache:    true
+  })
+  return rows.map((r: any) => Number(r.pip_run_id))
 }

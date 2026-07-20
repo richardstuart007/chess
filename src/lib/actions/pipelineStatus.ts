@@ -1,7 +1,8 @@
 'use server'
 
 import { table_query } from 'nextjs-shared/table_query'
-import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS } from '../constants'
+import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR } from '../constants'
+import { countRemainingPopularPositions } from '../analysis/enrichPositionsStockfish'
 
 //----------------------------------------------------------------------------------
 //  getPipelineStatus — single-query count of processed/remaining rows for all steps
@@ -45,7 +46,8 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
            ON e.eva_pos_id = p.pos_id
          WHERE e.eva_evaid IS NULL)                                                     AS evaluations_remaining
     `,
-    params: []
+    params: [],
+    skipCache: true
   })
 
   const r = rows[0]
@@ -70,7 +72,7 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
   const rows = await table_query({
-    caller: 'refreshStep1', params: [],
+    caller: 'refreshStep1', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgr_gamesraw r
        WHERE NOT EXISTS (
@@ -87,7 +89,7 @@ export async function refreshStep3(): Promise<{
   allProcessed: number; allRemaining: number
 }> {
   const rows = await table_query({
-    caller: 'refreshStep3', params: [],
+    caller: 'refreshStep3', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgd_gamesdecon)                                         AS all_eligible,
       (SELECT COUNT(*) FROM tgd_gamesdecon d
@@ -105,7 +107,7 @@ export async function refreshStep3(): Promise<{
 
 export async function refreshTposStatus(): Promise<{ positions: number; unresolved: number }> {
   const rows = await table_query({
-    caller: 'refreshTposStatus', params: [],
+    caller: 'refreshTposStatus', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tpos_positions)                                AS positions,
       (SELECT COUNT(*) FROM tgam_game_positions WHERE gam_pos_id IS NULL)  AS unresolved`
@@ -116,7 +118,7 @@ export async function refreshTposStatus(): Promise<{ positions: number; unresolv
 
 export async function refreshStep4(): Promise<{ evaluated: number; remaining: number }> {
   const rows = await table_query({
-    caller: 'refreshStep4', params: [],
+    caller: 'refreshStep4', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM teva_evaluations)                                          AS evaluated,
       (SELECT COUNT(*) FROM tpos_positions p
@@ -132,7 +134,7 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
 
 export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
   const rows = await table_query({
-    caller: 'refreshCpChangeStatus', params: [],
+    caller: 'refreshCpChangeStatus', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS pending
       FROM tgam_game_positions gp
       JOIN tpos_positions pb ON pb.pos_id = gp.gam_pos_id
@@ -154,19 +156,42 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  tpur_workfile, which stays a snapshot of the last actual purge run.
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
-//  refreshHabitsStatus — total/dismissed row counts for thab_habits, for the pipeline
-//  page's Build Habits status line. No "remaining" concept — buildHabits() is a full
-//  recompute every run, not an incremental cursor.
+//  refreshHabitsStatus — total/dismissed row counts for thab_habits, plus a genuine
+//  "remaining" count: brand-new (player, position, move) combinations that meet
+//  buildHabits.ts's own criteria but have no thab_habits row yet at all — as opposed
+//  to existing habits just getting their stats routinely refreshed, which isn't
+//  "remaining work" in the backlog sense. Same aggregation shape buildHabits_select
+//  already runs, plus a LEFT JOIN to isolate never-yet-materialized combinations.
 //----------------------------------------------------------------------------------
-export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number }> {
+export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number; remaining: number }> {
   const rows = await table_query({
-    caller: 'refreshHabitsStatus', params: [],
-    query: `SELECT
-      (SELECT COUNT(*) FROM thab_habits)                        AS total,
-      (SELECT COUNT(*) FROM thab_habits WHERE hab_dismissed)     AS dismissed`
+    caller: 'refreshHabitsStatus', params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR], skipCache: true,
+    query: `
+      WITH candidates AS (
+        SELECT d.gd_player AS player, gp.gam_pos_id AS pos_id, gp.gam_move_played AS move_san
+        FROM tgam_game_positions gp
+        JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
+        JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
+        WHERE gp.gam_move_num >= $1
+          AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
+        GROUP BY d.gd_player, gp.gam_pos_id, gp.gam_move_played
+        HAVING COUNT(*) >= $2
+      )
+      SELECT
+        (SELECT COUNT(*) FROM thab_habits)                        AS total,
+        (SELECT COUNT(*) FROM thab_habits WHERE hab_dismissed)     AS dismissed,
+        (SELECT COUNT(*) FROM candidates c
+         LEFT JOIN thab_habits h
+           ON h.hab_player = c.player AND h.hab_pos_id = c.pos_id AND h.hab_move_san = c.move_san
+         WHERE h.hab_habid IS NULL)                                AS remaining
+    `
   })
   const r = rows[0]
-  return { total: parseInt(r.total ?? '0'), dismissed: parseInt(r.dismissed ?? '0') }
+  return {
+    total:     parseInt(r.total     ?? '0'),
+    dismissed: parseInt(r.dismissed ?? '0'),
+    remaining: parseInt(r.remaining ?? '0')
+  }
 }
 
 //----------------------------------------------------------------------------------
@@ -175,7 +200,7 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
 //----------------------------------------------------------------------------------
 export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; remaining: number }> {
   const rows = await table_query({
-    caller: 'refreshGameEndingsStatus', params: [],
+    caller: 'refreshGameEndingsStatus', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NOT NULL)  AS evaluated,
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NULL)      AS remaining`
@@ -187,9 +212,19 @@ export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; r
   }
 }
 
+//----------------------------------------------------------------------------------
+//  refreshDeepenPopularStatus — backlog count for the Deepen Popular Positions step,
+//  delegating to the same tiered subquery the batch itself uses (single source of
+//  truth for the POPULAR_POSITION_DEPTH_TIERS-based WHERE clause).
+//----------------------------------------------------------------------------------
+export async function refreshDeepenPopularStatus(): Promise<{ remaining: number }> {
+  const remaining = await countRemainingPopularPositions()
+  return { remaining }
+}
+
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const candidatesRes = await table_query({
-    caller: 'refreshPurgeStatus_find', params: [],
+    caller: 'refreshPurgeStatus_find', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS cnt
       FROM tpos_positions p
       WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}

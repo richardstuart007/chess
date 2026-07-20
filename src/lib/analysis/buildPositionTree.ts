@@ -215,7 +215,8 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     params: [],
     table: 'tgam_game_positions',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   const backlogBefore = parseInt(backlogRes[0]?.cnt ?? '0')
 
@@ -341,7 +342,8 @@ export async function buildPositionTree(opts: {
     params,
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
 
   const games: GameRecord[] = gamesRes.map((r: any) => ({
@@ -366,7 +368,8 @@ export async function buildPositionTree(opts: {
          )) AS snap_remaining`,
     params:       [],
     level,
-    severity:     'D'
+    severity:     'D',
+    skipCache:    true
   })
   const snapProcessed = parseInt(snapRes[0].snap_processed ?? '0')
   const snapRemaining = parseInt(snapRes[0].snap_remaining ?? '0')

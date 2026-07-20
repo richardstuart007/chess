@@ -17,6 +17,10 @@ side [`tpos_positions`](#tpos_positions) {#flow-tpos} {table} {pair}
 side [Purge](#purge) {#flow-purge} {process} {pair}
 side [Evaluate Positions](#teva_evaluations) {#flow-evaluate}
 side [`teva_evaluations`](#teva_evaluations) {#flow-teva} {table} {pair}
+side [Build Habits](#thab_habits) {#flow-buildhabits}
+side [`thab_habits`](#thab_habits) {#flow-thab} {table} {pair}
+side [Evaluate Game Endings](#evaluate-game-endings) {#flow-gameendings} {process} {pair}
+side [Deepen Popular Positions](#deepen-popular-positions) {#flow-deepenpopular} {process} {pair}
 edge flow-tpl -> flow-gamesync
 edge flow-chesscom -> flow-gamesync
 edge flow-gamesync -> flow-tgr
@@ -32,6 +36,12 @@ edge flow-purge -> flow-tgam
 edge flow-purge -> flow-tpos
 edge flow-purge -> flow-teva
 edge flow-bulkupdate -> flow-tgam
+edge flow-tgam -> flow-buildhabits
+edge flow-buildhabits -> flow-thab
+edge flow-gameendings -> flow-tgd
+edge flow-teva -> flow-deepenpopular
+edge flow-deepenpopular -> flow-teva
+edge flow-deepenpopular -> flow-tgam
 ```
 
 ## `tpl_players` {#tpl_players}
@@ -279,10 +289,14 @@ ply — see Processing above for how the FEN match/create is done.
 
 ### Consumers
 
-#### Habits page
+#### Position Detail / Analyze page
 
-[`chessdb.ts`](../src/lib/analysis/chessdb.ts) — queries `tgam_game_positions` directly and live
-for per-move win/loss/avg-CP breakdowns (`mov_wins`, `mov_losses`, `mov_avg_cp`).
+[`chessdb.ts`](../src/lib/analysis/chessdb.ts) — `getMovesForPosition`/`getMoveSummaryForPosition`
+query `tgam_game_positions` directly and live for per-move win/loss/CP breakdowns (`mov_wins`,
+`mov_losses`, `mov_result_cp` — the resulting position's own Stockfish eval, looked up directly via
+`gam_resulting_pos_id`, not averaged). Used by the Position Detail page's "Your Moves" tab and the
+Analyze page's "Moves From This Position" panel — not the Habits page itself, which reads the
+separate materialized [`thab_habits`](#thab_habits) table instead.
 
 #### Evaluate Positions, Phase 2
 
@@ -537,3 +551,172 @@ Same as [tgam_game_positions](#tgam_game_positions)'s Consumers — same column,
   permanently `NULL`.
 - **Fixed 2026-07-12:** the original query had no `IS NULL` guard and rewrote the entire computed
   set on every run.
+
+## `thab_habits` {#thab_habits}
+
+### Purpose
+
+One row per `(player, position, move played)` recurring habit — **both good and bad**, not just
+mistakes. The materialized aggregation the Habits page reads instead of live-aggregating
+`tgam_game_positions` on every request.
+
+### Input
+
+[`tgam_game_positions`](#tgam_game_positions) joined to `tgd_gamesdecon` (player/color/result) and
+`tpos_positions` (color match) — every tracked-player move at `move_num >= MIN_ANALYSIS_MOVE`.
+
+### Processing
+
+#### Summary
+
+Full recompute every run, not incremental — a habit's stats can change as new games arrive for a
+move already in the table, so there's no safe "already processed" cursor the way row-insertion
+steps have one.
+
+#### Details
+
+1. Aggregate - group by `(player, pos_id, move_san)`, keep only groups reached
+   `HABITS_MIN_REACH_FLOOR`+ times, filtered to the position's own color matching the player's
+   color (so opponent moves are excluded)
+2. `move_cp` - the single largest-magnitude `gam_cp_change` occurrence (sign kept), not an average
+   — see Rules/gotchas
+3. `resulting_pos_id` - deterministic per `(position, move)` group, captured for the eval-lookup
+   join at read time (not stored as a delta itself)
+4. Upsert - keyed on `(player, pos_id, move_san)`; never touches `hab_dismissed`, so a dismissed
+   habit stays dismissed across every future rebuild even as its stats keep refreshing
+
+### Output
+
+`thab_habits` — times played, wins, losses, `hab_move_cp` (internal detection/sort signal only,
+never displayed directly), `hab_resulting_pos_id`, `hab_dismissed` flag.
+
+### Consumers
+
+#### Habits page
+
+`getHabitsData`/`getHabitsCount` ([`chessdb.ts`](../src/lib/analysis/chessdb.ts)) — read
+`thab_habits` directly. The Bad/Good quality filter (default Bad) reads `hab_move_cp`'s sign;
+default sort is `ABS(hab_move_cp) DESC` ("Biggest impact first"). The displayed "Eval" column comes
+from a join through `hab_resulting_pos_id` → `teva_evaluations.eva_cp` — never `hab_move_cp` itself.
+
+### Rules/gotchas
+
+- Both good and bad recurring moves are stored — "habit" isn't synonymous with "mistake" (the
+  `WHERE move_cp < 0` filter was removed 2026-07-19).
+- `hab_move_cp` is clamped to ±`HABITS_MOVE_CP_CLAMP` to stay within its `numeric(6,2)` column
+  precision, since mate scores are normalized to ±10000 and can exceed it.
+- No incremental "remaining" backlog exists the way other steps have one, since this is a full
+  recompute — the Owner > Pipeline page instead shows a genuine count of brand-new
+  `(player, position, move)` combinations not yet captured at all, computed via the same
+  aggregation shape plus a `LEFT JOIN thab_habits ... WHERE hab_habid IS NULL`.
+
+## Evaluate Game Endings {#evaluate-game-endings}
+
+### Purpose
+
+Evaluate each game's **actual final position** — not capped at `MAX_ANALYSIS_MOVE` like the rest of
+the pipeline — the only place in the app that reflects how a game actually ended, rather than its
+early tracked moves.
+
+### Input
+
+[`tgd_gamesdecon`](#tgd_gamesdecon) — games whose `gd_final_eval` is still `NULL`, latest games
+(`gd_gdid DESC`) first.
+
+### Processing
+
+#### Summary
+
+Two phases: reuse an existing tracked-position eval when the game's true final position happens to
+already be evaluated (free), then fall back to a fresh Stockfish evaluation, spread across
+concurrent engine instances, for the rest.
+
+#### Details
+
+1. Replay - `chess.js` replays each game's full `gd_pgn` to its true final position (no move cap)
+2. Reuse (Phase 1) - one batched exact-FEN lookup against `tpos_positions`/`teva_evaluations` for
+   the whole run; if a game's final position is already tracked/evaluated (common for games ending
+   within the first `MAX_ANALYSIS_MOVE` moves), its `eva_cp` is copied directly via one batched
+   multi-row `UPDATE` — no Stockfish call
+3. Fresh evaluate (Phase 2) - whatever wasn't reused is evaluated with Stockfish, normalized to
+   white's perspective, spread across `GAME_ENDINGS_CONCURRENCY` concurrent engine instances on the
+   native-binary path (real OS-process parallelism); single-instance on the WASM path (production),
+   since `lite-single` has no worker-thread offload
+
+### Output
+
+`tgd_gamesdecon.gd_final_eval` — Stockfish evaluation (white perspective) of each game's actual
+final position.
+
+### Consumers
+
+#### Analyze page
+
+`ChessBoardView.tsx`'s "Games — `<move>`" panel's Final Eval column, via `getGamesForPosition`
+([`chessdb.ts`](../src/lib/analysis/chessdb.ts)).
+
+### Rules/gotchas
+
+- Entirely independent of `tpos_positions`/`tgam_game_positions` as a pipeline dependency — reads
+  and writes `tgd_gamesdecon` directly. Own cron step (`/api/analysis/evaluate-game-endings`), own
+  `/owner/pipeline` panel (step 8).
+- Every read here (the reuse lookup, the remaining-count check) must run with `skipCache: true` —
+  see the pipeline-wide caching audit/fix (2026-07-19): `table_query` caches every read by default
+  with no expiry, which is never correct for a live maintenance/backlog check.
+- Endings-tab (aggregate win/loss-by-termination chart) display of this data is intentionally out
+  of scope so far — planned as separate future work.
+
+## Deepen Popular Positions {#deepen-popular-positions}
+
+### Purpose
+
+Give frequently-reached positions a deeper (more trustworthy) Stockfish evaluation than the default
+batch depth, in proportion to how popular they actually are — a position reached hundreds of times
+deserves better analysis than one reached just above the purge threshold.
+
+### Input
+
+[`tpos_positions`](#tpos_positions) joined to [`teva_evaluations`](#teva_evaluations) — positions
+already evaluated whose `pos_reached` qualifies for a deeper `POPULAR_POSITION_DEPTH_TIERS` tier
+than their current `eva_depth`.
+
+### Processing
+
+#### Summary
+
+Tiered re-evaluation: the more a position has been reached, the deeper it gets re-analyzed, up to
+three tiers.
+
+#### Details
+
+1. `POPULAR_POSITION_DEPTH_TIERS` (`src/lib/constants.ts`) — `pos_reached >= 50` → depth 30,
+   `>= 30` → depth 24, `>= 10` → depth 22
+2. Backlog query assigns each candidate row its own qualifying tier's `target_depth` via a `CASE`
+   expression, filtering to only rows where `eva_depth < target_depth`
+3. Each qualifying position is re-evaluated with Stockfish at *its own* `target_depth` — not one
+   uniform depth for the whole batch, since different rows can qualify for different tiers
+4. Merged via `upgradePositionEvaluation` — the same guarded upgrade (only if deeper) and
+   `gam_cp_change` cascade used everywhere else this function is called (Analyze page's Game/
+   Position Analysis)
+
+### Output
+
+`teva_evaluations` — `eva_cp`/`eva_best_move`/`eva_depth` upgraded for qualifying positions;
+`tgam_game_positions.gam_cp_change` recomputed for rows touching an upgraded position (via
+`upgradePositionEvaluation`'s existing cascade).
+
+### Consumers
+
+Every reader of `teva_evaluations` benefits automatically once a position is upgraded — Moves From
+This Position, the Analyze page's Position Detail view, and the Habits eval column (joined live via
+`hab_resulting_pos_id`).
+
+### Rules/gotchas
+
+- Reuses `upgradePositionEvaluation` rather than a new guarded-UPDATE — no new write logic, only new
+  logic for *which* positions qualify and at what depth.
+- The backlog-count query (`/owner/pipeline` panel, step 9) and the batch's own selection query
+  share the same tier-derived SQL (`popularPositionTierSql()` in
+  `enrichPositionsStockfish.ts`), so they can't drift out of sync with each other or with
+  `POPULAR_POSITION_DEPTH_TIERS`.
+- Own cron step (`/api/analysis/deepen-popular-positions`), own `/owner/pipeline` panel (step 9).

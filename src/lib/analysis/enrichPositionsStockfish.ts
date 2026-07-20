@@ -3,12 +3,12 @@
 import { spawn } from 'child_process'
 import { createInterface } from 'readline'
 import { Chess } from 'chess.js'
-import { saveEvaluation } from './chessdb'
+import { saveEvaluation, upgradePositionEvaluation } from './chessdb'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY } from '../constants'
+import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY, POSITION_INSERT_CHUNK_SIZE, POPULAR_POSITION_DEPTH_TIERS } from '../constants'
 import { truncateFen } from '../fen'
 
 //----------------------------------------------------------------------------------
@@ -142,7 +142,8 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
         AND p.pos_reached > ${MIN_REACH_TO_KEEP}`,
     params: [],
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   return parseInt(rows[0]?.cnt ?? '0')
 }
@@ -170,7 +171,8 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
     `,
     params,
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   const rows = res.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
   await logEnd('getResultingFensToEvaluate', 'enrichPositionsStockfish', `${rows.length} FENs found`, level)
@@ -251,7 +253,8 @@ export async function enrichPositionsStockfish(opts: {
     params: posParams,
     table: 'tpos_positions',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   const positions: Array<{ posId: number; fen: string; color: string | null }> =
     posRes.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
@@ -315,6 +318,144 @@ export async function enrichPositionsStockfish(opts: {
 }
 
 //----------------------------------------------------------------------------------
+//  popularPositionTierSql — builds the shared CASE expression + lowest reach
+//  threshold from POPULAR_POSITION_DEPTH_TIERS, so the backlog-count query
+//  (pipelineStatus.ts) and the actual batch (deepenPopularPositions below)
+//  can never drift out of sync with each other or with the constant.
+//----------------------------------------------------------------------------------
+function popularPositionTierSql(): { caseSql: string; lowestMinReach: number } {
+  const caseSql = POPULAR_POSITION_DEPTH_TIERS
+    .map(t => `WHEN p.pos_reached >= ${t.minReach} THEN ${t.depth}`)
+    .join('\n            ')
+  const lowestMinReach = POPULAR_POSITION_DEPTH_TIERS[POPULAR_POSITION_DEPTH_TIERS.length - 1].minReach
+  return { caseSql, lowestMinReach }
+}
+
+//----------------------------------------------------------------------------------
+//  deepenPopularPositions — re-evaluates already-evaluated positions at a deeper
+//  depth when their pos_reached qualifies for a higher POPULAR_POSITION_DEPTH_TIERS
+//  tier than their current teva_evaluations.eva_depth. Reuses
+//  upgradePositionEvaluation's existing depth-guard, gam_cp_change cascade, and
+//  cache-clear — this function only selects which positions qualify and at what
+//  depth, per-row (not a single uniform depth for the whole batch).
+//----------------------------------------------------------------------------------
+export async function deepenPopularPositions(opts: {
+  limit?:    number
+  level?:    number
+  forceNewRun?: boolean
+}): Promise<{ processed: number; errors: number; remaining: number }> {
+  const binPath = process.env.STOCKFISH_PATH ?? ''
+
+  const limit = opts.limit ?? DEFAULT_BATCH_SIZE
+  const level = opts.level ?? 1
+
+  await logStart('deepenPopularPositions', 'deepenPopularPositionsRoute', `deepening popular positions, limit ${limit}`, level)
+  const t0 = Date.now()
+
+  const { caseSql, lowestMinReach } = popularPositionTierSql()
+  const rows = await table_query({
+    caller: 'deepenPopularPositions_select',
+    query: `
+      SELECT * FROM (
+        SELECT p.pos_id, p.pos_fen, p.pos_color, p.pos_reached, e.eva_depth,
+          CASE
+            ${caseSql}
+          END AS target_depth
+        FROM tpos_positions p
+        JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+        WHERE p.pos_reached >= ${lowestMinReach}
+      ) sub
+      WHERE sub.eva_depth < sub.target_depth
+      ORDER BY sub.pos_reached DESC
+      LIMIT $1
+    `,
+    params: [limit],
+    table: 'tpos_positions',
+    level,
+    severity: 'D',
+    skipCache: true
+  })
+  const candidates: Array<{ posId: number; fen: string; color: string | null; targetDepth: number }> =
+    rows.map((r: any) => ({
+      posId: Number(r.pos_id),
+      fen: r.pos_fen as string,
+      color: (r.pos_color ?? null) as string | null,
+      targetDepth: Number(r.target_depth)
+    }))
+
+  if (candidates.length === 0) {
+    await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'teva_evaluations', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logEnd('deepenPopularPositions', 'deepenPopularPositionsRoute', '0 processed, 0 errors, 0 remaining', level)
+    return { processed: 0, errors: 0, remaining: 0 }
+  }
+
+  const sf: StockfishEngineBase = binPath ? new StockfishProcess(binPath) : new StockfishWasm()
+  await sf.init()
+
+  let processed = 0
+  let errors    = 0
+
+  for (const item of candidates) {
+    try {
+      const { cp: rawCp, bestMove } = await sf.evaluate(item.fen, item.targetDepth)
+      const fenColor = item.color ?? 'w'
+      const whiteCp = fenColor === 'b' ? -rawCp : rawCp
+      await upgradePositionEvaluation({
+        fen:      item.fen,
+        cp:       whiteCp,
+        bestMove: bestMove ?? null,
+        depth:    item.targetDepth
+      })
+      processed++
+    } catch (err) {
+      console.error(`deepenPopularPositions: error on FEN`, err)
+      await write_logging({
+        lg_functionname: 'deepenPopularPositions',
+        lg_caller: 'deepenPopularPositionsRoute',
+        lg_msg: `error on FEN ${item.fen}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
+      errors++
+    }
+  }
+
+  sf.quit()
+
+  await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', inputTable: 'tpos_positions', inputRecs: candidates.length, outputTable: 'teva_evaluations', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+  const remaining = await countRemainingPopularPositions(level)
+  await logEnd('deepenPopularPositions', 'deepenPopularPositionsRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
+  return { processed, errors, remaining }
+}
+
+//----------------------------------------------------------------------------------
+//  countRemainingPopularPositions — backlog count for the Deepen Popular Positions
+//  step, same tiered subquery as the batch above without the LIMIT.
+//----------------------------------------------------------------------------------
+export async function countRemainingPopularPositions(level: number = 1): Promise<number> {
+  const { caseSql, lowestMinReach } = popularPositionTierSql()
+  const rows = await table_query({
+    caller: 'countRemainingPopularPositions',
+    query: `
+      SELECT COUNT(*) AS cnt FROM (
+        SELECT p.pos_reached, e.eva_depth,
+          CASE
+            ${caseSql}
+          END AS target_depth
+        FROM tpos_positions p
+        JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+        WHERE p.pos_reached >= ${lowestMinReach}
+      ) sub
+      WHERE sub.eva_depth < sub.target_depth
+    `,
+    params: [],
+    level,
+    severity: 'D',
+    skipCache: true
+  })
+  return parseInt(rows[0]?.cnt ?? '0')
+}
+
+//----------------------------------------------------------------------------------
 //  getGamesNeedingFinalEval — games whose actual final position hasn't been evaluated
 //  yet, latest games first. Independent of the position-tree pipeline (tpos_positions /
 //  tgam_game_positions) entirely — reads/writes tgd_gamesdecon directly, since the
@@ -337,32 +478,40 @@ async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{
     params,
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   return rows.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
 }
 
 //----------------------------------------------------------------------------------
-//  findExistingEval — exact-FEN lookup against the already-evaluated position tree;
-//  returns the stored eva_cp if this exact position is already tracked/evaluated
-//  (common for games that ended within the tracked move range), avoiding a redundant
-//  Stockfish call.
+//  findExistingEvals — batched exact-FEN lookup against the already-evaluated position
+//  tree; returns a map of truncated FEN -> eva_cp for whichever of the given FENs are
+//  already tracked/evaluated (common for games that ended within the tracked move
+//  range), avoiding a redundant Stockfish call. One round trip for the whole batch,
+//  instead of one query per game.
 //----------------------------------------------------------------------------------
-async function findExistingEval(truncatedFen: string, level: number): Promise<number | null> {
+async function findExistingEvals(truncatedFens: string[], level: number): Promise<Record<string, number>> {
+  if (truncatedFens.length === 0) return {}
+  const params: string[] = []
+  const placeholders = truncatedFens.map(f => { params.push(f); return `$${params.length}` }).join(', ')
   const rows = await table_query({
-    caller: 'findExistingEval',
+    caller: 'findExistingEvals',
     query: `
-      SELECT e.eva_cp
+      SELECT p.pos_fen, e.eva_cp
       FROM tpos_positions p
       JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-      WHERE p.pos_fen = $1 AND e.eva_cp IS NOT NULL
+      WHERE p.pos_fen IN (${placeholders}) AND e.eva_cp IS NOT NULL
     `,
-    params: [truncatedFen],
+    params,
     table: 'tpos_positions',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
-  return rows[0]?.eva_cp != null ? Number(rows[0].eva_cp) : null
+  const result: Record<string, number> = {}
+  for (const r of rows) result[r.pos_fen] = Number(r.eva_cp)
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -400,31 +549,16 @@ export async function evaluateGameEndings(opts: {
     return { processed: 0, reused: 0, errors: 0, remaining: 0 }
   }
 
-  let reused = 0
   let errors = 0
-  const needsEval: { gdid: number; fen: string }[] = []
 
-  // Phase 1 — exact-match reuse pass (cheap DB lookups only, no engine involved)
+  // Phase 1a — replay every game's PGN in memory (no DB calls) to its true final position
+  const finals: { gdid: number; fen: string; fenKey: string }[] = []
   for (const game of games) {
     try {
-      const chess       = new Chess()
+      const chess    = new Chess()
       chess.loadPgn(game.pgn)
-      const finalFen    = chess.fen()
-      const finalFenKey = truncateFen(finalFen)
-
-      const existingCp = await findExistingEval(finalFenKey, level)
-      if (existingCp != null) {
-        await table_query({
-          caller: 'evaluateGameEndings_reuse',
-          table: 'tgd_gamesdecon',
-          query: `UPDATE tgd_gamesdecon SET gd_final_eval = $1 WHERE gd_gdid = $2`,
-          params: [existingCp, game.gdid],
-          isupdate: true
-        })
-        reused++
-      } else {
-        needsEval.push({ gdid: game.gdid, fen: finalFen })
-      }
+      const finalFen = chess.fen()
+      finals.push({ gdid: game.gdid, fen: finalFen, fenKey: truncateFen(finalFen) })
     } catch (err) {
       console.error(`evaluateGameEndings: error on game ${game.gdid}`, err)
       await write_logging({
@@ -435,6 +569,45 @@ export async function evaluateGameEndings(opts: {
       })
       errors++
     }
+  }
+
+  // Phase 1b — one batched exact-match lookup across every distinct final position in
+  // this run, instead of one query per game
+  const uniqueFenKeys  = [...new Set(finals.map(f => f.fenKey))]
+  const existingByFen  = await findExistingEvals(uniqueFenKeys, level)
+
+  const needsEval: { gdid: number; fen: string }[] = []
+  const reuseUpdates: { gdid: number; cp: number }[] = []
+  for (const f of finals) {
+    const existingCp = existingByFen[f.fenKey]
+    if (existingCp != null) reuseUpdates.push({ gdid: f.gdid, cp: existingCp })
+    else needsEval.push({ gdid: f.gdid, fen: f.fen })
+  }
+
+  // Phase 1c — one batched, chunked multi-row UPDATE for every reuse match, instead of
+  // one UPDATE per game (mirrors insertGamePositions' chunked bulk-write pattern)
+  let reused = 0
+  for (let start = 0; start < reuseUpdates.length; start += POSITION_INSERT_CHUNK_SIZE) {
+    const chunk = reuseUpdates.slice(start, start + POSITION_INSERT_CHUNK_SIZE)
+    const params: number[] = []
+    const valueRows = chunk.map(u => {
+      params.push(u.gdid, u.cp)
+      const i = params.length
+      return `($${i - 1}::int, $${i}::int)`
+    })
+    await table_query({
+      caller: 'evaluateGameEndings_reuse_batch',
+      table: 'tgd_gamesdecon',
+      query: `
+        UPDATE tgd_gamesdecon AS t
+        SET gd_final_eval = v.cp
+        FROM (VALUES ${valueRows.join(',')}) AS v(gdid, cp)
+        WHERE t.gd_gdid = v.gdid
+      `,
+      params,
+      isupdate: true
+    })
+    reused += chunk.length
   }
 
   // Phase 2 — fresh Stockfish evaluation for whatever wasn't already tracked,
@@ -491,7 +664,8 @@ export async function evaluateGameEndings(opts: {
     params: [],
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D'
+    severity: 'D',
+    skipCache: true
   })
   const remaining = parseInt(remainingRes[0]?.cnt ?? '0')
 

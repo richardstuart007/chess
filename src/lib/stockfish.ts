@@ -34,13 +34,13 @@ export interface InfiniteAnalysisUpdate {
 
 // Read defaults from env, fallback to hardcoded values
 export const STOCKFISH_DEFAULTS = {
-  depth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEPTH ?? '20', 10),
+  depth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEPTH ?? '24', 10),
   blunderCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_BLUNDER_CP ?? '200', 10),
   mistakeCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_MISTAKE_CP ?? '100', 10),
   inaccuracyCp: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_INACCURACY_CP ?? '50', 10),
   hash: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_HASH ?? '128', 10),
   bestLineLength: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_BESTLINE_LENGTH ?? '5', 10),
-  deepAnalysisDepth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_DEPTH ?? '30', 10),
+  deepAnalysisDepth: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_DEPTH ?? '24', 10),
   deepAnalysisMultiPv: parseInt(process.env.NEXT_PUBLIC_STOCKFISH_DEEP_ANALYSIS_MULTIPV ?? '3', 10)
 }
 
@@ -290,7 +290,7 @@ export class StockfishEngine {
     sans: string[],
     onProgress?: ProgressCallback,
     depth?: number
-  ): Promise<MoveEvaluation[]> {
+  ): Promise<{ evaluations: MoveEvaluation[]; finalPosition: { fen: string; cp: number; bestMove: string } }> {
     if (!this.worker || !this.ready) throw new Error('Stockfish not initialized')
 
     const evaluations: MoveEvaluation[] = []
@@ -362,7 +362,14 @@ export class StockfishEngine {
       })
     }
 
-    return evaluations
+    const lastPositionEval = positionEvals[positionEvals.length - 1]
+    const finalPosition = {
+      fen: fens[fens.length - 1],
+      cp: lastPositionEval.cp,
+      bestMove: lastPositionEval.bestMove
+    }
+
+    return { evaluations, finalPosition }
   }
 
   destroy(): void {

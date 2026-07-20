@@ -163,6 +163,29 @@ export async function getGameEvals(gdid: number): Promise<GameEvalRow[]> {
   })
 }
 
+//----------------------------------------------------------------------------------
+//  upgradeGameEval — merge a deeper evaluation into one existing tgev_game_evals
+//  ply, only if the new depth exceeds what's stored. Scoped to gev_cp/gev_depth
+//  only — gev_best_move describes the engine's recommendation from the position
+//  before this move, unrelated to a resulting-position evaluation. Mirrors
+//  upgradePositionEvaluation's guard/pattern for teva_evaluations.
+//----------------------------------------------------------------------------------
+export async function upgradeGameEval(gdid: number, ply: number, cp: number, depth: number): Promise<boolean> {
+  const updated = await table_query({
+    caller: 'upgradeGameEval_update',
+    table: 'tgev_game_evals',
+    query: `
+      UPDATE tgev_game_evals
+      SET gev_cp = $1, gev_depth = $2
+      WHERE gev_gdid = $3 AND gev_ply = $4 AND gev_depth < $2
+      RETURNING gev_gdid
+    `,
+    params: [cp, depth, gdid, ply],
+    isupdate: true
+  })
+  return updated.length > 0
+}
+
 // -----------------------------------------------------------------------
 // Saved Analyses
 // -----------------------------------------------------------------------

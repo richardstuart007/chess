@@ -7,6 +7,7 @@
     { "path": "/api/analysis/evaluate-positions?limit=200&depth=16", "schedule": "20 4 * * *" },
     { "path": "/api/analysis/update-cp-change", "schedule": "40 4 * * *" },
     { "path": "/api/analysis/build-habits", "schedule": "0 5 * * *" },
-    { "path": "/api/analysis/evaluate-game-endings?limit=200&depth=16", "schedule": "20 5 * * *" }
+    { "path": "/api/analysis/evaluate-game-endings?limit=200&depth=16", "schedule": "20 5 * * *" },
+    { "path": "/api/analysis/deepen-popular-positions?limit=100", "schedule": "40 5 * * *" }
   ]
 }

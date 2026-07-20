@@ -20,8 +20,9 @@ import { table_count }  from 'nextjs-shared/table_count'
 import { table_check }  from 'nextjs-shared/table_check'
 import { table_query }  from 'nextjs-shared/table_query'
 import { table_update } from 'nextjs-shared/table_update'
+import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { truncateFen }  from '../fen'
-import { POSITION_GAMES_LIMIT } from '../constants'
+import { RESULT_MISMATCH_CP_THRESHOLD } from '../constants'
 
 export interface PositionRow {
   pos_id: number
@@ -49,52 +50,6 @@ export interface EvaluationRow {
 // ---------------------------------------------------------------------------
 // Positions
 // ---------------------------------------------------------------------------
-
-//----------------------------------------------------------------------------------
-//  getPositionsToEvaluate — positions with no evaluation yet
-//  LEFT JOIN + NULL check on joined table requires table_query.
-//----------------------------------------------------------------------------------
-export async function getPositionsToEvaluate(
-  limit:     number  = 100,
-  dateFrom?: string,
-  dateTo?:   string
-): Promise<PositionRow[]> {
-  if (dateFrom && dateTo) {
-    const fromTs = Math.floor(new Date(dateFrom).getTime() / 1000)
-    const toTs   = Math.floor(new Date(dateTo + 'T23:59:59').getTime() / 1000)
-    const params: (string | number)[] = [fromTs, toTs]
-    if (limit > 0) params.push(limit)
-    return await table_query({
-      caller: 'getPositionsToEvaluate',
-      query: `
-        SELECT p.pos_id, p.pos_fen, p.pos_reached, p.pos_color
-        FROM tpos_positions p
-        LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-        WHERE e.eva_evaid IS NULL
-          AND EXISTS (
-            SELECT 1 FROM tgam_game_positions gp
-            JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-            WHERE gp.gam_pos_id = p.pos_id AND d.gd_end_time >= $1 AND d.gd_end_time <= $2
-          )
-        ORDER BY p.pos_reached DESC
-        ${limit > 0 ? `LIMIT $3` : ''}
-      `,
-      params
-    }) as PositionRow[]
-  }
-  return await table_query({
-    caller: 'getPositionsToEvaluate',
-    query: `
-      SELECT p.pos_id, p.pos_fen, p.pos_reached, p.pos_color
-      FROM tpos_positions p
-      LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-      WHERE e.eva_evaid IS NULL
-      ORDER BY p.pos_reached DESC
-      ${limit > 0 ? `LIMIT ${limit}` : ''}
-    `,
-    params: []
-  }) as PositionRow[]
-}
 
 //----------------------------------------------------------------------------------
 //  getPositionCount — total number of positions
@@ -146,30 +101,7 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
 }
 
 //----------------------------------------------------------------------------------
-//  getMovePlayCount — how many times a specific move was played from a position,
-//  across the given player's own synced games (either color, opponent-agnostic —
-//  matches getMovesForPosition's existing counting convention: COUNT(*) of plies)
-//----------------------------------------------------------------------------------
-export async function getMovePlayCount(fen: string, moveSan: string, player: string): Promise<number> {
-  const rows = await table_query({
-    caller: 'getMovePlayCount',
-    query: `
-      SELECT COUNT(*)::int AS times
-      FROM tpos_positions p
-      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      WHERE p.pos_fen = $1
-        AND gp.gam_move_played = $2
-        AND gp.gam_move_num > 0
-        AND d.gd_player = $3
-    `,
-    params: [truncateFen(fen), moveSan, player.toLowerCase()]
-  }) as { times: number }[]
-  return rows.length > 0 ? Number(rows[0].times) : 0
-}
-
-//----------------------------------------------------------------------------------
-//  getMovePlayCounts — batched version of getMovePlayCount for a whole move tree in
+//  getMovePlayCounts — how many times each move was played from a set of positions,
 //  one round trip. Keyed by the same truncated FEN tpos_positions.pos_fen stores, so
 //  callers must truncate their own FEN lookups the same way before matching keys.
 //----------------------------------------------------------------------------------
@@ -209,13 +141,13 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
 
 //----------------------------------------------------------------------------------
 //  getMoveSummaryForPosition — one row per move played from this exact position,
-//  aggregated across all tracked players. FEN-keyed version of getMovesForPosition's
-//  aggregation query (via tpos_positions.pos_fen, like getGamesForPosition), used by
-//  the Analyze page's "Moves From This Position" panel for any position on the board.
+//  scoped to the given player. FEN-keyed version of getMovesForPosition's aggregation
+//  query (via tpos_positions.pos_fen, like getGamesForPosition), used by the Analyze
+//  page's "Moves From This Position" panel for any position on the board.
 //  mov_result_cp is the resulting position's Stockfish eval (deterministic per
 //  position+move), not an average — see getMovesForPosition's comment.
 //----------------------------------------------------------------------------------
-export async function getMoveSummaryForPosition(fen: string): Promise<MoveRow[]> {
+export async function getMoveSummaryForPosition(fen: string, player: string): Promise<MoveRow[]> {
   return await table_query({
     caller: 'getMoveSummaryForPosition',
     query: `
@@ -233,12 +165,13 @@ export async function getMoveSummaryForPosition(fen: string): Promise<MoveRow[]>
         JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
         WHERE p.pos_fen = $1
           AND gp.gam_move_num > 0
+          AND d.gd_player = $2
         GROUP BY gp.gam_move_played, gp.gam_move_uci
       ) sub
       LEFT JOIN teva_evaluations e ON e.eva_pos_id = sub.resulting_pos_id
       ORDER BY sub.mov_times DESC
     `,
-    params: [truncateFen(fen)]
+    params: [truncateFen(fen), player.toLowerCase()]
   }) as MoveRow[]
 }
 
@@ -252,22 +185,18 @@ export interface PositionGameHit {
   opponentRating: number | null
   termination:    string | null
   finalEval:      number | null
+  resultMismatch: 'lostWinning' | 'wonLosing' | null
 }
 
 //----------------------------------------------------------------------------------
-//  getGamesForPosition — every game the given player reached this exact position in,
-//  keyed by FEN like getMovePlayCount/getMovePlayCounts. Used by the Analyze page's
-//  "Games From This Position" panel, which can show any position currently on the
-//  board — not just ones with a known pos_id. Ordered by game number descending
-//  (latest first).
+//  getGamesForPosition — every game the given player reached this exact position in
+//  by playing the given move, keyed by FEN like getMovePlayCounts.
+//  Used by the Analyze page's "Games From This Position" panel, which can show any
+//  position currently on the board — not just ones with a known pos_id. Ordered by
+//  end time descending (latest first).
 //----------------------------------------------------------------------------------
-export async function getGamesForPosition(fen: string, player: string, excludeGdid?: number): Promise<PositionGameHit[]> {
-  const params: (string | number)[] = [truncateFen(fen), player.toLowerCase()]
-  let excludeFilter = ''
-  if (excludeGdid) {
-    params.push(excludeGdid)
-    excludeFilter = `AND d.gd_gdid != $${params.length}`
-  }
+export async function getGamesForPosition(fen: string, player: string, move: string): Promise<PositionGameHit[]> {
+  const params: (string | number)[] = [truncateFen(fen), player.toLowerCase(), move]
 
   const rows = await table_query({
     caller: 'getGamesForPosition',
@@ -281,31 +210,44 @@ export async function getGamesForPosition(fen: string, player: string, excludeGd
         TO_CHAR(TO_TIMESTAMP(d.gd_end_time), 'YYYY-MM-DD') AS game_date,
         d.gd_opponent_rating,
         d.gd_termination,
-        d.gd_final_eval
+        d.gd_final_eval,
+        d.gd_player_color
       FROM tpos_positions p
       JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
       JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
       WHERE p.pos_fen = $1
         AND gp.gam_move_num > 0
         AND d.gd_player = $2
-        ${excludeFilter}
-      ORDER BY d.gd_gdid DESC
-      LIMIT ${POSITION_GAMES_LIMIT}
+        AND gp.gam_move_played = $3
+      ORDER BY d.gd_end_time DESC
     `,
     params
   })
 
-  return rows.map((r: any) => ({
-    player:         r.gd_player,
-    move_played:    r.gam_move_played,
-    move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
-    result:         r.gd_player_result ?? null,
-    gameId:         r.gd_gdid != null ? Number(r.gd_gdid) : null,
-    date:           r.game_date ?? null,
-    opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
-    termination:    r.gd_termination ?? null,
-    finalEval:      r.gd_final_eval != null ? Number(r.gd_final_eval) : null
-  }))
+  return rows.map((r: any) => {
+    const result    = r.gd_player_result ?? null
+    const finalEval = r.gd_final_eval != null ? Number(r.gd_final_eval) : null
+    const playerEval = finalEval != null
+      ? (r.gd_player_color === 'black' ? -finalEval : finalEval)
+      : null
+    const resultMismatch: 'lostWinning' | 'wonLosing' | null =
+      playerEval == null ? null
+      : (result === 'loss' || result === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
+      : result === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
+      : null
+    return {
+      player:         r.gd_player,
+      move_played:    r.gam_move_played,
+      move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
+      result,
+      gameId:         r.gd_gdid != null ? Number(r.gd_gdid) : null,
+      date:           r.game_date ?? null,
+      opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
+      termination:    r.gd_termination ?? null,
+      finalEval,
+      resultMismatch
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +351,9 @@ export async function upgradePositionEvaluation(data: {
     params: [posId],
     isupdate: true
   })
+
+  cache_clearTable('teva_evaluations', 'upgradePositionEvaluation')
+  cache_clearTable('tgam_game_positions', 'upgradePositionEvaluation')
 
   return true
 }
@@ -721,7 +666,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
         WHERE gp.gam_pos_id = $1
           AND gp.gam_move_num > 0
           ${gamesPlayerFilter}
-        ORDER BY d.gd_gdid DESC
+        ORDER BY d.gd_end_time DESC
         LIMIT 50
       `,
       params: gamesParams

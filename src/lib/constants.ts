@@ -98,12 +98,6 @@ export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const HABITS_ITEMS_PER_PAGE = 10
 
 //
-//  POSITION_GAMES_LIMIT — max rows returned by getGamesForPosition, the Analyze
-//  page's "Games From This Position" panel.
-//
-export const POSITION_GAMES_LIMIT = 50
-
-//
 //  GAME_ENDINGS_CONCURRENCY — number of concurrent Stockfish processes used by
 //  evaluateGameEndings for games whose final position isn't already tracked (native
 //  binary path only — the WASM path stays single-instance since lite-single is
@@ -111,6 +105,27 @@ export const POSITION_GAMES_LIMIT = 50
 //  instances would just interleave on one thread, not run concurrently).
 //
 export const GAME_ENDINGS_CONCURRENCY = 4
+
+//
+//  RESULT_MISMATCH_CP_THRESHOLD — how decisive gd_final_eval (from the tracked player's
+//  own perspective) must be, in either direction, before a game's recorded result is
+//  flagged as contradicting its final position (e.g. lost despite a winning final
+//  position — a timeout, most likely).
+//
+export const RESULT_MISMATCH_CP_THRESHOLD = 200
+
+//
+//  POPULAR_POSITION_DEPTH_TIERS — the "Deepen Popular Positions" pipeline step's
+//  reach-to-depth table, ordered highest pos_reached first. A position qualifies
+//  for the first (highest) tier its pos_reached meets or exceeds, and is only
+//  re-evaluated if its current teva_evaluations.eva_depth is below that tier's
+//  depth — popular positions get deeper analysis, in proportion to how popular.
+//
+export const POPULAR_POSITION_DEPTH_TIERS: { minReach: number; depth: number }[] = [
+  { minReach: 50, depth: 30 },
+  { minReach: 30, depth: 24 },
+  { minReach: 10, depth: 22 }
+]
 
 export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
   stricade: ['blitz'],

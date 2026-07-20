@@ -80,7 +80,7 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
     `,
     params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR],
     table: 'thab_habits',
-    level, isupdate: false, severity: 'D'
+    level, isupdate: false, severity: 'D', skipCache: true
   })
 
   const aggregates: HabitAggregate[] = selectRes.map((r: any) => ({
