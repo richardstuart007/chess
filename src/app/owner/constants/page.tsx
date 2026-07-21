@@ -16,6 +16,8 @@ import {
   RESULT_MISMATCH_CP_THRESHOLD,
   POPULAR_POSITION_DEPTH_TIERS,
   DEFAULT_BATCH_SIZE,
+  CRON_DEEPEN_POPULAR_BATCH_SIZE,
+  PIPELINE_CRON_SCHEDULE,
   POSITION_INSERT_CHUNK_SIZE,
   GAMES_ITEMS_PER_PAGE,
   GAME_LIST_ITEMS_PER_PAGE,
@@ -67,13 +69,15 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Batch / Pagination / Concurrency',
     entries: [
-      { name: 'DEFAULT_BATCH_SIZE', value: DEFAULT_BATCH_SIZE, description: 'Standing default batch size for per-run limits (Build Game Positions, Evaluate Positions).', consumers: ['enrichPositionsStockfish.ts: deepenPopularPositions, evaluateGameEndings', 'owner/pipeline/page.tsx: PipelinePage'] },
+      { name: 'DEFAULT_BATCH_SIZE', value: DEFAULT_BATCH_SIZE, description: 'Standing default batch size for per-run limits (Build Game Positions, Evaluate Positions, Evaluate Game Endings) — also the fallback each route uses when no explicit limit query param is supplied, which is what the unattended cron relies on.', consumers: ['enrichPositionsStockfish.ts: deepenPopularPositions, evaluateGameEndings', 'owner/pipeline/page.tsx: PipelinePage', 'api/analysis/build-tree/route.ts', 'api/analysis/evaluate-positions/route.ts', 'api/analysis/evaluate-game-endings/route.ts'] },
+      { name: 'CRON_DEEPEN_POPULAR_BATCH_SIZE', value: CRON_DEEPEN_POPULAR_BATCH_SIZE, description: "Batch size for the Deepen Popular Positions step, distinct from DEFAULT_BATCH_SIZE since it's a genuinely different value (100 vs 200) — used as the route's fallback default, which is what the unattended cron relies on.", consumers: ['api/analysis/deepen-popular-positions/route.ts'] },
       { name: 'POSITION_INSERT_CHUNK_SIZE', value: POSITION_INSERT_CHUNK_SIZE, description: 'Target rows per bulk INSERT (tgam_game_positions, thab_habits) — keeps query params well under the Postgres per-statement limit.', consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings', 'buildPositionTree.ts: insertGamePositions', 'buildHabits.ts: buildHabits'] },
       { name: 'GAMES_ITEMS_PER_PAGE', value: GAMES_ITEMS_PER_PAGE, description: 'Page size for the games-list server action.', consumers: ['games.ts: fetchFilteredGames, getGamesPageCount'] },
       { name: 'GAME_LIST_ITEMS_PER_PAGE', value: GAME_LIST_ITEMS_PER_PAGE, description: 'Page size for the GameList UI component.', consumers: ['GameList.tsx: GameList'] },
       { name: 'PIPELINE_LOG_ROWS_PER_PAGE', value: PIPELINE_LOG_ROWS_PER_PAGE, description: 'Page size for the /owner/pipelinelog viewer.', consumers: ['PipelineLogTable.tsx: fetchdata'] },
       { name: 'HABITS_ITEMS_PER_PAGE', value: HABITS_ITEMS_PER_PAGE, description: 'Page size for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
-      { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] }
+      { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
+      { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipeline/page.tsx: PipelinePage (JOB_GROUPS schedule display)'] }
     ]
   },
   {
@@ -85,7 +89,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Stockfish Analysis',
     entries: [
-      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
+      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, and the Owner Pipeline UI\'s initial Depth field value.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts', 'api/analysis/evaluate-game-endings/route.ts', 'owner/pipeline/page.tsx: PipelinePage'] },
       { name: 'STOCKFISH_BLUNDER_CP', value: STOCKFISH_BLUNDER_CP, description: 'CP-loss threshold above which a move is classified a blunder.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_MISTAKE_CP', value: STOCKFISH_MISTAKE_CP, description: 'CP-loss threshold above which a move is classified a mistake.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_INACCURACY_CP', value: STOCKFISH_INACCURACY_CP, description: 'CP-loss threshold above which a move is classified an inaccuracy.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },

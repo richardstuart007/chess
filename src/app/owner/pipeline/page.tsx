@@ -12,7 +12,7 @@ import { getPlayers } from '@/src/lib/actions/players'
 import { runGameSync } from '@/src/lib/actions/sync'
 import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, refreshGameEndingsStatus, refreshDeepenPopularStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
 import { getPipelineRates, getLatestPipelineRuns, getRecentRunIds } from '@/src/lib/actions/pipelineLog'
-import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR } from '@/src/lib/constants'
+import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, STOCKFISH_DEPTH, PIPELINE_CRON_SCHEDULE } from '@/src/lib/constants'
 
 type LatestRun = {
   pip_step:         number
@@ -30,46 +30,46 @@ type LatestRun = {
 //
 //  Job group order matches the scheduled cron order in vercel.json (3:00am-5:00am, 20min apart). Each group
 //  is one scheduled/schedulable macro step; its subJobs are the individual table-writes
-//  within it, run together and sharing one pip_run_id.
+//  within it, run together and sharing one pip_run_id. Display schedule times come from
+//  PIPELINE_CRON_SCHEDULE, not a copy hardcoded here.
 //
 const JOB_GROUPS: {
   step: number
   groupLabel: string
-  schedule: string
   subJobs: { subStep: string; label: string }[]
 }[] = [
-  { step: 1, groupLabel: 'Game Sync', schedule: '3:00am', subJobs: [
+  { step: 1, groupLabel: 'Game Sync', subJobs: [
       { subStep: 'a', label: 'Query chess.com API' },
       { subStep: 'b', label: 'Fetch & Insert Raw Games' },
       { subStep: 'c', label: 'Deconstruct Games' },
       { subStep: 'd', label: 'Update Player Ratings' },
     ] },
-  { step: 2, groupLabel: 'Build Position Tree', schedule: '3:20am', subJobs: [
+  { step: 2, groupLabel: 'Build Position Tree', subJobs: [
       { subStep: 'a', label: 'Build Position Tree' },
     ] },
-  { step: 3, groupLabel: 'Sync Position Tree', schedule: '3:40am', subJobs: [
+  { step: 3, groupLabel: 'Sync Position Tree', subJobs: [
       { subStep: 'a', label: 'Sync tpos_positions' },
       { subStep: 'b', label: 'Backfill tgam ids' },
     ] },
-  { step: 4, groupLabel: 'Purge Stale Positions', schedule: '4:00am', subJobs: [
+  { step: 4, groupLabel: 'Purge Stale Positions', subJobs: [
       { subStep: 'a', label: 'Purge teva_evaluations' },
       { subStep: 'b', label: 'Purge tgam_game_positions' },
       { subStep: 'c', label: 'Purge tpos_positions' },
       { subStep: 'd', label: 'Purge tgd_gamesdecon guard' },
     ] },
-  { step: 5, groupLabel: 'Evaluate Positions', schedule: '4:20am', subJobs: [
+  { step: 5, groupLabel: 'Evaluate Positions', subJobs: [
       { subStep: 'a', label: 'Evaluate Positions' },
     ] },
-  { step: 6, groupLabel: 'Update CP Change', schedule: '4:40am', subJobs: [
+  { step: 6, groupLabel: 'Update CP Change', subJobs: [
       { subStep: 'a', label: 'Update CP Change' },
     ] },
-  { step: 7, groupLabel: 'Build Habits', schedule: '5:00am', subJobs: [
+  { step: 7, groupLabel: 'Build Habits', subJobs: [
       { subStep: 'a', label: 'Build Habits' },
     ] },
-  { step: 8, groupLabel: 'Evaluate Game Endings', schedule: '5:20am', subJobs: [
+  { step: 8, groupLabel: 'Evaluate Game Endings', subJobs: [
       { subStep: 'a', label: 'Evaluate Game Endings' },
     ] },
-  { step: 9, groupLabel: 'Deepen Popular Positions', schedule: '5:40am', subJobs: [
+  { step: 9, groupLabel: 'Deepen Popular Positions', subJobs: [
       { subStep: 'a', label: 'Deepen Popular Positions' },
     ] },
 ]
@@ -192,7 +192,7 @@ export default function PipelinePage() {
   const [players, setPlayers] = useState<{ username: string; display_name: string | null }[]>([])
 
   // ── Global parameters (shared by all steps) ────────────────────────────────
-  const [globalDepth,     setGlobalDepth]     = useState(16)
+  const [globalDepth,     setGlobalDepth]     = useState(STOCKFISH_DEPTH)
   const [globalBatchSize, setGlobalBatchSize] = useState(DEFAULT_BATCH_SIZE)
 
   // ── Per-step status state ──────────────────────────────────────────────────
@@ -204,7 +204,7 @@ export default function PipelinePage() {
   const [sPurge, setSPurge] = useState<{ eligible: number } | null>(null)
   const [sHabits, setSHabits] = useState<{ total: number; dismissed: number; remaining: number } | null>(null)
   const [sGameEndings, setSGameEndings] = useState<{ evaluated: number; remaining: number } | null>(null)
-  const [sDeepenPopular, setSDeepenPopular] = useState<{ remaining: number } | null>(null)
+  const [sDeepenPopular, setSDeepenPopular] = useState<{ tiers: { depth: number; remaining: number }[] } | null>(null)
   const [s1Loading, setS1Loading] = useState(false)
   const [s3Loading, setS3Loading] = useState(false)
   const [s3bLoading, setS3bLoading] = useState(false)
@@ -591,7 +591,7 @@ export default function PipelinePage() {
                     <td className='px-2 py-1 text-center text-gray-800'>{group.step}</td>
                     <td className='px-2 py-1 text-center text-gray-800'></td>
                     <td className='px-2 py-1 text-gray-800'>{group.groupLabel}</td>
-                    <td className='px-2 py-1 text-gray-500'>{group.schedule}</td>
+                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE[group.step]}</td>
                     <td className='px-2 py-1 text-gray-500'>{run ? new Date(run.pip_created).toLocaleString() : '—'}</td>
                     <td className='px-2 py-1 text-gray-500'>{run ? run.pip_input_table : '—'}</td>
                     <td className='px-2 py-1 text-right'>{run ? run.pip_input_recs.toLocaleString() : '—'}</td>
@@ -608,7 +608,7 @@ export default function PipelinePage() {
                     <td className='px-2 py-1 text-center text-gray-800'>{group.step}</td>
                     <td className='px-2 py-1'></td>
                     <td className='px-2 py-1 text-gray-800'>{group.groupLabel}</td>
-                    <td className='px-2 py-1 text-gray-500'>{group.schedule}</td>
+                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE[group.step]}</td>
                     <td className='px-2 py-1' colSpan={7}></td>
                   </tr>
                   {group.subJobs.map(subJob => {
@@ -643,7 +643,7 @@ export default function PipelinePage() {
           <div className='flex flex-wrap items-center gap-3 text-xs text-gray-600 pb-2 border-b border-gray-100'>
             <span className='text-gray-400 font-medium'>Depth</span>
             <MyInput type='number' value={globalDepth} min={8} max={24}
-              onChange={e => setGlobalDepth(Math.min(24, parseInt(e.target.value) || 16))}
+              onChange={e => setGlobalDepth(Math.min(24, parseInt(e.target.value) || STOCKFISH_DEPTH))}
               overrideClass='w-16' />
             <span className='text-gray-400 font-medium'>Batch</span>
             <MyInput type='number' value={globalBatchSize} min={1} max={1000}
@@ -657,6 +657,8 @@ export default function PipelinePage() {
                 <th className='font-medium py-1 pr-2'>Step</th>
                 <th className='font-medium py-1 pr-2'>Description</th>
                 <th className='font-medium py-1 pr-2'>Help</th>
+                <th className='font-medium py-1 pr-2'>Processed</th>
+                <th className='font-medium py-1 pr-2'>SQL</th>
                 <th className='font-medium py-1 pr-2'>
                   <MyButton onClick={doRefreshAll} disabled={refreshAllLoading} overrideClass='h-auto md:h-auto px-1.5 py-0.5 leading-none font-medium'>
                     {refreshAllLoading ? 'Refreshing…' : 'Refresh'}
@@ -664,7 +666,6 @@ export default function PipelinePage() {
                 </th>
                 <th className='font-medium py-1 pr-2'>Remaining</th>
                 <th className='font-medium py-1 pr-2'>Status</th>
-                <th className='font-medium py-1 pr-2'>SQL</th>
                 <th className='font-medium py-1 pr-2'>Result</th>
                 <th className='font-medium py-1'>
                   <MyButton onClick={handleRunAll} disabled={runAllRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none font-medium ${runAllRunning ? 'bg-red-300 hover:bg-red-300' : 'bg-red-500 hover:bg-red-600'}`}>
@@ -694,23 +695,17 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {syncResult && <span>{n(syncResult.players.reduce((sum, p) => sum + p.inserted, 0))} games synced</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_1} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshStep1} disabled={s1Loading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{s1Loading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(s1?.pending)}</strong> {eta(s1?.pending, rates?.step1 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(s1?.pending)}</strong> {eta(s1?.pending, rates?.step1 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={s1 === null ? null : s1.pending === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_1} /></td>
                 <td className='py-1 pr-2'>
                   {syncError && <p className='text-xs text-red-600'>{syncError}</p>}
-                  {syncResult && (
-                    <div className='text-xs text-gray-700'>
-                      {syncResult.players.map(p => (
-                        <div key={p.username}>
-                          {p.username}: {p.inserted} inserted, {p.deconstructed} deconstructed
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={handleGameSync} disabled={syncRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${syncRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -736,20 +731,18 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {treeResult?.ok && <span>{n(treeResult.gamesProcessed)} games, {n(treeResult.positions)} game-position records</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_3} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshStep3} disabled={s3Loading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{s3Loading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(s3?.allRemaining)}</strong> {eta(s3?.allRemaining, rates?.step2 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(s3?.allRemaining)}</strong> {eta(s3?.allRemaining, rates?.step2 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={s3 === null ? null : s3.allRemaining === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_3} /></td>
                 <td className='py-1 pr-2'>
-                  {treeResult && (
-                    <p className={`text-xs ${treeResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {treeResult.ok
-                        ? `Done — ${treeResult.gamesProcessed} games, ${treeResult.positions} game-position records${treeResult.errors ? `, ${treeResult.errors} errors` : ''}${treeResult.remaining != null ? ` · ${treeResult.remaining.toLocaleString()} remaining` : ''}`
-                        : `Error: ${treeResult.error}`}
-                    </p>
-                  )}
+                  {treeResult && !treeResult.ok && <p className='text-xs text-red-600'>Error: {treeResult.error}</p>}
+                  {treeResult?.ok && !!treeResult.errors && <p className='text-xs text-red-600'>{treeResult.errors} errors</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleBuildTree()} disabled={treeRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${treeRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -777,20 +770,17 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {tposResult?.ok && <span>{n(tposResult.positionsSynced)} positions synced</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_3B} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshStep3b} disabled={s3bLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{s3bLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(s3b?.unresolved)}</strong> {eta(s3b?.unresolved, rates?.step3 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(s3b?.unresolved)}</strong> {eta(s3b?.unresolved, rates?.step3 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={s3b === null ? null : s3b.unresolved === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_3B} /></td>
                 <td className='py-1 pr-2'>
-                  {tposResult && (
-                    <p className={`text-xs ${tposResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {tposResult.ok
-                        ? `Done — ${tposResult.positionsSynced} positions synced`
-                        : `Error: ${tposResult.error}`}
-                    </p>
-                  )}
+                  {tposResult && !tposResult.ok && <p className='text-xs text-red-600'>Error: {tposResult.error}</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleSyncTpos()} disabled={tposRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${tposRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -817,18 +807,17 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {purgeResult?.ok && <span>{n(purgeResult.purged)} positions purged</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_PURGE} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshPurge} disabled={sPurgeLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sPurgeLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(sPurge?.eligible)}</strong></td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(sPurge?.eligible)}</strong></td>
                 <td className='py-1 pr-2'><StatusBadge complete={sPurge === null ? null : sPurge.eligible === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_PURGE} /></td>
                 <td className='py-1 pr-2'>
-                  {purgeResult && (
-                    <p className={`text-xs ${purgeResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {purgeResult.ok ? `Done — ${purgeResult.purged} positions purged` : `Error: ${purgeResult.error}`}
-                    </p>
-                  )}
+                  {purgeResult && !purgeResult.ok && <p className='text-xs text-red-600'>Error: {purgeResult.error}</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handlePurge()} disabled={purgeRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${purgeRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -852,21 +841,18 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {posResult && <span>{n(posResult.processed)} evaluated</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_4} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshStep4} disabled={s4Loading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{s4Loading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(s4?.remaining)}</strong> {eta(s4?.remaining, rates?.step5 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(s4?.remaining)}</strong> {eta(s4?.remaining, rates?.step5 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={s4 === null ? null : s4.remaining === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_4} /></td>
                 <td className='py-1 pr-2'>
                   {posError && <p className='text-xs text-red-600'>{posError}</p>}
-                  {posResult && (
-                    <p className={`text-xs ${posResult.remaining === 0 ? 'text-green-600' : 'text-blue-700'}`}>
-                      Server done — {posResult.processed} evaluated
-                      {posResult.errors > 0 ? `, ${posResult.errors} errors` : ''}
-                      {' · '}{posResult.remaining > 0 ? `${posResult.remaining.toLocaleString()} remaining — run again` : 'all done'}
-                    </p>
-                  )}
+                  {posResult && posResult.errors > 0 && <p className='text-xs text-red-600'>{posResult.errors} errors</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleEvaluatePositions()} disabled={posRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${posRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -890,18 +876,17 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {cpResult?.ok && <span>{n(cpResult.updated)} rows updated</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_CP} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshCp} disabled={sCpLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sCpLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(sCp?.pending)}</strong> {eta(sCp?.pending, rates?.step6 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(sCp?.pending)}</strong> {eta(sCp?.pending, rates?.step6 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={sCp === null ? null : sCp.pending === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_CP} /></td>
                 <td className='py-1 pr-2'>
-                  {cpResult && (
-                    <p className={`text-xs ${cpResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {cpResult.ok ? `Done — ${cpResult.updated} rows updated` : `Error: ${cpResult.error}`}
-                    </p>
-                  )}
+                  {cpResult && !cpResult.ok && <p className='text-xs text-red-600'>Error: {cpResult.error}</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleUpdateCp()} disabled={cpRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${cpRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -925,18 +910,17 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {habitsResult?.ok && <span>{n(habitsResult.built)} habit rows built/refreshed</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_HABITS} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshHabits} disabled={sHabitsLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sHabitsLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(sHabits?.remaining)}</strong></td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(sHabits?.remaining)}</strong></td>
                 <td className='py-1 pr-2'><StatusBadge complete={sHabits === null ? null : sHabits.remaining === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_HABITS} /></td>
                 <td className='py-1 pr-2'>
-                  {habitsResult && (
-                    <p className={`text-xs ${habitsResult.ok ? 'text-green-600' : 'text-red-600'}`}>
-                      {habitsResult.ok ? `Done — ${habitsResult.built} habit rows built/refreshed` : `Error: ${habitsResult.error}`}
-                    </p>
-                  )}
+                  {habitsResult && !habitsResult.ok && <p className='text-xs text-red-600'>Error: {habitsResult.error}</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleBuildHabits()} disabled={habitsRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${habitsRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -960,21 +944,18 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {gameEndingsResult && <span>{n(gameEndingsResult.processed)} evaluated ({n(gameEndingsResult.reused)} reused from tracked positions)</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_GAME_ENDINGS} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshGameEndings} disabled={sGameEndingsLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sGameEndingsLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(sGameEndings?.remaining)}</strong> {eta(sGameEndings?.remaining, rates?.step8 ?? null)}</td>
+                <td className='py-1 pr-2 text-gray-600'><strong className='text-gray-800'>{n(sGameEndings?.remaining)}</strong> {eta(sGameEndings?.remaining, rates?.step8 ?? null)}</td>
                 <td className='py-1 pr-2'><StatusBadge complete={sGameEndings === null ? null : sGameEndings.remaining === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_GAME_ENDINGS} /></td>
                 <td className='py-1 pr-2'>
                   {gameEndingsError && <p className='text-xs text-red-600'>{gameEndingsError}</p>}
-                  {gameEndingsResult && (
-                    <p className={`text-xs ${gameEndingsResult.remaining === 0 ? 'text-green-600' : 'text-blue-700'}`}>
-                      Done — {gameEndingsResult.processed} evaluated ({gameEndingsResult.reused} reused from tracked positions)
-                      {gameEndingsResult.errors > 0 ? `, ${gameEndingsResult.errors} errors` : ''}
-                      {' · '}{gameEndingsResult.remaining > 0 ? `${gameEndingsResult.remaining.toLocaleString()} remaining — run again` : 'all done'}
-                    </p>
-                  )}
+                  {gameEndingsResult && gameEndingsResult.errors > 0 && <p className='text-xs text-red-600'>{gameEndingsResult.errors} errors</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleEvaluateGameEndings()} disabled={gameEndingsRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${gameEndingsRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>
@@ -998,21 +979,23 @@ export default function PipelinePage() {
                     ]}
                   />
                 </td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {deepenPopularResult && <span>{n(deepenPopularResult.processed)} deepened</span>}
+                </td>
+                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_DEEPEN_POPULAR} /></td>
                 <td className='py-1 pr-2'>
                   <MyButton onClick={doRefreshDeepenPopular} disabled={sDeepenPopularLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{sDeepenPopularLoading ? '…' : '↻'}</MyButton>
                 </td>
-                <td className='py-1 pr-2 text-gray-600'>remaining: <strong className='text-gray-800'>{n(sDeepenPopular?.remaining)}</strong> {eta(sDeepenPopular?.remaining, rates?.step9 ?? null)}</td>
-                <td className='py-1 pr-2'><StatusBadge complete={sDeepenPopular === null ? null : sDeepenPopular.remaining === 0} /></td>
-                <td className='py-1 pr-2'><MyHelp label='SQL' text={SQL_STATUS_DEEPEN_POPULAR} /></td>
+                <td className='py-1 pr-2 text-gray-600'>
+                  {sDeepenPopular?.tiers.map((t, i) => (
+                    <span key={t.depth}>{i > 0 ? ' · ' : ''}d{t.depth}: <strong className='text-gray-800'>{n(t.remaining)}</strong></span>
+                  ))}
+                  {' '}{eta(sDeepenPopular?.tiers.reduce((sum, t) => sum + t.remaining, 0), rates?.step9 ?? null)}
+                </td>
+                <td className='py-1 pr-2'><StatusBadge complete={sDeepenPopular === null ? null : sDeepenPopular.tiers.reduce((sum, t) => sum + t.remaining, 0) === 0} /></td>
                 <td className='py-1 pr-2'>
                   {deepenPopularError && <p className='text-xs text-red-600'>{deepenPopularError}</p>}
-                  {deepenPopularResult && (
-                    <p className={`text-xs ${deepenPopularResult.remaining === 0 ? 'text-green-600' : 'text-blue-700'}`}>
-                      Done — {deepenPopularResult.processed} deepened
-                      {deepenPopularResult.errors > 0 ? `, ${deepenPopularResult.errors} errors` : ''}
-                      {' · '}{deepenPopularResult.remaining > 0 ? `${deepenPopularResult.remaining.toLocaleString()} remaining — run again` : 'all done'}
-                    </p>
-                  )}
+                  {deepenPopularResult && deepenPopularResult.errors > 0 && <p className='text-xs text-red-600'>{deepenPopularResult.errors} errors</p>}
                 </td>
                 <td className='py-1'>
                   <MyButton onClick={() => handleDeepenPopular()} disabled={deepenPopularRunning} overrideClass={`h-auto md:h-auto px-1.5 py-0.5 leading-none ${deepenPopularRunning ? 'bg-orange-300 hover:bg-orange-300' : ''}`}>

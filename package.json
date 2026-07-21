@@ -1,15 +1,15 @@
 {
   "name": "chess",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "scripts": {
     "build": "next build",
     "sync-games": "npx tsx lib/sync-games.ts",
     "deconstruct-games": "npx tsx lib/deconstruct-games.ts",
     "cron-sync": "npx tsx lib/cron-sync.ts",
-    "locallocal": "copy /Y .env.locallocal .env && next dev --turbopack --port 3030",
-    "localdev": "copy /Y .env.localdev .env && next dev --turbopack --port 3031",
-    "localprod": "copy /Y .env.localprod .env && next dev --turbopack --port 3032"
+    "locallocal": "copy /Y .env.locallocal .env && next dev --turbopack --port 3040",
+    "localdev": "copy /Y .env.localdev .env && next dev --turbopack --port 3041",
+    "localprod": "copy /Y .env.localprod .env && next dev --turbopack --port 3042"
   },
   "dependencies": {
     "@heroicons/react": "2.2.0",

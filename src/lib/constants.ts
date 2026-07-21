@@ -29,12 +29,24 @@ export const POPULAR_POSITION_DEPTH_TIERS: { minReach: number; depth: number }[]
 //  Batch / Pagination / Concurrency
 //----------------------------------------------------------------------------------
 export const DEFAULT_BATCH_SIZE = 200
+export const CRON_DEEPEN_POPULAR_BATCH_SIZE = 100
 export const POSITION_INSERT_CHUNK_SIZE = 500
 export const GAMES_ITEMS_PER_PAGE = 25
 export const GAME_LIST_ITEMS_PER_PAGE = 15
 export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const HABITS_ITEMS_PER_PAGE = 10
 export const GAME_ENDINGS_CONCURRENCY = 4
+export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
+  1: '3:00am',  // Game Sync
+  2: '3:20am',  // Build Game Positions
+  3: '3:40am',  // Sync Position Tree
+  4: '4:00am',  // Purge Stale Positions
+  5: '4:20am',  // Evaluate Positions
+  6: '4:40am',  // Update CP Change
+  7: '5:00am',  // Build Habits
+  8: '5:20am',  // Evaluate Game Endings
+  9: '5:40am',  // Deepen Popular Positions
+}
 
 //----------------------------------------------------------------------------------
 //  Player Overrides + Helpers

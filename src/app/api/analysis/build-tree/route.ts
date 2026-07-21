@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildPositionTree } from '@/src/lib/analysis/buildPositionTree'
+import { DEFAULT_BATCH_SIZE } from '@/src/lib/constants'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const limit    = Number(searchParams.get('limit')   ?? '100')
+  const limit    = Number(searchParams.get('limit')   ?? String(DEFAULT_BATCH_SIZE))
   const player   = searchParams.get('player')   ?? undefined
   const skipSync = searchParams.get('skipSync') === 'true'
   const forceNewRun = searchParams.get('newRun') === 'true'

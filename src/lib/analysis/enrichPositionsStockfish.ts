@@ -456,6 +456,46 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
 }
 
 //----------------------------------------------------------------------------------
+//  countRemainingPopularPositionsByTier — same backlog as countRemainingPopularPositions
+//  above, broken out per POPULAR_POSITION_DEPTH_TIERS entry instead of summed into one
+//  number, so the UI can show which tiers still have work outstanding. Built dynamically
+//  from the constant (one FILTER per tier) so it can never drift from the tiers the
+//  batch itself uses.
+//----------------------------------------------------------------------------------
+export async function countRemainingPopularPositionsByTier(level: number = 1): Promise<{ depth: number; remaining: number }[]> {
+  const { caseSql, lowestMinReach } = popularPositionTierSql()
+  const filterSql = POPULAR_POSITION_DEPTH_TIERS
+    .map(t => `COUNT(*) FILTER (WHERE sub.target_depth = ${t.depth}) AS d${t.depth}`)
+    .join(',\n        ')
+  const rows = await table_query({
+    caller: 'countRemainingPopularPositionsByTier',
+    query: `
+      SELECT
+        ${filterSql}
+      FROM (
+        SELECT p.pos_reached, e.eva_depth,
+          CASE
+            ${caseSql}
+          END AS target_depth
+        FROM tpos_positions p
+        JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+        WHERE p.pos_reached >= ${lowestMinReach}
+      ) sub
+      WHERE sub.eva_depth < sub.target_depth
+    `,
+    params: [],
+    level,
+    severity: 'D',
+    skipCache: true
+  })
+  const r = rows[0] ?? {}
+  return POPULAR_POSITION_DEPTH_TIERS.map(t => ({
+    depth: t.depth,
+    remaining: parseInt(r[`d${t.depth}`] ?? '0')
+  }))
+}
+
+//----------------------------------------------------------------------------------
 //  getGamesNeedingFinalEval — games whose actual final position hasn't been evaluated
 //  yet, latest games first. Independent of the position-tree pipeline (tpos_positions /
 //  tgam_game_positions) entirely — reads/writes tgd_gamesdecon directly, since the

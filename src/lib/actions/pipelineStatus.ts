@@ -2,7 +2,7 @@
 
 import { table_query } from 'nextjs-shared/table_query'
 import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR } from '../constants'
-import { countRemainingPopularPositions } from '../analysis/enrichPositionsStockfish'
+import { countRemainingPopularPositionsByTier } from '../analysis/enrichPositionsStockfish'
 
 //----------------------------------------------------------------------------------
 //  getPipelineStatus — single-query count of processed/remaining rows for all steps
@@ -213,13 +213,13 @@ export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; r
 }
 
 //----------------------------------------------------------------------------------
-//  refreshDeepenPopularStatus — backlog count for the Deepen Popular Positions step,
-//  delegating to the same tiered subquery the batch itself uses (single source of
-//  truth for the POPULAR_POSITION_DEPTH_TIERS-based WHERE clause).
+//  refreshDeepenPopularStatus — per-tier backlog breakdown for the Deepen Popular
+//  Positions step, delegating to the same tiered subquery the batch itself uses
+//  (single source of truth for the POPULAR_POSITION_DEPTH_TIERS-based WHERE clause).
 //----------------------------------------------------------------------------------
-export async function refreshDeepenPopularStatus(): Promise<{ remaining: number }> {
-  const remaining = await countRemainingPopularPositions()
-  return { remaining }
+export async function refreshDeepenPopularStatus(): Promise<{ tiers: { depth: number; remaining: number }[] }> {
+  const tiers = await countRemainingPopularPositionsByTier()
+  return { tiers }
 }
 
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
