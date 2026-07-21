@@ -55,9 +55,7 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
       <div className='space-y-4'>
         <MyBox title='No Players'>
           <p className='text-xs text-gray-600'>
-            No players in the database yet.{' '}
-            <a href='/owner/maintenance' className='text-blue-600 underline'>Go to Maintenance</a>{' '}
-            to add players.
+            No players in the database yet.
           </p>
         </MyBox>
       </div>

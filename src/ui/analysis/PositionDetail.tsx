@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MyBox from 'nextjs-shared/MyBox'
+import AppTab from '@/src/ui/AppTab'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 import { winPct } from '@/src/lib/winPct'
@@ -154,17 +155,13 @@ export default function PositionDetail({
         <div className="space-y-3">
           <div className="flex border-b">
             {TABS.map(t => (
-              <button
+              <AppTab
                 key={t.key}
+                active={tab === t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-                  tab === t.key
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
               >
                 {t.label}
-              </button>
+              </AppTab>
             ))}
           </div>
 

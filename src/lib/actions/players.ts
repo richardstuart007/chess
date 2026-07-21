@@ -1,7 +1,6 @@
 'use server'
 
 import { table_fetch }  from 'nextjs-shared/table_fetch'
-import { table_write }  from 'nextjs-shared/table_write'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_upsert } from 'nextjs-shared/table_upsert'
 import { table_query }  from 'nextjs-shared/table_query'
@@ -19,44 +18,6 @@ export async function getPlayer(username: string, skipCache = false, level = 1, 
     skipCache,
     level,
     severity
-  })
-  return rows[0] ?? null
-}
-
-export async function upsertPlayer(data: {
-  username: string
-  avatar?: string
-  display_name?: string
-}) {
-  const existing = await getPlayer(data.username)
-
-  const columnMap: Record<string, string> = {
-    username:     'pl_player',
-    avatar:       'pl_avatar',
-    display_name: 'pl_display_name'
-  }
-
-  const pairs = Object.entries(data)
-    .filter(([, v]) => v !== undefined)
-    .map(([key, value]) => ({
-      column: columnMap[key] ?? key,
-      value: key === 'username' ? (value as string).toLowerCase() : value as string | number | boolean
-    }))
-
-  if (existing) {
-    await table_update({
-      caller: 'upsertPlayer',
-      table: TABLE,
-      columnValuePairs: pairs,
-      whereColumnValuePairs: [{ column: 'pl_plid', value: existing.pl_plid }]
-    })
-    return { ...existing, ...data }
-  }
-
-  const rows = await table_write({
-    caller: 'upsertPlayer',
-    table: TABLE,
-    columnValuePairs: pairs
   })
   return rows[0] ?? null
 }

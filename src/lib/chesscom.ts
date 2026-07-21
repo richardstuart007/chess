@@ -1,21 +1,5 @@
 const BASE = 'https://api.chess.com/pub'
 
-export interface ChessComPlayer {
-  username: string
-  avatar?: string
-  name?: string
-  joined: number
-  last_online: number
-  url: string
-}
-
-export interface ChessComRatings {
-  [timeControl: string]: {
-    last: { rating: number; date: number }
-    best?: { rating: number; date: number }
-  }
-}
-
 export interface ChessComGame {
   url: string
   pgn: string
@@ -34,30 +18,6 @@ export interface ChessComGame {
     rating: number
     result: string
   }
-}
-
-export async function fetchPlayer(username: string): Promise<ChessComPlayer> {
-  const res = await fetch(`${BASE}/player/${username}`)
-  if (!res.ok) throw new Error(`Player "${username}" not found on chess.com`)
-  return res.json()
-}
-
-export async function fetchPlayerStats(username: string): Promise<ChessComRatings> {
-  const res = await fetch(`${BASE}/player/${username}/stats`)
-  if (!res.ok) throw new Error(`Could not fetch stats for "${username}"`)
-  const data = await res.json()
-
-  const ratings: ChessComRatings = {}
-  for (const key of ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']) {
-    if (data[key]?.last) {
-      const label = key.replace('chess_', '')
-      ratings[label] = {
-        last: data[key].last,
-        best: data[key].best
-      }
-    }
-  }
-  return ratings
 }
 
 export async function fetchRecentGames(

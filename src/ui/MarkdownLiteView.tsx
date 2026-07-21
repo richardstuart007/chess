@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { plainText } from '@/src/lib/parseMarkdownLite'
 import type { Section, SectionTree, LeafBlockNode, InlineNode, FlowStep } from '@/src/lib/parseMarkdownLite'
+import AppTab from '@/src/ui/AppTab'
 
 type MarkdownLiteViewProps = {
   tree: SectionTree
@@ -441,27 +442,20 @@ function SectionContent({ section, depth }: { section: Section; depth: number })
 }
 
 //------------------------------------------------------------------------------------------------
-//  TabBar — one button per top-level section; styled to match the Home page's TabBar
-//  (src/ui/TabBar.tsx) so /owner/dataflow's tabs feel like the rest of the app
+//  TabBar — one button per top-level section; styled to match the rest of the app's tabs
+//  (src/ui/AppTab.tsx) so /owner/dataflow's tabs feel like the rest of the app
 //------------------------------------------------------------------------------------------------
 function TabBar({ tabs, active, onSelect }: { tabs: Section[]; active: number; onSelect: (i: number) => void }) {
-  const buttons = tabs.map((tab, i) => {
-    const isActive = i === active
-    return (
-      <button
-        key={i}
-        type='button'
-        onClick={() => onSelect(i)}
-        className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${
-          isActive
-            ? 'border-blue-600 text-blue-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700'
-        }`}
-      >
-        {plainText(tab.heading)}
-      </button>
-    )
-  })
+  const buttons = tabs.map((tab, i) => (
+    <AppTab
+      key={i}
+      active={i === active}
+      onClick={() => onSelect(i)}
+      overrideClass='whitespace-nowrap'
+    >
+      {plainText(tab.heading)}
+    </AppTab>
+  ))
   return <div className='flex items-end flex-wrap border-b border-gray-200 mb-6'>{buttons}</div>
 }
 

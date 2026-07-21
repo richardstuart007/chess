@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { VALUE_DISPLAY_MAX_LENGTH } from '@/src/lib/constants'
+import AppTab from '@/src/ui/AppTab'
 
 export type ConstantEntry = {
   name: string
@@ -134,32 +135,24 @@ export default function ConstantsViewer({
   return (
     <div className='p-8'>
       <div className='flex gap-2 mb-4 border-b border-gray-200'>
-        <button
-          type='button'
-          onClick={() => handleTabChange('constants')}
-          className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px ${tab === 'constants' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
+        <AppTab active={tab === 'constants'} onClick={() => handleTabChange('constants')}>
           Constants
-        </button>
-        <button
-          type='button'
-          onClick={() => handleTabChange('env')}
-          className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px ${tab === 'env' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
+        </AppTab>
+        <AppTab active={tab === 'env'} onClick={() => handleTabChange('env')}>
           .env
-        </button>
+        </AppTab>
       </div>
 
       <div className='flex gap-2 mb-6 flex-wrap'>
         {sections.map((section, i) => (
-          <button
+          <AppTab
             key={section.heading}
-            type='button'
+            variant='pill'
+            active={i === sectionIndex}
             onClick={() => setSectionIndex(i)}
-            className={`px-3 py-1 text-xs rounded border ${i === sectionIndex ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
           >
             {section.heading}
-          </button>
+          </AppTab>
         ))}
       </div>
 

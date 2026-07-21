@@ -42,8 +42,8 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Player / Filter Defaults',
     entries: [
-      { name: 'INCLUDED_TIME_CLASSES', value: INCLUDED_TIME_CLASSES, description: 'Global fallback list of chess.com time classes included when a player has no PLAYER_TIME_CLASSES override.', consumers: ['sync.ts: syncArchive', 'players.ts: updatePlayerRating', 'deconstruct.ts: getUndeconstructedCount, deconstructGames', 'owner/maintenance/page.tsx: handleSearch'] },
-      { name: 'DEFAULT_PLAYER', value: DEFAULT_PLAYER, description: 'Default selected player across the app.', consumers: ['players.ts: getPlayers', 'owner/maintenance/page.tsx: MaintenancePage'] },
+      { name: 'INCLUDED_TIME_CLASSES', value: INCLUDED_TIME_CLASSES, description: 'Global fallback list of chess.com time classes included when a player has no PLAYER_TIME_CLASSES override.', consumers: ['sync.ts: syncArchive', 'players.ts: updatePlayerRating', 'deconstruct.ts: getUndeconstructedCount, deconstructGames'] },
+      { name: 'DEFAULT_PLAYER', value: DEFAULT_PLAYER, description: 'Default selected player across the app.', consumers: ['players.ts: getPlayers'] },
       { name: 'DEFAULT_DATE_FROM', value: DEFAULT_DATE_FROM, description: "Default 'from' date for game-history filters.", consumers: ['graph/page.tsx: GraphContent', 'GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart', 'TerminationChart.tsx: TerminationChart'] },
       { name: 'DEFAULT_MIN_GAMES', value: DEFAULT_MIN_GAMES, description: 'Default minimum-games threshold for the Opening Score chart filter.', consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
       { name: 'DEFAULT_FILTER_TERMINATIONS', value: DEFAULT_FILTER_TERMINATIONS, description: 'Default termination reasons pre-selected in the Opening Score chart filter.', consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
@@ -79,7 +79,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Player Overrides + Helpers',
     entries: [
-      { name: 'PLAYER_TIME_CLASSES', value: PLAYER_TIME_CLASSES, description: 'Per-player allowed time-class overrides, read via getPlayerTimeClasses().', consumers: ['AppShell.tsx: loadAll', 'DeconstructButton.tsx: handleCheckCounts, handlePopulate', 'MaintenancePanel.tsx: handlePopulate', 'owner/maintenance/page.tsx: handleSearch'] }
+      { name: 'PLAYER_TIME_CLASSES', value: PLAYER_TIME_CLASSES, description: 'Per-player allowed time-class overrides, read via getPlayerTimeClasses().', consumers: ['AppShell.tsx: loadAll', 'DeconstructButton.tsx: handleCheckCounts, handlePopulate'] }
     ]
   },
   {

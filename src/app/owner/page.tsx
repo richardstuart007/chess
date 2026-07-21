@@ -5,7 +5,6 @@ const TOOLS = [
   { href: '/owner/cache', label: 'Cache', description: 'Inspect and manage server-side cache entries.', step: '🗄' },
   { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
   { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
-  { href: '/owner/maintenance', label: 'Maintenance', description: 'Add players and sync their chess.com game archives.', step: '🛠' },
   { href: '/owner/dataflow', label: 'Dataflow', description: 'Readable view of docs/Dataflow.md — how data moves through the pipeline.', step: '🗺' },
   { href: '/owner/constants', label: 'Constants', description: 'Read-only view of every constants.ts value and .env variable, with descriptions and consumers.', step: '⚙' }
 ]
