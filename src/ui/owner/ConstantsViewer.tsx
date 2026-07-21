@@ -16,7 +16,63 @@ export type ConstantSection = {
   entries: ConstantEntry[]
 }
 
-type Tab = 'constants' | 'env'
+type Tab = 'constants' | 'env' | 'functions'
+
+type FunctionIndexName = {
+  name: string
+  isEnv: boolean
+}
+
+type FunctionIndexEntry = {
+  usedIn: string
+  names: FunctionIndexName[]
+}
+
+//----------------------------------------------------------------------------------------------
+//  buildFunctionIndex — reverse-indexes every section's entries' `consumers` arrays into one row
+//  per function/module-scope reference, listing which constants/env vars that reference uses.
+//  constantsSections and envSections are kept separate (not pre-merged) so each matched name can
+//  be tagged with its origin for the Functions tab's blue/red color coding.
+//----------------------------------------------------------------------------------------------
+function buildFunctionIndex(constantsSections: ConstantSection[], envSections: ConstantSection[]): FunctionIndexEntry[] {
+  const namesByUsedIn = new Map<string, Map<string, boolean>>()
+
+  function addSections(sections: ConstantSection[], isEnv: boolean) {
+    for (const section of sections) {
+      for (const entry of section.entries) {
+        for (const consumer of entry.consumers) {
+          if (consumer === 'none yet') continue
+
+          const references = consumer.endsWith(' (module scope)') && !consumer.includes(': ')
+            ? [consumer]
+            : (() => {
+                const [file, functionsPart] = consumer.split(': ')
+                if (functionsPart === undefined) return [consumer]
+                return functionsPart.split(', ').map(functionName => `${file}: ${functionName}`)
+              })()
+
+          for (const reference of references) {
+            const names = namesByUsedIn.get(reference) ?? new Map<string, boolean>()
+            names.set(entry.name, isEnv)
+            namesByUsedIn.set(reference, names)
+          }
+        }
+      }
+    }
+  }
+
+  addSections(constantsSections, false)
+  addSections(envSections, true)
+
+  const index = Array.from(namesByUsedIn.entries()).map(([usedIn, names]) => ({
+    usedIn,
+    names: Array.from(names.entries())
+      .map(([name, isEnv]) => ({ name, isEnv }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }))
+
+  return index.sort((a, b) => a.usedIn.localeCompare(b.usedIn))
+}
 
 //----------------------------------------------------------------------------------------------
 //  PopoverButton — small button that toggles an absolutely-positioned popover on click, same
@@ -110,22 +166,73 @@ function SectionTable({ section }: { section: ConstantSection }) {
 }
 
 //----------------------------------------------------------------------------------------------
+//  FunctionIndexPopup — always-a-popup display of a function's description followed by its
+//  matched constant/env-var names, one per line, color-coded by origin (blue for constants.ts,
+//  red for .env)
+//----------------------------------------------------------------------------------------------
+function FunctionIndexPopup({ description, names }: { description: string; names: FunctionIndexName[] }) {
+  return (
+    <PopoverButton label='Show'>
+      {description && <p className='text-gray-700 mb-2'>{description}</p>}
+      <ul className='list-disc pl-4 space-y-1'>
+        {names.map(n => (
+          <li key={n.name} className={n.isEnv ? 'text-red-700' : 'text-blue-700'}>{n.name}</li>
+        ))}
+      </ul>
+    </PopoverButton>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  FunctionIndexTable — flat table of every function/module-scope reference and the
+//  constants/env vars it uses, driven by buildFunctionIndex
+//----------------------------------------------------------------------------------------------
+function FunctionIndexTable({ index, functionDescriptions }: { index: FunctionIndexEntry[]; functionDescriptions: Record<string, string> }) {
+  return (
+    <table className='w-full table-fixed text-xs border-collapse'>
+      <thead>
+        <tr className='text-left text-gray-500 border-b border-gray-200'>
+          <th className='py-1.5 pr-10 font-medium w-[32rem]'>Functions</th>
+          <th className='py-1.5 font-medium'>
+            <span className='text-blue-700'>Constants</span> <span className='text-red-700'>.ENV</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {index.map(entry => (
+          <tr key={entry.usedIn} className='border-b border-gray-100 align-top'>
+            <td className='py-1.5 pr-10 font-mono break-words'>{entry.usedIn}</td>
+            <td className='py-1.5'>
+              <FunctionIndexPopup description={functionDescriptions[entry.usedIn] ?? ''} names={entry.names} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
 //  ConstantsViewer — two-level tabbed read-only display of constants.ts and .env, no edit
-//  controls. Top-level tabs pick Constants vs .env; a second tab row picks one section within
-//  the active top-level tab, and only that section's table renders at a time.
+//  controls. Top-level tabs pick Constants, .env, or Functions; a second tab row picks one
+//  section within Constants/.env, and only that section's table renders at a time. Functions is
+//  a flat reverse-index across both, with no section row.
 //----------------------------------------------------------------------------------------------
 export default function ConstantsViewer({
   constantsSections,
-  envSections
+  envSections,
+  functionDescriptions
 }: {
   constantsSections: ConstantSection[]
   envSections: ConstantSection[]
+  functionDescriptions: Record<string, string>
 }) {
   const [tab, setTab] = useState<Tab>('constants')
   const [sectionIndex, setSectionIndex] = useState(0)
 
-  const sections = tab === 'constants' ? constantsSections : envSections
+  const sections = tab === 'env' ? envSections : constantsSections
   const activeSection = sections[sectionIndex] ?? sections[0]
+  const functionIndex = buildFunctionIndex(constantsSections, envSections)
 
   function handleTabChange(next: Tab) {
     setTab(next)
@@ -141,22 +248,31 @@ export default function ConstantsViewer({
         <AppTab active={tab === 'env'} onClick={() => handleTabChange('env')}>
           .env
         </AppTab>
+        <AppTab active={tab === 'functions'} onClick={() => handleTabChange('functions')}>
+          Functions
+        </AppTab>
       </div>
 
-      <div className='flex gap-2 mb-6 flex-wrap'>
-        {sections.map((section, i) => (
-          <AppTab
-            key={section.heading}
-            variant='pill'
-            active={i === sectionIndex}
-            onClick={() => setSectionIndex(i)}
-          >
-            {section.heading}
-          </AppTab>
-        ))}
-      </div>
+      {tab === 'functions' ? (
+        <FunctionIndexTable index={functionIndex} functionDescriptions={functionDescriptions} />
+      ) : (
+        <>
+          <div className='flex gap-2 mb-6 flex-wrap'>
+            {sections.map((section, i) => (
+              <AppTab
+                key={section.heading}
+                variant='pill'
+                active={i === sectionIndex}
+                onClick={() => setSectionIndex(i)}
+              >
+                {section.heading}
+              </AppTab>
+            ))}
+          </div>
 
-      {activeSection && <SectionTable section={activeSection} />}
+          {activeSection && <SectionTable section={activeSection} />}
+        </>
+      )}
     </div>
   )
 }
