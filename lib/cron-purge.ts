@@ -3,12 +3,12 @@ import * as path from 'path'
 
 dotenv.config({ path: path.join(process.cwd(), '.env') })
 
-import { runGameSync } from '../src/lib/actions/sync'
+import { purgeStaleReachOnePositions } from '../src/lib/analysis/purgePositions'
 
-console.log('Running runGameSync() directly ...')
+console.log('Running purgeStaleReachOnePositions() directly ...')
 
 async function main() {
-  const result = await runGameSync()
+  const result = await purgeStaleReachOnePositions(1, false)
   console.log(JSON.stringify(result, null, 2))
 }
 

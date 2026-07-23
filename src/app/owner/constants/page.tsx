@@ -186,8 +186,7 @@ export default function ConstantsPage() {
         { name: 'NEXT_PUBLIC_APPENV_DBHANDLER', value: process.env.NEXT_PUBLIC_APPENV_DBHANDLER, description: 'Selects the DB connection handler in nextjs-shared.', consumers: ['nextjs-shared/src/tables/db.ts'] },
         { name: 'NEXT_PUBLIC_APPENV_LOG_I', value: process.env.NEXT_PUBLIC_APPENV_LOG_I, description: 'Enables/disables Info-level logging.', consumers: ['nextjs-shared/src/tables/tableGeneric/write_logging.ts'] },
         { name: 'NEXT_PUBLIC_APPENV_LOG_D', value: process.env.NEXT_PUBLIC_APPENV_LOG_D, description: 'Enables/disables Debug-level logging.', consumers: ['nextjs-shared/src/tables/tableGeneric/write_logging.ts'] },
-        { name: 'CRON_SECRET', value: process.env.CRON_SECRET, description: 'Shared secret required by the cron sync API route and the standalone cron-sync script.', consumers: ['src/app/api/cron/sync/route.ts', 'lib/cron-sync.ts'] },
-        { name: 'PORT', value: process.env.PORT, description: 'Port used by the standalone lib/cron-sync.ts script — the npm dev scripts hardcode their own --port instead.', consumers: ['lib/cron-sync.ts'] }
+        { name: 'CRON_SECRET', value: process.env.CRON_SECRET, description: 'Shared secret required by the cron sync API route for the external Vercel-scheduled trigger.', consumers: ['src/app/api/cron/sync/route.ts'] }
       ]
     },
     {

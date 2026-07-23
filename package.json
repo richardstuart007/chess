@@ -1,15 +1,23 @@
 {
   "name": "chess",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "private": true,
   "scripts": {
     "build": "next build",
     "sync-games": "npx tsx lib/sync-games.ts",
     "deconstruct-games": "npx tsx lib/deconstruct-games.ts",
     "cron-sync": "npx tsx lib/cron-sync.ts",
-    "locallocal": "copy /Y .env.locallocal .env && next dev --turbopack --port 3040",
-    "localdev": "copy /Y .env.localdev .env && next dev --turbopack --port 3041",
-    "localprod": "copy /Y .env.localprod .env && next dev --turbopack --port 3042"
+    "cron-build-tree": "npx tsx lib/cron-build-tree.ts",
+    "cron-sync-tpos": "npx tsx lib/cron-sync-tpos.ts",
+    "cron-purge": "npx tsx lib/cron-purge.ts",
+    "cron-evaluate-positions": "npx tsx lib/cron-evaluate-positions.ts",
+    "cron-update-cp-change": "npx tsx lib/cron-update-cp-change.ts",
+    "cron-build-habits": "npx tsx lib/cron-build-habits.ts",
+    "cron-evaluate-game-endings": "npx tsx lib/cron-evaluate-game-endings.ts",
+    "cron-deepen-popular": "npx tsx lib/cron-deepen-popular.ts",
+    "cron-full": "npm run cron-sync && npm run cron-build-tree && npm run cron-sync-tpos && npm run cron-purge && npm run cron-evaluate-positions && npm run cron-update-cp-change && npm run cron-build-habits && npm run cron-evaluate-game-endings && npm run cron-deepen-popular",
+    "locallocal": "copy /Y .env.locallocal .env && next dev --turbopack --port 4050",
+    "localprod": "copy /Y .env.localprod .env && next dev --turbopack --port 4052"
   },
   "dependencies": {
     "@heroicons/react": "2.2.0",

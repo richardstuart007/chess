@@ -3,12 +3,12 @@ import * as path from 'path'
 
 dotenv.config({ path: path.join(process.cwd(), '.env') })
 
-import { runGameSync } from '../src/lib/actions/sync'
+import { buildHabits } from '../src/lib/analysis/buildHabits'
 
-console.log('Running runGameSync() directly ...')
+console.log('Running buildHabits() directly ...')
 
 async function main() {
-  const result = await runGameSync()
+  const result = await buildHabits(1, false)
   console.log(JSON.stringify(result, null, 2))
 }
 
