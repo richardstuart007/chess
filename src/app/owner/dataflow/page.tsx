@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Metadata } from 'next'
-import { parseMarkdownLite, buildSectionTree } from '@/src/lib/parseMarkdownLite'
-import MarkdownLiteView from '@/src/ui/MarkdownLiteView'
+import { parseMarkdownLite, buildSectionTree } from 'nextjs-shared/parseMarkdownLite'
+import MarkdownLiteView from 'nextjs-shared/MarkdownLiteView'
 
 export const metadata: Metadata = { title: 'Dataflow' }
 
