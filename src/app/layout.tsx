@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
-import { DevHeader } from '@/src/ui/DevHeader'
+import { DevLayoutHeader } from 'nextjs-shared/DevLayoutHeader'
 import AppShell from '@/src/ui/AppShell'
 
 const geistSans = Geist({
@@ -33,7 +33,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className='min-h-full flex flex-col bg-background text-foreground'>
-        {IS_DEV && <DevHeader dbLocation={DB_LOCATION} />}
+        {IS_DEV && <DevLayoutHeader dbLocation={DB_LOCATION} />}
         <main className='w-full flex-1 px-4 py-6'>
           <AppShell>{children}</AppShell>
         </main>
