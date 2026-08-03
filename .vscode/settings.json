@@ -6,11 +6,11 @@
     "editor.defaultFormatter": "vscode.html-language-features"
   },
   "workbench.colorCustomizations": {
-    "titleBar.activeBackground": "#eab308",
-    "titleBar.activeForeground": "#1f2937",
-    "titleBar.inactiveBackground": "#eab308",
-    "titleBar.inactiveForeground": "#4b5563",
-    "activityBar.background": "#eab308",
-    "activityBar.foreground": "#1f2937"
+    "titleBar.activeBackground": "#4d4400",
+    "titleBar.inactiveBackground": "#4d4400",
+    "activityBar.background": "#4d4400",
+    "titleBar.activeForeground": "#ffffff",
+    "titleBar.inactiveForeground": "#ffffff",
+    "activityBar.foreground": "#ffffff"
   }
 }

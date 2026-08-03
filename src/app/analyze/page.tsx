@@ -4,18 +4,19 @@ import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
+import { useBackNav } from 'nextjs-shared/useBackNav'
 import ChessBoardView from '@/src/ui/board/ChessBoardView'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { getGameById, getGameEvals } from '@/src/lib/actions/games'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
+import { BACK_KEY } from '@/src/lib/constants'
 
 function AnalyzeContent() {
   const searchParams = useSearchParams()
 
   const gdidParam = searchParams.get('game')
   const username = searchParams.get('user') ?? ''
-  const fromParam = searchParams.get('from')
-  const backPath = fromParam ? decodeURIComponent(fromParam) : '/'
+  const backPath = useBackNav(BACK_KEY) ?? '/'
 
   const [game, setGame] = useState<ChessComGame | null>(null)
   const [gdid, setGdid] = useState<number | undefined>(undefined)

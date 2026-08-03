@@ -3,9 +3,11 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
+import { saveBackNav } from 'nextjs-shared/useBackNav'
 import OpeningScoreChart from '@/src/ui/charts/OpeningScoreChart'
 import { getPlayers } from '@/src/lib/actions/players'
 import { ChessComGame } from '@/src/lib/chesscom'
+import { BACK_KEY } from '@/src/lib/constants'
 
 function OpeningsContent() {
   const router = useRouter()
@@ -25,8 +27,8 @@ function OpeningsContent() {
   function handleSelectGame(game: ChessComGame, username: string) {
     const gameId = (game as any)._gameId
     if (gameId) {
-      const from = encodeURIComponent('/openings')
-      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}&from=${from}`)
+      saveBackNav(BACK_KEY)
+      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}`)
     }
   }
 

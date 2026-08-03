@@ -79,3 +79,8 @@ export const STOCKFISH_DEEP_ANALYSIS_MULTIPV = 3
 //  UI Display
 //----------------------------------------------------------------------------------
 export const VALUE_DISPLAY_MAX_LENGTH = 40
+
+//----------------------------------------------------------------------------------
+//  Back-Navigation Keys
+//----------------------------------------------------------------------------------
+export const BACK_KEY = 'back_key_chess'

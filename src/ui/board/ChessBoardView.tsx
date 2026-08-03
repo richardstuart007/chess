@@ -7,13 +7,14 @@ import { Chessboard } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
+import { saveBackNav } from 'nextjs-shared/useBackNav'
 import MySelect from 'nextjs-shared/MySelect'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
 import { saveGameEvaluations, saveAnalysisLine, saveAnalysisTree, upgradeGameEval } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
-import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
+import { MOVE_COUNT_MIN_MOVE, BACK_KEY } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -1190,7 +1191,8 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                               className={`${rowBg} ${g.gameId != null ? 'cursor-pointer' : ''}`}
                               onClick={() => {
                                 if (g.gameId == null) return
-                                router.push(`/analyze?game=${g.gameId}&user=${g.player}&from=${encodeURIComponent(backPath)}`)
+                                saveBackNav(BACK_KEY, backPath)
+                                router.push(`/analyze?game=${g.gameId}&user=${g.player}`)
                               }}
                             >
                               <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>

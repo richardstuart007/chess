@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
+import { saveBackNav } from 'nextjs-shared/useBackNav'
+import { useTabQueryState } from 'nextjs-shared/useTabQueryState'
 import MyBox from 'nextjs-shared/MyBox'
 import AppTab from '@/src/ui/AppTab'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
+import { BACK_KEY } from '@/src/lib/constants'
 
 interface GameHit {
   player:      string
@@ -44,8 +46,8 @@ export default function PositionDetail({
   games
 }: PositionDetailProps) {
   const router = useRouter()
-  const [tab,          setTab]          = useState<Tab>('moves')
-  const [selectedMove, setSelectedMove] = useState<string | null>(null)
+  const [tab,          setTab]          = useTabQueryState('tab', 'moves')
+  const [selectedMove, setSelectedMove] = useTabQueryState('move', '')
 
   if (!position) {
     return <div className="text-center py-12 text-gray-500">Position not found.</div>
@@ -187,7 +189,7 @@ export default function PositionDetail({
                         key={m.mov_san}
                         className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
                         onClick={() => {
-                          setSelectedMove(isSelected ? null : m.mov_san)
+                          setSelectedMove(isSelected ? '' : m.mov_san)
                           setTab('history')
                         }}
                       >
@@ -219,7 +221,7 @@ export default function PositionDetail({
                     Filtered: {selectedMove}
                   </span>
                   <button
-                    onClick={() => setSelectedMove(null)}
+                    onClick={() => setSelectedMove('')}
                     className="text-xs text-gray-400 hover:text-gray-600"
                   >
                     × clear
@@ -245,7 +247,11 @@ export default function PositionDetail({
                         <tr
                           key={i}
                           className={canClick ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}
-                          onClick={() => canClick && router.push(`/analyze?game=${g.gameId}&user=${g.player}&from=${encodeURIComponent(`/position/${position.pos_id}`)}`)}
+                          onClick={() => {
+                            if (!canClick) return
+                            saveBackNav(BACK_KEY)
+                            router.push(`/analyze?game=${g.gameId}&user=${g.player}`)
+                          }}
                         >
                           <td className="py-1.5 pr-3 tabular-nums text-xs text-gray-500">
                             {g.gameId ?? '—'}

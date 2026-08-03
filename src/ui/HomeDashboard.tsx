@@ -4,8 +4,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import GameList from '@/src/ui/games/GameList'
 import MyBox from 'nextjs-shared/MyBox'
+import { saveBackNav } from 'nextjs-shared/useBackNav'
 import { getEarliestGameDate } from '@/src/lib/actions/games'
 import { ChessComGame } from '@/src/lib/chesscom'
+import { BACK_KEY } from '@/src/lib/constants'
 
 interface Player {
   username: string
@@ -45,8 +47,8 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
   function handleSelectGame(game: ChessComGame, username: string) {
     const gameId = (game as any)._gameId
     if (gameId) {
-      const from = encodeURIComponent('/')
-      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}&from=${from}`)
+      saveBackNav(BACK_KEY)
+      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}`)
     }
   }
 

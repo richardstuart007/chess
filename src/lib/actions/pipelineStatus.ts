@@ -50,10 +50,10 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
     skipCache: true
   })
 
-  const r = rows[0]
+  const r = rows[0] ?? {}
   const treeGamesEligible = parseInt(r.tree_games_eligible ?? '0')
   const treeGamesRemaining = parseInt(r.tree_games_remaining ?? '0')
-  return {
+  const result = {
     pending:              parseInt(r.pending             ?? '0'),
     gamesdecon:           parseInt(r.gamesdecon           ?? '0'),
     treeGamesProcessed:   treeGamesEligible - treeGamesRemaining,
@@ -64,6 +64,7 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
     evaluated:            parseInt(r.evaluated            ?? '0'),
     evaluationsRemaining: parseInt(r.evaluations_remaining ?? '0'),
   }
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -81,8 +82,9 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
        ))                                     AS pending,
       (SELECT COUNT(*) FROM tgd_gamesdecon)    AS all_decon`
   })
-  const r = rows[0]
-  return { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
+  const r = rows[0] ?? {}
+  const result = { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
+  return result
 }
 
 export async function refreshStep3(): Promise<{
@@ -97,12 +99,13 @@ export async function refreshStep3(): Promise<{
          AND NOT EXISTS (SELECT 1 FROM tgam_game_positions
            WHERE gam_gdid = d.gd_gdid)) AS all_remaining`
   })
-  const r = rows[0]
+  const r = rows[0] ?? {}
   const allEligible  = parseInt(r.all_eligible  ?? '0')
   const allRemaining = parseInt(r.all_remaining ?? '0')
-  return {
+  const result = {
     allProcessed: allEligible - allRemaining, allRemaining
   }
+  return result
 }
 
 export async function refreshTposStatus(): Promise<{ positions: number; unresolved: number }> {
@@ -112,8 +115,9 @@ export async function refreshTposStatus(): Promise<{ positions: number; unresolv
       (SELECT COUNT(*) FROM tpos_positions)                                AS positions,
       (SELECT COUNT(*) FROM tgam_game_positions WHERE gam_pos_id IS NULL)  AS unresolved`
   })
-  const r = rows[0]
-  return { positions: parseInt(r.positions ?? '0'), unresolved: parseInt(r.unresolved ?? '0') }
+  const r = rows[0] ?? {}
+  const result = { positions: parseInt(r.positions ?? '0'), unresolved: parseInt(r.unresolved ?? '0') }
+  return result
 }
 
 export async function refreshStep4(): Promise<{ evaluated: number; remaining: number }> {
@@ -125,11 +129,12 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
        LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
        WHERE e.eva_evaid IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})                 AS remaining`
   })
-  const r = rows[0]
-  return {
+  const r = rows[0] ?? {}
+  const result = {
     evaluated: parseInt(r.evaluated ?? '0'),
     remaining: parseInt(r.remaining ?? '0'),
   }
+  return result
 }
 
 export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
@@ -142,10 +147,11 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
       WHERE gp.gam_cp_change IS NULL
         AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP}`
   })
-  const r = rows[0]
-  return {
+  const r = rows[0] ?? {}
+  const result = {
     pending: parseInt(r.pending ?? '0'),
   }
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -186,12 +192,13 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
          WHERE h.hab_habid IS NULL)                                AS remaining
     `
   })
-  const r = rows[0]
-  return {
+  const r = rows[0] ?? {}
+  const result = {
     total:     parseInt(r.total     ?? '0'),
     dismissed: parseInt(r.dismissed ?? '0'),
     remaining: parseInt(r.remaining ?? '0')
   }
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -205,11 +212,12 @@ export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; r
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NOT NULL)  AS evaluated,
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NULL)      AS remaining`
   })
-  const r = rows[0]
-  return {
+  const r = rows[0] ?? {}
+  const result = {
     evaluated: parseInt(r.evaluated ?? '0'),
     remaining: parseInt(r.remaining ?? '0'),
   }
+  return result
 }
 
 //----------------------------------------------------------------------------------
