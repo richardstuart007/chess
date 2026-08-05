@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
-import MyPagination from 'nextjs-shared/MyPagination'
+import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterTextInput from '@/src/ui/filters/FilterTextInput'
@@ -15,7 +15,7 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
-import { GAME_LIST_ITEMS_PER_PAGE, DEFAULT_DATE_FROM } from '@/src/lib/constants'
+import { GAME_LIST_ITEMS_PER_PAGE, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM } from '@/src/lib/constants'
 
 interface PlayerOption {
   username: string
@@ -69,6 +69,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
   }, [draftFilters, filters])
 
   const [currentPage, setCurrentPage] = useState(() => ss('chess-gl-page', 1))
+  const [rowsPerPage, setRowsPerPage] = useState(() => ss('chess-gl-rows', GAME_LIST_ITEMS_PER_PAGE))
   const [games, setGames] = useState<any[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -111,6 +112,10 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
     try { sessionStorage.setItem('chess-gl-page', JSON.stringify(currentPage)) } catch {}
   }, [currentPage])
 
+  useEffect(() => {
+    try { sessionStorage.setItem('chess-gl-rows', JSON.stringify(rowsPerPage)) } catch {}
+  }, [rowsPerPage])
+
   //
   //  Reset back to page 1 whenever usernames/filters change, same as when the user
   //  changed them directly.
@@ -138,7 +143,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
     return () => { cancelled = true }
   }, [usernamesToFetch, filters])
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / GAME_LIST_ITEMS_PER_PAGE))
+  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
   useEffect(() => {
     let cancelled = false
@@ -150,7 +155,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
         return
       }
 
-      const rows = await fetchFilteredGames(usernamesToFetch, filters, currentPage, GAME_LIST_ITEMS_PER_PAGE)
+      const rows = await fetchFilteredGames(usernamesToFetch, filters, currentPage, rowsPerPage)
 
       if (!cancelled) {
         setGames(rows)
@@ -160,7 +165,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
 
     fetchPage().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [usernamesToFetch, filters, currentPage])
+  }, [usernamesToFetch, filters, currentPage, rowsPerPage])
 
   function handleSelectGame(row: any) {
     const rowUsername = row.gd_player
@@ -334,7 +339,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
               const hh = String(date.getHours()).padStart(2, '0')
               const min = String(date.getMinutes()).padStart(2, '0')
               const dateStr = `${dd}/${mm}/${yy} ${hh}:${min}`
-              const gameNumber = (currentPage - 1) * GAME_LIST_ITEMS_PER_PAGE + index + 1
+              const gameNumber = (currentPage - 1) * rowsPerPage + index + 1
 
               return (
                 <tr
@@ -388,10 +393,13 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
       <div className='mt-3 flex items-center justify-between'>
         <div />
         {totalPages > 1 && (
-          <MyPagination
+          <MyPaginationFooter
             totalPages={totalPages}
             statecurrentPage={currentPage}
             setStateCurrentPage={setCurrentPage}
+            rowsPerPage={rowsPerPage}
+            setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
+            rowsOptions={GAME_LIST_ROWS_OPTIONS}
           />
         )}
         <span className='text-xxs text-gray-400'>

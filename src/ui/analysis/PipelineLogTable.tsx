@@ -4,9 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import type { Filter } from 'nextjs-shared/structures'
-import MyPagination from 'nextjs-shared/MyPagination'
+import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import { MyInput } from 'nextjs-shared/MyInput'
-import { PIPELINE_LOG_ROWS_PER_PAGE } from '@/src/lib/constants'
+import { PIPELINE_LOG_ROWS_PER_PAGE, PIPELINE_LOG_ROWS_OPTIONS } from '@/src/lib/constants'
 
 type PipelineLogRow = {
   pip_pipid:        number
@@ -36,6 +36,7 @@ export default function PipelineLogTable() {
   const [stepName, setStepName] = useState('')
   const [run, setRun] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(PIPELINE_LOG_ROWS_PER_PAGE)
   const [tabledata, setTabledata] = useState<PipelineLogRow[]>([])
   const [totalPages, setTotalPages] = useState<number>(0)
   const [message, setMessage] = useState('')
@@ -56,7 +57,7 @@ export default function PipelineLogTable() {
       setMessage('')
     }, timeout)
     return () => clearTimeout(handler)
-  }, [step, stepName, run, currentPage])
+  }, [step, stepName, run, currentPage, rowsPerPage])
 
   async function fetchdata() {
     const filtersToUpdate: Filter[] = [
@@ -67,13 +68,13 @@ export default function PipelineLogTable() {
     const filters = filtersToUpdate.filter(filter => filter.value)
     try {
       const table = 'tpip_pipelinelog'
-      const offset = (currentPage - 1) * PIPELINE_LOG_ROWS_PER_PAGE
+      const offset = (currentPage - 1) * rowsPerPage
       const data = await fetchFiltered({
         caller: functionName,
         table,
         filters,
         orderBy: 'pip_pipid DESC',
-        limit: PIPELINE_LOG_ROWS_PER_PAGE,
+        limit: rowsPerPage,
         offset,
         skipCache: true
       })
@@ -82,7 +83,7 @@ export default function PipelineLogTable() {
         caller: functionName,
         table,
         filters,
-        items_per_page: PIPELINE_LOG_ROWS_PER_PAGE,
+        items_per_page: rowsPerPage,
         skipCache: true
       })
       setTotalPages(fetchedTotalPages)
@@ -181,11 +182,14 @@ export default function PipelineLogTable() {
             </tbody>
           </table>
           <p className='text-red-600'>{message}</p>
-          <div className='mt-2 flex justify-center'>
-            <MyPagination
+          <div className='mt-2'>
+            <MyPaginationFooter
               totalPages={totalPages}
               statecurrentPage={currentPage}
               setStateCurrentPage={setCurrentPage}
+              rowsPerPage={rowsPerPage}
+              setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
+              rowsOptions={PIPELINE_LOG_ROWS_OPTIONS}
             />
           </div>
         </div>

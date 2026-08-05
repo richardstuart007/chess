@@ -1,15 +1,16 @@
 import Link from 'next/link'
+import OwnerPage from 'nextjs-shared/OwnerPage'
+import OwnerTableLogging from 'nextjs-shared/OwnerTableLogging'
+import OwnerTableCache from 'nextjs-shared/OwnerTableCache'
+import DataflowTabs from '@/src/ui/dataflow/DataflowTabs'
+import ConstantsPage from './constants/page'
 
 const TOOLS = [
-  { href: '/owner/logging', label: 'Logging', description: 'View application log entries.', step: '📋' },
-  { href: '/owner/cache', label: 'Cache', description: 'Inspect and manage server-side cache entries.', step: '🗄' },
   { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
-  { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
-  { href: '/owner/dataflow', label: 'Dataflow', description: 'Readable view of how data moves through the pipeline.', step: '🗺' },
-  { href: '/owner/constants', label: 'Constants', description: 'Read-only view of every constants.ts value and .env variable, with descriptions and consumers.', step: '⚙' }
+  { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' }
 ]
 
-export default function OwnerPage() {
+function ToolsPanel() {
   return (
     <div className='p-8 max-w-2xl'>
       <div className='space-y-3'>
@@ -27,5 +28,20 @@ export default function OwnerPage() {
         ))}
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <OwnerPage
+      persistKey='chess-owner-tab'
+      tabs={[
+        { label: 'Logging', content: <OwnerTableLogging /> },
+        { label: 'Cache', content: <OwnerTableCache /> },
+        { label: 'Tools', content: <ToolsPanel /> },
+        { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
+        { label: 'Constants', content: <ConstantsPage /> }
+      ]}
+    />
   )
 }

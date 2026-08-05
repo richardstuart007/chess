@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyHelp } from 'nextjs-shared/MyHelp'
-import MyPagination from 'nextjs-shared/MyPagination'
+import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
@@ -45,6 +45,7 @@ function HabitsContent() {
   const [rows,        setRows]        = useState<any[]>([])
   const [loading,     setLoading]     = useState(false)
   const [currentPage, setCurrentPage] = useState(() => ss('chess-habits-page', 1))
+  const [rowsPerPage, setRowsPerPage] = useState(() => ss('chess-habits-rows', HABITS_ITEMS_PER_PAGE))
   const [totalCount,  setTotalCount]  = useState(0)
 
   useEffect(() => {
@@ -69,6 +70,10 @@ function HabitsContent() {
   useEffect(() => {
     try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
   }, [currentPage])
+
+  useEffect(() => {
+    try { sessionStorage.setItem('chess-habits-rows', JSON.stringify(rowsPerPage)) } catch {}
+  }, [rowsPerPage])
 
   useEffect(() => {
     async function loadPlayers() {
@@ -101,7 +106,7 @@ function HabitsContent() {
     loadCount()
   }, [usernamesToFetch, color, quality, minMove, minReached, showDismissed])
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / HABITS_ITEMS_PER_PAGE))
+  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
   const load = useCallback(async () => {
     if (usernamesToFetch.length === 0) return
@@ -112,8 +117,8 @@ function HabitsContent() {
         color:      color === 'all' ? undefined : color,
         quality,
         sortBy,
-        limit:      HABITS_ITEMS_PER_PAGE,
-        offset:     (currentPage - 1) * HABITS_ITEMS_PER_PAGE,
+        limit:      rowsPerPage,
+        offset:     (currentPage - 1) * rowsPerPage,
         minReached,
         dismissed:  showDismissed
       })
@@ -121,7 +126,7 @@ function HabitsContent() {
     } finally {
       setLoading(false)
     }
-  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage])
+  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage, rowsPerPage])
 
   useEffect(() => { load() }, [load])
 
@@ -175,10 +180,12 @@ function HabitsContent() {
         <div className="flex items-center justify-between mt-3">
           <div />
           {totalPages > 1 && (
-            <MyPagination
+            <MyPaginationFooter
               totalPages={totalPages}
               statecurrentPage={currentPage}
               setStateCurrentPage={setCurrentPage}
+              rowsPerPage={rowsPerPage}
+              setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
             />
           )}
           <span className="text-xs text-gray-400">
