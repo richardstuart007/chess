@@ -4,6 +4,7 @@ import OwnerTableLogging from 'nextjs-shared/OwnerTableLogging'
 import OwnerTableCache from 'nextjs-shared/OwnerTableCache'
 import DataflowTabs from '@/src/ui/dataflow/DataflowTabs'
 import ConstantsPage from './constants/page'
+import OwnerTableSessionStorage from 'nextjs-shared/OwnerTableSessionStorage'
 
 const TOOLS = [
   { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
@@ -40,7 +41,8 @@ export default function Page() {
         { label: 'Cache', content: <OwnerTableCache /> },
         { label: 'Tools', content: <ToolsPanel /> },
         { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
-        { label: 'Constants', content: <ConstantsPage /> }
+        { label: 'Constants', content: <ConstantsPage /> },
+        { label: 'Session Storage', content: <OwnerTableSessionStorage /> }
       ]}
     />
   )

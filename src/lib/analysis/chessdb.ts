@@ -32,12 +32,12 @@ export interface PositionRow {
 }
 
 export interface MoveRow {
-  mov_san:       string
-  mov_uci:       string | null
-  mov_times:     number
-  mov_wins:      number
-  mov_losses:    number
-  mov_result_cp: number | null
+  move_played: string
+  move_uci:    string | null
+  mov_times:   number
+  mov_wins:    number
+  mov_losses:  number
+  eva_cp:      number | null
 }
 
 export interface EvaluationRow {
@@ -64,7 +64,7 @@ export async function getPositionCount(): Promise<number> {
 
 //----------------------------------------------------------------------------------
 //  getMovesForPosition — distinct moves played from a position, aggregated from
-//  tgam_game_positions, ordered by frequency. mov_result_cp is the Stockfish eval of
+//  tgam_game_positions, ordered by frequency. eva_cp is the Stockfish eval of
 //  the position resulting from each move (deterministic per position+move — every
 //  game sharing a move from this position reaches the identical resulting position),
 //  not an average — looked up once via the subquery's resulting_pos_id, not aggregated.
@@ -77,11 +77,11 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
   return await table_query({
     caller: 'getMovesForPosition',
     query: `
-      SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp
       FROM (
         SELECT
-          gp.gam_move_played                                   AS mov_san,
-          gp.gam_move_uci                                      AS mov_uci,
+          gp.gam_move_played                                   AS move_played,
+          gp.gam_move_uci                                      AS move_uci,
           COUNT(*)::int                                        AS mov_times,
           COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
           COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
@@ -119,7 +119,7 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
   const rows = await table_query({
     caller: 'getMovePlayCounts',
     query: `
-      SELECT p.pos_fen, gp.gam_move_played AS mov_san, COUNT(*)::int AS times
+      SELECT p.pos_fen, gp.gam_move_played, COUNT(*)::int AS times
       FROM tpos_positions p
       JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
       JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
@@ -129,12 +129,12 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
       GROUP BY p.pos_fen, gp.gam_move_played
     `,
     params
-  }) as { pos_fen: string; mov_san: string; times: number }[]
+  }) as { pos_fen: string; gam_move_played: string; times: number }[]
 
   const result: Record<string, Record<string, number>> = {}
   for (const row of rows) {
     if (!result[row.pos_fen]) result[row.pos_fen] = {}
-    result[row.pos_fen][row.mov_san] = Number(row.times)
+    result[row.pos_fen][row.gam_move_played] = Number(row.times)
   }
   return result
 }
@@ -144,18 +144,18 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
 //  scoped to the given player. FEN-keyed version of getMovesForPosition's aggregation
 //  query (via tpos_positions.pos_fen, like getGamesForPosition), used by the Analyze
 //  page's "Moves From This Position" panel for any position on the board.
-//  mov_result_cp is the resulting position's Stockfish eval (deterministic per
+//  eva_cp is the resulting position's Stockfish eval (deterministic per
 //  position+move), not an average — see getMovesForPosition's comment.
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition(fen: string, player: string): Promise<MoveRow[]> {
   return await table_query({
     caller: 'getMoveSummaryForPosition',
     query: `
-      SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp
       FROM (
         SELECT
-          gp.gam_move_played                                   AS mov_san,
-          gp.gam_move_uci                                      AS mov_uci,
+          gp.gam_move_played                                   AS move_played,
+          gp.gam_move_uci                                      AS move_uci,
           COUNT(*)::int                                        AS mov_times,
           COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
           COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
@@ -179,8 +179,8 @@ export interface PositionGameHit {
   player:         string
   move_played:    string
   move_num:       number | null
-  result:         string | null
-  gameId:         number | null
+  playerResult:   string | null
+  gdid:           number | null
   date:           string | null
   opponentRating: number | null
   termination:    string | null
@@ -225,22 +225,22 @@ export async function getGamesForPosition(fen: string, player: string, move: str
   })
 
   return rows.map((r: any) => {
-    const result    = r.gd_player_result ?? null
+    const playerResult = r.gd_player_result ?? null
     const finalEval = r.gd_final_eval != null ? Number(r.gd_final_eval) : null
     const playerEval = finalEval != null
       ? (r.gd_player_color === 'black' ? -finalEval : finalEval)
       : null
     const resultMismatch: 'lostWinning' | 'wonLosing' | null =
       playerEval == null ? null
-      : (result === 'loss' || result === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
-      : result === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
+      : (playerResult === 'loss' || playerResult === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
+      : playerResult === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
       : null
     return {
       player:         r.gd_player,
       move_played:    r.gam_move_played,
       move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
-      result,
-      gameId:         r.gd_gdid != null ? Number(r.gd_gdid) : null,
+      playerResult,
+      gdid:           r.gd_gdid != null ? Number(r.gd_gdid) : null,
       date:           r.game_date ?? null,
       opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
       termination:    r.gd_termination ?? null,
@@ -585,11 +585,11 @@ export async function getPositionDetail(posId: number, player?: string): Promise
   posEval: EvaluationRow | null
   gameCount: number
   games: Array<{
-    player:      string
-    move_played: string
-    move_num:    number | null
-    result:      string | null
-    gameId:      number | null
+    player:       string
+    move_played:  string
+    move_num:     number | null
+    playerResult: string | null
+    gdid:         number | null
   }>
 }> {
   const gameCountParams: (number | string)[] = [posId]
@@ -615,11 +615,11 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     table_query({
       caller: 'getPositionDetail',
       query: `
-        SELECT sub.mov_san, sub.mov_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp AS mov_result_cp
+        SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp
         FROM (
           SELECT
-            gp.gam_move_played                                   AS mov_san,
-            gp.gam_move_uci                                      AS mov_uci,
+            gp.gam_move_played                                   AS move_played,
+            gp.gam_move_uci                                      AS move_uci,
             COUNT(*)::int                                        AS mov_times,
             COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
             COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
@@ -679,11 +679,11 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     posEval:   posEvalRows[0] as EvaluationRow ?? null,
     gameCount: Number((gameCountRows[0] as any)?.game_count ?? 0),
     games: gamesRows.map((r: any) => ({
-      player:      r.gd_player,
-      move_played: r.gam_move_played,
-      move_num:    r.gam_move_num != null ? Number(r.gam_move_num) : null,
-      result:      r.gd_player_result ?? null,
-      gameId:      r.gd_gdid      != null ? Number(r.gd_gdid)      : null
+      player:       r.gd_player,
+      move_played:  r.gam_move_played,
+      move_num:     r.gam_move_num != null ? Number(r.gam_move_num) : null,
+      playerResult: r.gd_player_result ?? null,
+      gdid:         r.gd_gdid      != null ? Number(r.gd_gdid)      : null
     }))
   }
 }

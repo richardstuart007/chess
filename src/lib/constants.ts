@@ -61,8 +61,8 @@ export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
 //----------------------------------------------------------------------------------
 //  getPlayerTimeClasses — per-player allowed time classes, falls back to the global default
 //----------------------------------------------------------------------------------
-export function getPlayerTimeClasses(username: string): string[] {
-  return PLAYER_TIME_CLASSES[username.toLowerCase()] ?? INCLUDED_TIME_CLASSES
+export function getPlayerTimeClasses(player: string): string[] {
+  return PLAYER_TIME_CLASSES[player.toLowerCase()] ?? INCLUDED_TIME_CLASSES
 }
 
 //----------------------------------------------------------------------------------
@@ -86,3 +86,8 @@ export const VALUE_DISPLAY_MAX_LENGTH = 40
 //  Back-Navigation Keys
 //----------------------------------------------------------------------------------
 export const BACK_KEY = 'back_key_chess'
+
+//----------------------------------------------------------------------------------
+//  Session Storage
+//----------------------------------------------------------------------------------
+export const SESSION_STORAGE_PREFIX = 'rs7_chess_'

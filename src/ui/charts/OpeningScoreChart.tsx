@@ -15,7 +15,7 @@ import FilterNumberRange from '@/src/ui/filters/FilterNumberRange'
 import FilterMultiCheckbox from '@/src/ui/filters/FilterMultiCheckbox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { getOpeningScores, fetchFilteredGames } from '@/src/lib/actions/games'
-import { DEFAULT_DATE_FROM, DEFAULT_MIN_GAMES, DEFAULT_FILTER_TERMINATIONS } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM, DEFAULT_MIN_GAMES, DEFAULT_FILTER_TERMINATIONS, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 import { ChessComGame } from '@/src/lib/chesscom'
 
 const MIN_GAMES_OPTIONS = ['10', '25', '50', '100', '200', '500']
@@ -42,48 +42,72 @@ function sso<T>(key: string, fallback: T): T {
 }
 
 interface OpeningScoreChartProps {
-  players: { username: string; display_name: string | null }[]
-  onSelectGame?: (game: ChessComGame, username: string) => void
-  lastAnalyzedGameId?: number
+  players: { player: string; display_name: string | null }[]
+  onSelectGame?: (game: ChessComGame, player: string) => void
+  lastAnalyzedGdid?: number
 }
 
-export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedGameId }: OpeningScoreChartProps) {
+export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedGdid }: OpeningScoreChartProps) {
   const searchParams = useSearchParams()
   const playerFilter = searchParams.get('player') ?? ''
-  const usernames = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.username),
+  const playersToFetch = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.player),
     [playerFilter, players]
   )
 
-  const [color, setColor]               = useState<'both' | 'white' | 'black'>(() => sso('chess-osc-color', 'both'))
-  const [from, setFrom]                 = useState<'Best' | 'Worst'>(() => sso('chess-osc-from', 'Best'))
-  const [minGames, setMinGames]         = useState(() => sso('chess-osc-mingames', DEFAULT_MIN_GAMES))
-  const [resultsCount, setResultsCount] = useState(() => sso('chess-osc-results-count', '20'))
-  const [dateFrom, setDateFrom]         = useState(() => sso('chess-osc-datefrom', DEFAULT_DATE_FROM))
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [color, setColor]               = useState<'both' | 'white' | 'black'>('both')
+  const [from, setFrom]                 = useState<'Best' | 'Worst'>('Best')
+  const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES)
+  const [resultsCount, setResultsCount] = useState('20')
+  const [dateFrom, setDateFrom]         = useState(DEFAULT_DATE_FROM)
   const [data, setData]                 = useState<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]>([])
   const [loading, setLoading]           = useState(false)
 
-  const [selectedEco, setSelectedEco]   = useState<string | null>(() => sso('chess-osc-eco', null))
-  const [selectedName, setSelectedName] = useState(() => sso('chess-osc-name', ''))
+  const [selectedEco, setSelectedEco]   = useState<string | null>(null)
+  const [selectedName, setSelectedName] = useState('')
   const [gameRows, setGameRows]         = useState<any[]>([])
   const [gamesLoading, setGamesLoading] = useState(false)
 
-  const [sortBy, setSortBy]                         = useState<'date' | 'moves'>(() => sso('chess-osc-sort', 'date'))
-  const [filterColors, setFilterColors]             = useState<string[]>(() => sso('chess-osc-colors', []))
-  const [filterResults, setFilterResults]           = useState<string[]>(() => sso('chess-osc-results', []))
-  const [filterTerminations, setFilterTerminations] = useState<string[]>(() => sso('chess-osc-terminations', DEFAULT_FILTER_TERMINATIONS))
-  const [filterRatingMin, setFilterRatingMin]       = useState<string>(() => sso('chess-osc-rating-min', ''))
-  const [filterRatingMax, setFilterRatingMax]       = useState<string>(() => sso('chess-osc-rating-max', ''))
+  const [sortBy, setSortBy]                         = useState<'date' | 'moves'>('date')
+  const [filterColors, setFilterColors]             = useState<string[]>([])
+  const [filterResults, setFilterResults]           = useState<string[]>([])
+  const [filterTerminations, setFilterTerminations] = useState<string[]>(DEFAULT_FILTER_TERMINATIONS)
+  const [filterRatingMin, setFilterRatingMin]       = useState<string>('')
+  const [filterRatingMax, setFilterRatingMax]       = useState<string>('')
+  const [hydrated, setHydrated]                     = useState(false)
 
   useEffect(() => {
-    if (usernames.length === 0) return
+    setColor(sso(`${SESSION_STORAGE_PREFIX}osc-color`, 'both'))
+    setFrom(sso(`${SESSION_STORAGE_PREFIX}osc-from`, 'Best'))
+    setMinGames(sso(`${SESSION_STORAGE_PREFIX}osc-mingames`, DEFAULT_MIN_GAMES))
+    setResultsCount(sso(`${SESSION_STORAGE_PREFIX}osc-results-count`, '20'))
+    setDateFrom(sso(`${SESSION_STORAGE_PREFIX}osc-datefrom`, DEFAULT_DATE_FROM))
+    setSelectedEco(sso(`${SESSION_STORAGE_PREFIX}osc-eco`, null))
+    setSelectedName(sso(`${SESSION_STORAGE_PREFIX}osc-name`, ''))
+    setSortBy(sso(`${SESSION_STORAGE_PREFIX}osc-sort`, 'date'))
+    setFilterColors(sso(`${SESSION_STORAGE_PREFIX}osc-colors`, []))
+    setFilterResults(sso(`${SESSION_STORAGE_PREFIX}osc-results`, []))
+    setFilterTerminations(sso(`${SESSION_STORAGE_PREFIX}osc-terminations`, DEFAULT_FILTER_TERMINATIONS))
+    setFilterRatingMin(sso(`${SESSION_STORAGE_PREFIX}osc-rating-min`, ''))
+    setFilterRatingMax(sso(`${SESSION_STORAGE_PREFIX}osc-rating-max`, ''))
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || playersToFetch.length === 0) return
     let cancelled = false
     setLoading(true)
     async function load() {
       const limit   = resultsCount === '0' ? 0 : parseInt(resultsCount, 10)
       const sortDir = from === 'Best' ? 'DESC' : 'ASC'
       const rows = await getOpeningScores(
-        usernames, color,
+        playersToFetch, color,
         parseInt(minGames, 10), limit, sortDir,
         dateFrom || undefined
       )
@@ -91,39 +115,41 @@ export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedG
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [usernames, color, from, minGames, resultsCount, dateFrom])
+  }, [playersToFetch, color, from, minGames, resultsCount, dateFrom, hydrated])
 
   useEffect(() => {
+    if (!hydrated) return
     try {
-      sessionStorage.setItem('chess-osc-color', JSON.stringify(color))
-      sessionStorage.setItem('chess-osc-from', JSON.stringify(from))
-      sessionStorage.setItem('chess-osc-mingames', JSON.stringify(minGames))
-      sessionStorage.setItem('chess-osc-results-count', JSON.stringify(resultsCount))
-      sessionStorage.setItem('chess-osc-datefrom', JSON.stringify(dateFrom))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-color`, JSON.stringify(color))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-from`, JSON.stringify(from))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-mingames`, JSON.stringify(minGames))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-results-count`, JSON.stringify(resultsCount))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-datefrom`, JSON.stringify(dateFrom))
     } catch {}
-  }, [color, from, minGames, resultsCount, dateFrom])
+  }, [color, from, minGames, resultsCount, dateFrom, hydrated])
 
   useEffect(() => {
+    if (!hydrated) return
     try {
-      sessionStorage.setItem('chess-osc-eco', JSON.stringify(selectedEco))
-      sessionStorage.setItem('chess-osc-name', JSON.stringify(selectedName))
-      sessionStorage.setItem('chess-osc-sort', JSON.stringify(sortBy))
-      sessionStorage.setItem('chess-osc-colors', JSON.stringify(filterColors))
-      sessionStorage.setItem('chess-osc-results', JSON.stringify(filterResults))
-      sessionStorage.setItem('chess-osc-terminations', JSON.stringify(filterTerminations))
-      sessionStorage.setItem('chess-osc-rating-min', JSON.stringify(filterRatingMin))
-      sessionStorage.setItem('chess-osc-rating-max', JSON.stringify(filterRatingMax))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-eco`, JSON.stringify(selectedEco))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-name`, JSON.stringify(selectedName))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-sort`, JSON.stringify(sortBy))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-colors`, JSON.stringify(filterColors))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-results`, JSON.stringify(filterResults))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-terminations`, JSON.stringify(filterTerminations))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-rating-min`, JSON.stringify(filterRatingMin))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-rating-max`, JSON.stringify(filterRatingMax))
     } catch {}
-  }, [selectedEco, selectedName, sortBy, filterColors, filterResults, filterTerminations, filterRatingMin, filterRatingMax])
+  }, [selectedEco, selectedName, sortBy, filterColors, filterResults, filterTerminations, filterRatingMin, filterRatingMax, hydrated])
 
   useEffect(() => {
-    if (!selectedEco || usernames.length === 0) { setGameRows([]); return }
+    if (!selectedEco || playersToFetch.length === 0) { setGameRows([]); return }
     let cancelled = false
     setGamesLoading(true)
     async function loadGames() {
       const colorFilter = color === 'both' ? undefined : color
       const rows = await fetchFilteredGames(
-        usernames,
+        playersToFetch,
         {
           eco: selectedEco!,
           openingNameExact: selectedName,
@@ -136,11 +162,11 @@ export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedG
     }
     loadGames().catch(() => { if (!cancelled) setGamesLoading(false) })
     return () => { cancelled = true }
-  }, [selectedEco, selectedName, usernames, color, dateFrom])
+  }, [selectedEco, selectedName, playersToFetch, color, dateFrom])
 
   function handleSelectGame(row: any) {
     if (!onSelectGame) return
-    const rowUsername = row.gd_player
+    const rowPlayer = row.gd_player
     const game: ChessComGame = {
       url: row.gd_game_url,
       pgn: '',
@@ -164,10 +190,10 @@ export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedG
           : (row.gd_player_result === 'win' ? 'loss' : row.gd_player_result === 'loss' ? 'win' : 'draw')
       }
     }
-    ;(game as any)._gameId = row.gd_gdid
+    ;(game as any)._gdid = row.gd_gdid
     ;(game as any)._openingName = row.gd_opening_name
     ;(game as any)._ecoCode = row.gd_eco_code
-    onSelectGame(game, rowUsername)
+    onSelectGame(game, rowPlayer)
   }
 
   function handleBarClick(data: any) {
@@ -401,7 +427,7 @@ export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedG
                             return (
                               <tr
                                 key={row.gd_gdid}
-                                className={`border-b border-gray-100 ${onSelectGame ? 'cursor-pointer hover:bg-blue-50' : ''} ${row.gd_gdid === lastAnalyzedGameId ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
+                                className={`border-b border-gray-100 ${onSelectGame ? 'cursor-pointer hover:bg-blue-50' : ''} ${row.gd_gdid === lastAnalyzedGdid ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
                                 onClick={() => handleSelectGame(row)}
                               >
                                 <td className='py-1 pr-2 text-gray-600'>{row.gd_player}</td>

@@ -34,19 +34,19 @@ const SAVED_TABLE = 'tsa_savedanalyses'
 // Games
 // -----------------------------------------------------------------------
 
-export async function getGameCount(playerUsername: string): Promise<number> {
+export async function getGameCount(player: string): Promise<number> {
   return table_count({
     table: GAMES_TABLE,
-    whereColumnValuePairs: [{ column: 'gr_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
     caller: 'getGameCount'
   })
 }
 
-export async function getRecentGames(playerUsername: string, limit: number = 100) {
+export async function getRecentGames(player: string, limit: number = 100) {
   return table_fetch({
     caller: 'getRecentGames',
     table: GAMES_TABLE,
-    whereColumnValuePairs: [{ column: 'gr_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
     orderBy: 'gr_end_time DESC',
     limit
   })
@@ -55,20 +55,20 @@ export async function getRecentGames(playerUsername: string, limit: number = 100
 //----------------------------------------------------------------------------------
 //  getGameById — reads from tgd_gamesdecon, matched by its own permanent gd_gdid
 //----------------------------------------------------------------------------------
-export async function getGameById(gameId: number) {
+export async function getGameById(gdid: number) {
   const rows = await table_fetch({
     caller: 'getGameById',
     table: DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'gd_gdid', value: gameId }]
+    whereColumnValuePairs: [{ column: 'gd_gdid', value: gdid }]
   })
   return rows[0] ?? null
 }
 
-export async function getLatestGameEndTime(playerUsername: string): Promise<number | null> {
+export async function getLatestGameEndTime(player: string): Promise<number | null> {
   const rows = await table_fetch({
     caller: 'getLatestGameEndTime',
     table: GAMES_TABLE,
-    whereColumnValuePairs: [{ column: 'gr_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
     orderBy: 'gr_end_time DESC',
     limit: 1,
     columns: ['gr_end_time']
@@ -77,7 +77,7 @@ export async function getLatestGameEndTime(playerUsername: string): Promise<numb
 }
 
 export async function insertRawGame(data: {
-  player_username: string
+  player: string
   chesscom_uuid: string
   raw_data: object
   pgn?: string | null
@@ -88,7 +88,7 @@ export async function insertRawGame(data: {
     caller: 'insertRawGame',
     table: GAMES_TABLE,
     columnValuePairs: [
-      { column: 'gr_player', value: data.player_username.toLowerCase() },
+      { column: 'gr_player', value: data.player.toLowerCase() },
       { column: 'gr_chesscom_uuid', value: data.chesscom_uuid },
       { column: 'gr_raw_data', value: JSON.stringify(data.raw_data) },
       { column: 'gr_pgn', value: data.pgn ?? null },
@@ -238,11 +238,11 @@ export async function saveAnalysisTree(data: {
   })
 }
 
-export async function getSavedAnalyses(gameId: number) {
+export async function getSavedAnalyses(gdid: number) {
   return table_fetch({
     caller: 'getSavedAnalyses',
     table: SAVED_TABLE,
-    whereColumnValuePairs: [{ column: 'sa_gdid', value: gameId }],
+    whereColumnValuePairs: [{ column: 'sa_gdid', value: gdid }],
     orderBy: 'sa_id DESC'
   })
 }
@@ -251,20 +251,20 @@ export async function getSavedAnalyses(gameId: number) {
 // Deconstructed Games
 // -----------------------------------------------------------------------
 
-export async function getDeconGames(playerUsername: string, limit: number = 100) {
+export async function getDeconGames(player: string, limit: number = 100) {
   return table_fetch({
     caller: 'getDeconGames',
     table: DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'gd_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     orderBy: 'gd_end_time DESC',
     limit
   })
 }
 
-export async function getDeconGameCount(playerUsername: string): Promise<number> {
+export async function getDeconGameCount(player: string): Promise<number> {
   return table_count({
     table: DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'gd_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     caller: 'getDeconGameCount'
   })
 }
@@ -293,8 +293,8 @@ export type GameFilters = {
   dateTo?: string
 }
 
-function buildFilters(usernames: string[], filters: GameFilters): Filter[] {
-  const lowered = usernames.map(u => u.toLowerCase())
+function buildFilters(players: string[], filters: GameFilters): Filter[] {
+  const lowered = players.map(u => u.toLowerCase())
   const result: Filter[] = lowered.length > 1
     ? [{ column: 'gd_player', operator: 'IN', value: lowered }]
     : [{ column: 'gd_player', operator: '=', value: lowered[0] }]
@@ -344,12 +344,12 @@ function buildFilters(usernames: string[], filters: GameFilters): Filter[] {
 }
 
 export async function fetchFilteredGames(
-  usernames: string[],
+  players: string[],
   filters: GameFilters,
   page: number,
   itemsPerPage: number = GAMES_ITEMS_PER_PAGE
 ) {
-  const filterArray = buildFilters(usernames, filters)
+  const filterArray = buildFilters(players, filters)
   const offset = (page - 1) * itemsPerPage
 
   return fetchFiltered({
@@ -366,11 +366,11 @@ export async function fetchFilteredGames(
 //  getGamesPageCount — total page count for fetchFilteredGames' same filter set
 //----------------------------------------------------------------------------------
 export async function getGamesPageCount(
-  usernames: string[],
+  players: string[],
   filters: GameFilters,
   itemsPerPage: number = GAMES_ITEMS_PER_PAGE
 ): Promise<number> {
-  const filterArray = buildFilters(usernames, filters)
+  const filterArray = buildFilters(players, filters)
   return fetchTotalPages({
     table: DECON_TABLE,
     filters: filterArray,
@@ -380,7 +380,7 @@ export async function getGamesPageCount(
 }
 
 export async function getOpeningScores(
-  usernames: string[],
+  players: string[],
   color: 'white' | 'black' | 'both',
   minGames: number = 100,
   limit: number = 20,
@@ -389,7 +389,7 @@ export async function getOpeningScores(
 ): Promise<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]> {
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const params: (string | number)[] = []
-  const playerPlaceholders = usernames
+  const playerPlaceholders = players
     .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
     .join(', ')
   params.push(minGames)
@@ -437,12 +437,12 @@ export async function getOpeningScores(
 }
 
 export async function getTerminationStats(
-  usernames: string[],
+  players: string[],
   dateFrom?: string,
   color?: string
 ): Promise<{ termination: string; win: number; loss: number; total: number }[]> {
   const params: (string | number)[] = []
-  const playerPlaceholders = usernames
+  const playerPlaceholders = players
     .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
     .join(', ')
   const terminationPlaceholders = TERMINATION_CHART_TYPES
@@ -484,7 +484,7 @@ export async function getTerminationStats(
 }
 
 export async function backfillOpeningMoves(
-  username: string,
+  player: string,
   batchSize: number = 500
 ): Promise<{ updated: number; remaining: number }> {
   const { parsePgnOpening } = await import('../parsePgn')
@@ -493,7 +493,7 @@ export async function backfillOpeningMoves(
     caller: 'backfillOpeningMoves',
     table: DECON_TABLE,
     whereColumnValuePairs: [
-      { column: 'gd_player', value: username.toLowerCase() },
+      { column: 'gd_player', value: player.toLowerCase() },
       { column: 'gd_opening_moves', operator: 'IS NULL', value: null }
     ],
     columns: ['gd_gdid', 'gd_pgn'],
@@ -517,7 +517,7 @@ export async function backfillOpeningMoves(
     query: `SELECT COUNT(*) FROM tgd_gamesdecon
             WHERE gd_player = $1
               AND gd_opening_moves IS NULL`,
-    params: [username.toLowerCase()]
+    params: [player.toLowerCase()]
   })
 
   return {
@@ -526,13 +526,13 @@ export async function backfillOpeningMoves(
   }
 }
 
-export async function getEarliestGameDate(usernames: string[]): Promise<string | null> {
-  const placeholders = usernames.map((_, i) => `$${i + 1}`).join(', ')
+export async function getEarliestGameDate(players: string[]): Promise<string | null> {
+  const placeholders = players.map((_, i) => `$${i + 1}`).join(', ')
   const rows = await table_query({
     caller: 'getEarliestGameDate',
     table: DECON_TABLE,
     query: `SELECT MIN(gd_end_time) AS min_time FROM tgd_gamesdecon WHERE gd_player IN (${placeholders})`,
-    params: usernames.map(u => u.toLowerCase())
+    params: players.map(u => u.toLowerCase())
   })
   const minTime = rows[0]?.min_time
   if (!minTime) return null
@@ -548,13 +548,13 @@ export interface RatingDataPoint {
 export type RatingGranularity = 'month' | 'week' | 'day' | 'game'
 
 export async function getPlayerRatingOverTime(
-  username: string,
+  player: string,
   timeClass?: string,
   granularity: RatingGranularity = 'month',
   dateFrom?: string,
   dateTo?: string
 ): Promise<RatingDataPoint[]> {
-  const params: (string | number)[] = [username.toLowerCase()]
+  const params: (string | number)[] = [player.toLowerCase()]
   let timeClassFilter = ''
   if (timeClass && timeClass !== '') {
     params.push(timeClass)

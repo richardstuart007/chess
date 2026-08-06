@@ -10,21 +10,21 @@ import { ChessComGame } from '@/src/lib/chesscom'
 import { BACK_KEY } from '@/src/lib/constants'
 
 interface Player {
-  username: string
+  player: string
   display_name: string | null
 }
 
 interface HomeDashboardProps {
   players: Player[]
-  lastAnalyzedGameId?: number
+  lastAnalyzedGdid?: number
 }
 
-export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashboardProps) {
+export default function HomeDashboard({ players, lastAnalyzedGdid }: HomeDashboardProps) {
   const router = useRouter()
 
   const [minDate, setMinDate] = useState<string | undefined>()
 
-  const playerUsernames = players.map(p => p.username).join(',')
+  const playerList = players.map(p => p.player).join(',')
 
   //
   //  Memoized so GameList's own useMemo/useEffect chains (which depend on this array
@@ -32,23 +32,23 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
   //  array here previously caused a runaway fetch loop.
   //
   const playerOptions = useMemo(
-    () => players.map(p => ({ username: p.username, displayName: p.display_name })),
-    [playerUsernames]
+    () => players.map(p => ({ player: p.player, displayName: p.display_name })),
+    [playerList]
   )
 
   useEffect(() => {
     async function fetchMin() {
-      const min = await getEarliestGameDate(players.map(p => p.username))
+      const min = await getEarliestGameDate(players.map(p => p.player))
       if (min) setMinDate(min)
     }
     fetchMin()
-  }, [playerUsernames])
+  }, [playerList])
 
-  function handleSelectGame(game: ChessComGame, username: string) {
-    const gameId = (game as any)._gameId
-    if (gameId) {
+  function handleSelectGame(game: ChessComGame, player: string) {
+    const gdid = (game as any)._gdid
+    if (gdid) {
       saveBackNav(BACK_KEY)
-      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}`)
+      router.push(`/analyze?game=${gdid}&user=${encodeURIComponent(player)}`)
     }
   }
 
@@ -69,7 +69,7 @@ export default function HomeDashboard({ players, lastAnalyzedGameId }: HomeDashb
       <GameList
         players={playerOptions}
         onSelectGame={handleSelectGame}
-        lastAnalyzedGameId={lastAnalyzedGameId}
+        lastAnalyzedGdid={lastAnalyzedGdid}
         minDate={minDate}
       />
     </div>

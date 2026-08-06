@@ -15,7 +15,7 @@ function AnalyzeContent() {
   const searchParams = useSearchParams()
 
   const gdidParam = searchParams.get('game')
-  const username = searchParams.get('user') ?? ''
+  const player = searchParams.get('user') ?? ''
   const backPath = useBackNav(BACK_KEY) ?? '/'
 
   const [game, setGame] = useState<ChessComGame | null>(null)
@@ -106,7 +106,7 @@ function AnalyzeContent() {
     <ChessBoardView
       game={game}
       gdid={gdid}
-      username={username}
+      player={player}
       stockfishDepth={stockfishDepth}
       onStockfishDepthChange={setStockfishDepth}
       deepAnalysisDepth={deepAnalysisDepth}

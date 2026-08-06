@@ -8,11 +8,11 @@ import { deconstructGames, getUndeconstructedCount, getDeconstructedCount } from
 import { getPlayerTimeClasses } from '@/src/lib/constants'
 
 interface DeconstructButtonProps {
-  username: string
+  player: string
   onComplete: () => void
 }
 
-export default function DeconstructButton({ username, onComplete }: DeconstructButtonProps) {
+export default function DeconstructButton({ player, onComplete }: DeconstructButtonProps) {
   const [limit, setLimit] = useState('100')
   const [processing, setProcessing] = useState(false)
   const [result, setResult] = useState<{ processed: number; skipped: number; errors: number } | null>(null)
@@ -20,8 +20,8 @@ export default function DeconstructButton({ username, onComplete }: DeconstructB
 
   async function handleCheckCounts() {
     const [remaining, done] = await Promise.all([
-      getUndeconstructedCount(username, getPlayerTimeClasses(username)),
-      getDeconstructedCount(username)
+      getUndeconstructedCount(player, getPlayerTimeClasses(player)),
+      getDeconstructedCount(player)
     ])
     setCounts({ remaining, done })
   }
@@ -32,7 +32,7 @@ export default function DeconstructButton({ username, onComplete }: DeconstructB
 
     try {
       const numLimit = limit === 'All' ? 0 : parseInt(limit, 10)
-      const res = await deconstructGames(username, numLimit, getPlayerTimeClasses(username))
+      const res = await deconstructGames(player, numLimit, getPlayerTimeClasses(player))
       setResult(res)
       await handleCheckCounts()
       onComplete()

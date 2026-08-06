@@ -37,7 +37,7 @@ import MoveTree from './MoveTree'
 interface ChessBoardViewProps {
   game: ChessComGame
   gdid?: number
-  username: string
+  player: string
   stockfishDepth?: number
   onStockfishDepthChange?: (depth: number) => void
   deepAnalysisDepth?: number | 'infinite'
@@ -95,10 +95,10 @@ function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
   return result
 }
 
-export default function ChessBoardView({ game, gdid, username, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
+export default function ChessBoardView({ game, gdid, player, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange, backPath }: ChessBoardViewProps) {
   const router = useRouter()
-  const playerColor = getPlayerResult(game, username).color
-  const result = getPlayerResult(game, username).result
+  const playerColor = getPlayerResult(game, player).color
+  const result = getPlayerResult(game, player).result
   const { openingName: opening, eco } = game.pgn ? parsePgnHeaders(game.pgn) : { openingName: (game as any)._openingName ?? '', eco: (game as any)._ecoCode ?? '' }
 
   // Tree state
@@ -188,7 +188,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
 
     if (fens.length === 0) { setMoveCounts({}); return }
 
-    getMovePlayCounts(fens, username).then(countsByFen => {
+    getMovePlayCounts(fens, player).then(countsByFen => {
       if (cancelled) return
       const byNodeId: Record<string, number> = {}
       for (const n of nodes) {
@@ -199,7 +199,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
     }).catch(() => { if (!cancelled) setMoveCounts({}) })
 
     return () => { cancelled = true }
-  }, [tree, username])
+  }, [tree, player])
 
   // -----------------------------------------------------------------------
   // Moves From This Position — one row per move played from whatever position
@@ -213,12 +213,12 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
     if (!fen) { setMoveSummary([]); return }
     let cancelled = false
 
-    getMoveSummaryForPosition(fen, username).then(rows => {
+    getMoveSummaryForPosition(fen, player).then(rows => {
       if (!cancelled) setMoveSummary(rows)
     }).catch(() => { if (!cancelled) setMoveSummary([]) })
 
     return () => { cancelled = true }
-  }, [currentNode, tree, username])
+  }, [currentNode, tree, player])
 
   // -----------------------------------------------------------------------
   // Games From This Position — this player's own games that reached whatever
@@ -230,12 +230,12 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
     if (!fen || !selectedPositionMove) { setPositionGames([]); return }
     let cancelled = false
 
-    getGamesForPosition(fen, username, selectedPositionMove).then(games => {
+    getGamesForPosition(fen, player, selectedPositionMove).then(games => {
       if (!cancelled) setPositionGames(games)
     }).catch(() => { if (!cancelled) setPositionGames([]) })
 
     return () => { cancelled = true }
-  }, [selectedPositionMove, currentNode, tree, username])
+  }, [selectedPositionMove, currentNode, tree, player])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -540,14 +540,14 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
     const fen = getCurrentPositionFen()
     if (!fen) return
     try {
-      const rows = await getMoveSummaryForPosition(fen, username)
+      const rows = await getMoveSummaryForPosition(fen, player)
       setMoveSummary(rows)
     } catch {
       // Non-critical — panel just keeps its previous data
     }
     if (selectedPositionMove) {
       try {
-        const games = await getGamesForPosition(fen, username, selectedPositionMove)
+        const games = await getGamesForPosition(fen, player, selectedPositionMove)
         setPositionGames(games)
       } catch {
         // Non-critical
@@ -1134,18 +1134,18 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                   <tbody className='divide-y divide-gray-100'>
                     {moveSummary.map(m => {
                       const wp = winPct(m.mov_wins, m.mov_losses, m.mov_times)
-                      const isSelected = selectedPositionMove === m.mov_san
+                      const isSelected = selectedPositionMove === m.move_played
                       return (
                         <tr
-                          key={m.mov_san}
+                          key={m.move_played}
                           className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                          onClick={() => setSelectedPositionMove(isSelected ? null : m.mov_san)}
+                          onClick={() => setSelectedPositionMove(isSelected ? null : m.move_played)}
                         >
-                          <td className='py-1 pr-2 font-mono font-medium'>{m.mov_san}</td>
+                          <td className='py-1 pr-2 font-mono font-medium'>{m.move_played}</td>
                           <td className='py-1 pr-2 text-right tabular-nums'>{m.mov_times}</td>
                           <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{wp}%</td>
-                          <td className={`py-1 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                            {m.mov_result_cp != null ? formatCp(m.mov_result_cp) : '—'}
+                          <td className={`py-1 text-right tabular-nums font-mono ${m.eva_cp != null && m.eva_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                            {m.eva_cp != null ? formatCp(m.eva_cp) : '—'}
                           </td>
                         </tr>
                       )
@@ -1184,20 +1184,20 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                             g.resultMismatch === 'lostWinning' ? 'bg-pink-100 hover:bg-pink-200'
                             : g.resultMismatch === 'wonLosing'  ? 'bg-yellow-50 hover:bg-yellow-100'
                             : 'hover:bg-gray-50'
-                          const isCurrentGame = g.gameId != null && g.gameId === gdid
+                          const isCurrentGame = g.gdid != null && g.gdid === gdid
                           return (
                             <tr
                               key={i}
-                              className={`${rowBg} ${g.gameId != null ? 'cursor-pointer' : ''}`}
+                              className={`${rowBg} ${g.gdid != null ? 'cursor-pointer' : ''}`}
                               onClick={() => {
-                                if (g.gameId == null) return
+                                if (g.gdid == null) return
                                 saveBackNav(BACK_KEY, backPath)
-                                router.push(`/analyze?game=${g.gameId}&user=${g.player}`)
+                                router.push(`/analyze?game=${g.gdid}&user=${g.player}`)
                               }}
                             >
                               <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>
                               <td className='py-1 pr-2 text-right text-gray-500'>
-                                {g.gameId ?? '—'}
+                                {g.gdid ?? '—'}
                                 {isCurrentGame && <span className='ml-1 text-blue-600 font-bold'>(current)</span>}
                               </td>
                               <td className='py-1 pr-2 text-right tabular-nums'>{g.opponentRating ?? '—'}</td>
@@ -1206,7 +1206,7 @@ export default function ChessBoardView({ game, gdid, username, stockfishDepth, o
                                 {g.finalEval != null ? formatCp(g.finalEval) : '—'}
                               </td>
                               <td className='py-1 text-center'>
-                                {g.result === 'win' ? 'W' : g.result === 'loss' ? 'L' : g.result === 'draw' ? 'D' : '—'}
+                                {g.playerResult === 'win' ? 'W' : g.playerResult === 'loss' ? 'L' : g.playerResult === 'draw' ? 'D' : '—'}
                               </td>
                             </tr>
                           )

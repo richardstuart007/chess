@@ -33,7 +33,8 @@ import {
   STOCKFISH_BESTLINE_LENGTH,
   STOCKFISH_DEEP_ANALYSIS_DEPTH,
   STOCKFISH_DEEP_ANALYSIS_MULTIPV,
-  VALUE_DISPLAY_MAX_LENGTH
+  VALUE_DISPLAY_MAX_LENGTH,
+  SESSION_STORAGE_PREFIX
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -104,6 +105,12 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     entries: [
       { name: 'VALUE_DISPLAY_MAX_LENGTH', value: VALUE_DISPLAY_MAX_LENGTH, description: "Value strings longer than this (or any object/array) render behind this page's Show popover button instead of inline.", consumers: ['ConstantsViewer.tsx: renderValue'] }
     ]
+  },
+  {
+    heading: 'Session Storage',
+    entries: [
+      { name: 'SESSION_STORAGE_PREFIX', value: SESSION_STORAGE_PREFIX, description: "Project sub-prefix for browser sessionStorage keys — starts with nextjs-shared's umbrella 'rs7_' prefix so these keys are picked up automatically by the Owner page's Session Storage tab (OwnerTableSessionStorage).", consumers: ['GameList.tsx: GameList', 'TerminationChart.tsx: TerminationChart', 'graph/page.tsx (module scope)', 'habits/page.tsx (module scope)', 'OpeningScoreChart.tsx: OpeningScoreChart'] }
+    ]
   }
 ]
 
@@ -117,7 +124,7 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'players.ts: updatePlayerRating': "Saves each player's latest rating per time class into tplr_player_ratings from their most recent deconstructed game.",
   'deconstruct.ts: getUndeconstructedCount': 'Counts raw games in tgr_gamesraw not yet deconstructed into tgd_gamesdecon for a player.',
   'deconstruct.ts: deconstructGames': 'Parses raw chess.com games into structured rows in tgd_gamesdecon, extracting opening, result, ratings, and termination.',
-  'players.ts: getPlayers': 'Returns all registered players (username, display name) ordered alphabetically, default player pinned first.',
+  'players.ts: getPlayers': 'Returns all registered players (player, display name) ordered alphabetically, default player pinned first.',
   'graph/page.tsx: GraphContent': 'Rating Graph page content — player/date/time-class filters driving the RatingChart, with sessionStorage-persisted filter state.',
   'GameList.tsx: GameList': 'Paginated, filterable table of deconstructed games with drill-down into an individual game for analysis.',
   'OpeningScoreChart.tsx: OpeningScoreChart': 'Bar chart of win-rate by opening (ECO/name), with drill-down into the games behind a selected bar.',

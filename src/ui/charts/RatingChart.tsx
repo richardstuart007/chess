@@ -12,7 +12,7 @@ import { RatingGranularity, fetchFilteredGames, GameFilters } from '@/src/lib/ac
 const PLAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea']
 
 interface PlayerOption {
-  username: string
+  player: string
   displayName: string | null
 }
 
@@ -114,12 +114,12 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
   const [games, setGames] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  const usernamesToFetch = useMemo(() => (
+  const playersToFetch = useMemo(() => (
     players.length === 1
-      ? [players[0].username]
+      ? [players[0].player]
       : playerFilter
         ? [playerFilter]
-        : players.map(p => p.username)
+        : players.map(p => p.player)
   ), [players, playerFilter])
 
   //
@@ -146,28 +146,28 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     }
 
     async function load() {
-      if (usernamesToFetch.length === 0) {
+      if (playersToFetch.length === 0) {
         if (!cancelled) { setGames([]); finish() }
         return
       }
-      const rows = await fetchFilteredGames(usernamesToFetch, graphFilters, 1, limit)
+      const rows = await fetchFilteredGames(playersToFetch, graphFilters, 1, limit)
       if (!cancelled) { setGames(rows); finish() }
     }
 
     load().catch(() => { if (!cancelled) finish() })
     return () => { cancelled = true }
-  }, [usernamesToFetch, graphFilters, limit, refreshNonce])
+  }, [playersToFetch, graphFilters, limit, refreshNonce])
 
-  // Derive unique (username, timeClass) series from the game data
+  // Derive unique (player, timeClass) series from the game data
   const allSeries = useMemo(() => {
     const seen = new Set<string>()
-    const pairs: { username: string; timeClass: string; key: string; label: string }[] = []
+    const pairs: { player: string; timeClass: string; key: string; label: string }[] = []
     for (const g of games) {
       const key = `${g.gd_player}__${g.gd_time_class}`
       if (!seen.has(key)) {
         seen.add(key)
         pairs.push({
-          username:  g.gd_player as string,
+          player:    g.gd_player as string,
           timeClass: g.gd_time_class as string,
           key,
           label: `${g.gd_player} (${g.gd_time_class})`
@@ -197,7 +197,7 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
       key:   s.key,
       label: s.label,
       data:  aggregateForPlayer(
-        games.filter((g: any) => g.gd_player === s.username && g.gd_time_class === s.timeClass),
+        games.filter((g: any) => g.gd_player === s.player && g.gd_time_class === s.timeClass),
         granularity
       )
     }))

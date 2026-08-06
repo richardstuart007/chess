@@ -6,7 +6,7 @@ import FilterSelect from './FilterSelect'
 const ALL = ''
 
 interface FilterPlayerSelectProps {
-  players: { username: string; display_name: string | null }[]
+  players: { player: string; display_name: string | null }[]
   label?: string
   width?: string
 }
@@ -36,7 +36,7 @@ export default function FilterPlayerSelect({ players, label = 'Player', width = 
   return (
     <FilterSelect
       label={label}
-      options={[{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.username, label: p.display_name ?? p.username }))]}
+      options={[{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.player, label: p.display_name ?? p.player }))]}
       value={value}
       onChange={handleChange}
       width={width}

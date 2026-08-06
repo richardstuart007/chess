@@ -297,7 +297,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
 //----------------------------------------------------------------------------------
 export async function buildPositionTree(opts: {
   limit?:          number
-  playerUsername?: string
+  player?:         string
   level?:          number
   skipSync?:       boolean   // debug/verification only — skip Phase B (syncTposFromTgam)
   forceNewRun?:    boolean
@@ -320,8 +320,8 @@ export async function buildPositionTree(opts: {
     WHERE gam_gdid = d.gd_gdid
   ) AND NOT d.gd_positions_purged`]
 
-  if (opts.playerUsername) {
-    params.push(opts.playerUsername.toLowerCase())
+  if (opts.player) {
+    params.push(opts.player.toLowerCase())
     conditions.push(`d.gd_player = $${params.length}`)
   }
 

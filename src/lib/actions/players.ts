@@ -10,11 +10,11 @@ import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES } from '../constants'
 const TABLE        = 'tpl_players'
 const RATINGS_TABLE = 'tplr_player_ratings'
 
-export async function getPlayer(username: string, skipCache = false, level = 1, severity = 'I') {
+export async function getPlayer(player: string, skipCache = false, level = 1, severity = 'I') {
   const rows = await table_fetch({
     caller: 'getPlayer',
     table: TABLE,
-    whereColumnValuePairs: [{ column: 'pl_player', value: username.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'pl_player', value: player.toLowerCase() }],
     skipCache,
     level,
     severity
@@ -26,7 +26,7 @@ export async function getPlayer(username: string, skipCache = false, level = 1, 
 //  upsertPlayerRating — store the latest rating for a given time class
 //----------------------------------------------------------------------------------
 export async function upsertPlayerRating(
-  username: string,
+  player: string,
   timeClass: string,
   rating: number,
   skipCache = false,
@@ -37,7 +37,7 @@ export async function upsertPlayerRating(
     caller: 'upsertPlayerRating',
     table: RATINGS_TABLE,
     columnValuePairs: [
-      { column: 'plr_player',   value: username.toLowerCase() },
+      { column: 'plr_player',   value: player.toLowerCase() },
       { column: 'plr_time_class', value: timeClass },
       { column: 'plr_rating',     value: rating }
     ],
@@ -51,11 +51,11 @@ export async function upsertPlayerRating(
 //----------------------------------------------------------------------------------
 //  getPlayerRatings — returns all stored ratings for a player keyed by time class
 //----------------------------------------------------------------------------------
-export async function getPlayerRatings(username: string): Promise<Record<string, number>> {
+export async function getPlayerRatings(player: string): Promise<Record<string, number>> {
   const rows = await table_fetch({
     caller: 'getPlayerRatings',
     table: RATINGS_TABLE,
-    whereColumnValuePairs: [{ column: 'plr_player', value: username.toLowerCase() }]
+    whereColumnValuePairs: [{ column: 'plr_player', value: player.toLowerCase() }]
   })
   const result: Record<string, number> = {}
   for (const row of rows) {
@@ -67,8 +67,8 @@ export async function getPlayerRatings(username: string): Promise<Record<string,
 //----------------------------------------------------------------------------------
 //  updatePlayerRating — called from cron; saves latest game rating per time class
 //----------------------------------------------------------------------------------
-export async function updatePlayerRating(username: string): Promise<void> {
-  await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${username}`, 2)
+export async function updatePlayerRating(player: string): Promise<void> {
+  await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${player}`, 2)
   let updated = 0
   for (const timeClass of INCLUDED_TIME_CLASSES) {
     const rows = await table_query({
@@ -77,13 +77,13 @@ export async function updatePlayerRating(username: string): Promise<void> {
               FROM tgd_gamesdecon
               WHERE gd_player = $1 AND gd_time_class = $2
               ORDER BY gd_end_time DESC LIMIT 1`,
-      params: [username.toLowerCase(), timeClass],
+      params: [player.toLowerCase(), timeClass],
       table: 'tgd_gamesdecon',
       level: 2,
       severity: 'D'
     })
     if (rows.length > 0) {
-      await upsertPlayerRating(username, timeClass, Number(rows[0].rating), true, 2, 'D')
+      await upsertPlayerRating(player, timeClass, Number(rows[0].rating), true, 2, 'D')
       updated++
     }
   }
@@ -95,11 +95,11 @@ export async function updatePlayerRating(username: string): Promise<void> {
 //  resume chess.com downloads independent of tgr_gamesraw's own contents (so that
 //  table can be archived/truncated without breaking incremental sync)
 //----------------------------------------------------------------------------------
-export async function getPlayerLastSyncedEndTime(username: string): Promise<number | null> {
+export async function getPlayerLastSyncedEndTime(player: string): Promise<number | null> {
   const rows = await table_fetch({
     caller: 'getPlayerLastSyncedEndTime',
     table: TABLE,
-    whereColumnValuePairs: [{ column: 'pl_player', value: username.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'pl_player', value: player.toLowerCase() }],
     columns: ['pl_last_synced_end_time'],
     skipCache: true,
     level: 2,
@@ -112,11 +112,11 @@ export async function getPlayerLastSyncedEndTime(username: string): Promise<numb
 //  markPlayerSynced — stamp the current time as this player's sync cutoff, called
 //  after a successful sync run completes
 //----------------------------------------------------------------------------------
-export async function markPlayerSynced(username: string, endTime: number): Promise<void> {
-  await logStart('markPlayerSynced', 'gameSyncPipeline', `stamping sync cutoff for ${username}`, 2)
-  const existing = await getPlayer(username, true, 2, 'D')
+export async function markPlayerSynced(player: string, endTime: number): Promise<void> {
+  await logStart('markPlayerSynced', 'gameSyncPipeline', `stamping sync cutoff for ${player}`, 2)
+  const existing = await getPlayer(player, true, 2, 'D')
   if (!existing) {
-    await logEnd('markPlayerSynced', 'gameSyncPipeline', `${username}: player not found, skipped`, 2)
+    await logEnd('markPlayerSynced', 'gameSyncPipeline', `${player}: player not found, skipped`, 2)
     return
   }
   await table_update({
@@ -131,7 +131,7 @@ export async function markPlayerSynced(username: string, endTime: number): Promi
   await logEnd('markPlayerSynced', 'gameSyncPipeline', `pl_last_synced_end_time set to ${endTime}`, 2)
 }
 
-export async function getPlayers(skipCache = false, level = 1, severity = 'I'): Promise<{ username: string; display_name: string | null }[]> {
+export async function getPlayers(skipCache = false, level = 1, severity = 'I'): Promise<{ player: string; display_name: string | null }[]> {
   const rows = await table_fetch({
     caller: 'getPlayers',
     table: TABLE,
@@ -141,10 +141,10 @@ export async function getPlayers(skipCache = false, level = 1, severity = 'I'): 
     severity
   })
   const mapped = rows.map((r: any) => ({
-    username: r.pl_player,
+    player: r.pl_player,
     display_name: r.pl_display_name ?? null
   }))
   return mapped.sort((a, b) =>
-    a.username === DEFAULT_PLAYER ? -1 : b.username === DEFAULT_PLAYER ? 1 : 0
+    a.player === DEFAULT_PLAYER ? -1 : b.player === DEFAULT_PLAYER ? 1 : 0
   )
 }

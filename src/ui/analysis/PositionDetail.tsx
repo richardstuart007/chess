@@ -14,11 +14,11 @@ import { formatCp } from '@/src/lib/formatCp'
 import { BACK_KEY } from '@/src/lib/constants'
 
 interface GameHit {
-  player:      string
-  move_played: string
-  move_num:    number | null
-  result:      string | null
-  gameId:      number | null
+  player:       string
+  move_played:  string
+  move_num:     number | null
+  playerResult: string | null
+  gdid:         number | null
 }
 
 interface PositionDetailProps {
@@ -31,10 +31,10 @@ interface PositionDetailProps {
 
 type Tab = 'moves' | 'history'
 
-function resultBadge(result: string | null): { label: string; cls: string } {
-  if (result === 'win')  return { label: 'W', cls: 'bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (result === 'loss') return { label: 'L', cls: 'bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (result === 'draw') return { label: 'D', cls: 'bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs font-semibold' }
+function resultBadge(playerResult: string | null): { label: string; cls: string } {
+  if (playerResult === 'win')  return { label: 'W', cls: 'bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
+  if (playerResult === 'loss') return { label: 'L', cls: 'bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
+  if (playerResult === 'draw') return { label: 'D', cls: 'bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs font-semibold' }
   return { label: '—', cls: 'text-gray-400 text-xs' }
 }
 
@@ -74,9 +74,9 @@ export default function PositionDetail({
     customArrows.push({ startSquare: bestFrom, endSquare: bestTo, color: 'green' })
   }
   const habitMov = moves[0]
-  if (habitMov?.mov_uci && habitMov.mov_uci.length >= 4) {
-    const hFrom = habitMov.mov_uci.slice(0, 2)
-    const hTo   = habitMov.mov_uci.slice(2, 4)
+  if (habitMov?.move_uci && habitMov.move_uci.length >= 4) {
+    const hFrom = habitMov.move_uci.slice(0, 2)
+    const hTo   = habitMov.move_uci.slice(2, 4)
     if (hFrom !== bestFrom || hTo !== bestTo) {
       customArrows.push({ startSquare: hFrom, endSquare: hTo, color: 'red' })
     }
@@ -183,17 +183,17 @@ export default function PositionDetail({
                 <tbody className="divide-y divide-gray-100">
                   {moves.map(m => {
                     const wp      = winPct(m.mov_wins, m.mov_losses, m.mov_times)
-                    const isSelected = selectedMove === m.mov_san
+                    const isSelected = selectedMove === m.move_played
                     return (
                       <tr
-                        key={m.mov_san}
+                        key={m.move_played}
                         className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
                         onClick={() => {
-                          setSelectedMove(isSelected ? '' : m.mov_san)
+                          setSelectedMove(isSelected ? '' : m.move_played)
                           setTab('history')
                         }}
                       >
-                        <td className="py-1.5 pr-3 font-mono font-medium">{m.mov_san}</td>
+                        <td className="py-1.5 pr-3 font-mono font-medium">{m.move_played}</td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">
                           {m.mov_times}
                           <span className="text-gray-400 text-xs ml-1">
@@ -201,8 +201,8 @@ export default function PositionDetail({
                           </span>
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{wp}%</td>
-                        <td className={`py-1.5 text-right tabular-nums font-mono ${m.mov_result_cp != null && m.mov_result_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {m.mov_result_cp != null ? formatCp(m.mov_result_cp) : '—'}
+                        <td className={`py-1.5 text-right tabular-nums font-mono ${m.eva_cp != null && m.eva_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                          {m.eva_cp != null ? formatCp(m.eva_cp) : '—'}
                         </td>
                       </tr>
                     )
@@ -241,8 +241,8 @@ export default function PositionDetail({
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filteredGames.map((g, i) => {
-                      const rb       = resultBadge(g.result)
-                      const canClick = g.gameId != null
+                      const rb       = resultBadge(g.playerResult)
+                      const canClick = g.gdid != null
                       return (
                         <tr
                           key={i}
@@ -250,11 +250,11 @@ export default function PositionDetail({
                           onClick={() => {
                             if (!canClick) return
                             saveBackNav(BACK_KEY)
-                            router.push(`/analyze?game=${g.gameId}&user=${g.player}`)
+                            router.push(`/analyze?game=${g.gdid}&user=${g.player}`)
                           }}
                         >
                           <td className="py-1.5 pr-3 tabular-nums text-xs text-gray-500">
-                            {g.gameId ?? '—'}
+                            {g.gdid ?? '—'}
                           </td>
                           <td className="py-1.5 pr-3 font-mono">{g.move_played}</td>
                           <td className="py-1.5 text-center">

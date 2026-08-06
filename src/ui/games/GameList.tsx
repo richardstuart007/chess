@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -15,17 +15,17 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
-import { GAME_LIST_ITEMS_PER_PAGE, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM } from '@/src/lib/constants'
+import { GAME_LIST_ITEMS_PER_PAGE, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 
 interface PlayerOption {
-  username: string
+  player: string
   displayName: string | null
 }
 
 interface GameListProps {
   players: PlayerOption[]
-  onSelectGame: (game: ChessComGame, username: string) => void
-  lastAnalyzedGameId?: number
+  onSelectGame: (game: ChessComGame, player: string) => void
+  lastAnalyzedGdid?: number
   minDate?: string
 }
 
@@ -43,7 +43,7 @@ function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
-export default function GameList({ players, onSelectGame, lastAnalyzedGameId, minDate }: GameListProps) {
+export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minDate }: GameListProps) {
   const searchParams = useSearchParams()
 
   //
@@ -58,28 +58,43 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
   //  expensive re-query doesn't fire on every keystroke. Both are persisted so navigating
   //  away to another page and back doesn't reset them (including an unapplied draft edit).
   //
-  const [draftFilters, setDraftFilters] = useState<GameFilters>(() => ss('chess-gl-draftFilters', { dateFrom: DEFAULT_DATE_FROM }))
-  const [filters, setFilters] = useState<GameFilters>(() => ss('chess-gl-filters', { dateFrom: DEFAULT_DATE_FROM }))
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [draftFilters, setDraftFilters] = useState<GameFilters>({ dateFrom: DEFAULT_DATE_FROM })
+  const [filters, setFilters] = useState<GameFilters>({ dateFrom: DEFAULT_DATE_FROM })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ITEMS_PER_PAGE)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem('chess-gl-draftFilters', JSON.stringify(draftFilters))
-      sessionStorage.setItem('chess-gl-filters', JSON.stringify(filters))
-    } catch {}
-  }, [draftFilters, filters])
+    setDraftFilters(ss(`${SESSION_STORAGE_PREFIX}gl-draftFilters`, { dateFrom: DEFAULT_DATE_FROM }))
+    setFilters(ss(`${SESSION_STORAGE_PREFIX}gl-filters`, { dateFrom: DEFAULT_DATE_FROM }))
+    setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}gl-page`, 1))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ITEMS_PER_PAGE))
+    setHydrated(true)
+  }, [])
 
-  const [currentPage, setCurrentPage] = useState(() => ss('chess-gl-page', 1))
-  const [rowsPerPage, setRowsPerPage] = useState(() => ss('chess-gl-rows', GAME_LIST_ITEMS_PER_PAGE))
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}gl-draftFilters`, JSON.stringify(draftFilters))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}gl-filters`, JSON.stringify(filters))
+    } catch {}
+  }, [draftFilters, filters, hydrated])
+
   const [games, setGames] = useState<any[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
 
-  const usernamesToFetch = useMemo(() => (
+  const playersToFetch = useMemo(() => (
     players.length === 1
-      ? [players[0].username]
+      ? [players[0].player]
       : playerFilter
         ? [playerFilter]
-        : players.map(p => p.username)
+        : players.map(p => p.player)
   ), [players, playerFilter])
 
   function updateFilter(key: keyof GameFilters, value: string) {
@@ -109,53 +124,65 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
   }
 
   useEffect(() => {
-    try { sessionStorage.setItem('chess-gl-page', JSON.stringify(currentPage)) } catch {}
-  }, [currentPage])
+    if (!hydrated) return
+    try { sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}gl-page`, JSON.stringify(currentPage)) } catch {}
+  }, [currentPage, hydrated])
 
   useEffect(() => {
-    try { sessionStorage.setItem('chess-gl-rows', JSON.stringify(rowsPerPage)) } catch {}
-  }, [rowsPerPage])
+    if (!hydrated) return
+    try { sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}gl-rows`, JSON.stringify(rowsPerPage)) } catch {}
+  }, [rowsPerPage, hydrated])
 
   //
-  //  Reset back to page 1 whenever usernames/filters change, same as when the user
-  //  changed them directly.
+  //  Reset back to page 1 whenever players/filters genuinely change, same as when the user
+  //  changed them directly — guarded via filtersResetKeyRef so the one-time hydration
+  //  restore above (which also changes `filters`) isn't mistaken for a real change and
+  //  doesn't clobber the just-restored page number.
   //
+  const filtersResetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    setCurrentPage(1)
-  }, [usernamesToFetch, filters])
+    if (!hydrated) return
+    const key = JSON.stringify({ playersToFetch, filters })
+    if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
+      setCurrentPage(1)
+    }
+    filtersResetKeyRef.current = key
+  }, [playersToFetch, filters, hydrated])
 
   //
-  //  Total row count — only depends on usernames/filters, not the current page, so it's
+  //  Total row count — only depends on players/filters, not the current page, so it's
   //  fetched once per filter change rather than re-queried on every page turn. Pages are
   //  derived from it locally rather than issuing a second COUNT query.
   //
   useEffect(() => {
+    if (!hydrated) return
     let cancelled = false
     async function fetchCount() {
-      if (usernamesToFetch.length === 0) {
+      if (playersToFetch.length === 0) {
         if (!cancelled) { setTotalCount(0) }
         return
       }
-      const count = await getGamesPageCount(usernamesToFetch, filters, 1)
+      const count = await getGamesPageCount(playersToFetch, filters, 1)
       if (!cancelled) { setTotalCount(count) }
     }
     fetchCount()
     return () => { cancelled = true }
-  }, [usernamesToFetch, filters])
+  }, [playersToFetch, filters, hydrated])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
   useEffect(() => {
+    if (!hydrated) return
     let cancelled = false
     setLoading(true)
 
     async function fetchPage() {
-      if (usernamesToFetch.length === 0) {
+      if (playersToFetch.length === 0) {
         if (!cancelled) { setGames([]); setLoading(false) }
         return
       }
 
-      const rows = await fetchFilteredGames(usernamesToFetch, filters, currentPage, rowsPerPage)
+      const rows = await fetchFilteredGames(playersToFetch, filters, currentPage, rowsPerPage)
 
       if (!cancelled) {
         setGames(rows)
@@ -165,10 +192,10 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
 
     fetchPage().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [usernamesToFetch, filters, currentPage, rowsPerPage])
+  }, [playersToFetch, filters, currentPage, rowsPerPage, hydrated])
 
   function handleSelectGame(row: any) {
-    const rowUsername = row.gd_player
+    const rowPlayer = row.gd_player
     const game: ChessComGame = {
       url: row.gd_game_url,
       pgn: '',
@@ -192,10 +219,10 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
           : (row.gd_player_result === 'win' ? 'loss' : row.gd_player_result === 'loss' ? 'win' : 'draw')
       }
     }
-    ;(game as any)._gameId = row.gd_gdid
+    ;(game as any)._gdid = row.gd_gdid
     ;(game as any)._openingName = row.gd_opening_name
     ;(game as any)._ecoCode = row.gd_eco_code
-    onSelectGame(game, rowUsername)
+    onSelectGame(game, rowPlayer)
   }
 
   const filtersPending = JSON.stringify(draftFilters) !== JSON.stringify(filters)
@@ -235,7 +262,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
               </th>
               <th className='pb-2 pr-2'>
                 <FilterPlayerSelect
-                  players={players.map(p => ({ username: p.username, display_name: p.displayName }))}
+                  players={players.map(p => ({ player: p.player, display_name: p.displayName }))}
                   label=''
                   width='w-20'
                 />
@@ -344,7 +371,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGameId, mi
               return (
                 <tr
                   key={row.gd_gdid}
-                  className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50 ${row.gd_gdid === lastAnalyzedGameId ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
+                  className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50 ${row.gd_gdid === lastAnalyzedGdid ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
                   onClick={() => handleSelectGame(row)}
                 >
                   <td className='py-1.5 pr-2 text-gray-400 tabular-nums'>{gameNumber}</td>

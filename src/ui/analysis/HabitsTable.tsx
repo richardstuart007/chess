@@ -34,7 +34,7 @@ interface HabitsTableProps {
   rows: HabitRow[]
   dismissedView: boolean
   onToggleDismiss: (posId: number, moveSan: string, player: string) => void
-  players: { username: string; display_name: string | null }[]
+  players: { player: string; display_name: string | null }[]
   color: Color
   onColorChange: (c: Color) => void
   quality: Quality

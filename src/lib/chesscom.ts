@@ -21,12 +21,12 @@ export interface ChessComGame {
 }
 
 export async function fetchRecentGames(
-  username: string,
+  player: string,
   count: number = 10
 ): Promise<ChessComGame[]> {
   // Get list of monthly archives
-  const archivesRes = await fetch(`${BASE}/player/${username}/games/archives`)
-  if (!archivesRes.ok) throw new Error(`Could not fetch archives for "${username}"`)
+  const archivesRes = await fetch(`${BASE}/player/${player}/games/archives`)
+  if (!archivesRes.ok) throw new Error(`Could not fetch archives for "${player}"`)
   const { archives } = await archivesRes.json() as { archives: string[] }
 
   if (archives.length === 0) return []
@@ -49,9 +49,9 @@ export async function fetchRecentGames(
 
 export function getPlayerResult(
   game: ChessComGame,
-  username: string
+  player: string
 ): { color: 'white' | 'black'; result: string; opponentRating: number } {
-  const isWhite = game.white.username.toLowerCase() === username.toLowerCase()
+  const isWhite = game.white.username.toLowerCase() === player.toLowerCase()
   const playerSide = isWhite ? game.white : game.black
   const opponentSide = isWhite ? game.black : game.white
 

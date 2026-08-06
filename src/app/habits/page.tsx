@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyHelp } from 'nextjs-shared/MyHelp'
@@ -9,13 +9,13 @@ import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
-import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE } from '@/src/lib/constants'
+import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
-const STORAGE_KEY = 'habits_filters'
+const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}habits_filters`
 
 const HABITS_ITEMS = [
   { heading: 'What is shown',  body: 'Moves you play repeatedly from the same position — good or bad. Use the Quality filter to switch between habits that cost you centipawns and ones that gained them. Clicking a row opens all moves (good and bad) for that position.' },
@@ -30,10 +30,10 @@ type Quality = 'bad' | 'good'
 
 function HabitsContent() {
   const searchParams = useSearchParams()
-  const [players,     setPlayers]     = useState<{ username: string; display_name: string | null }[]>([])
+  const [players,     setPlayers]     = useState<{ player: string; display_name: string | null }[]>([])
   const playerFilter = searchParams.get('player') ?? ''
-  const usernamesToFetch = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.username),
+  const playersToFetch = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.player),
     [playerFilter, players]
   )
   const [color,       setColor]       = useState<Color>('all')
@@ -44,9 +44,16 @@ function HabitsContent() {
   const [showDismissed, setShowDismissed] = useState(false)
   const [rows,        setRows]        = useState<any[]>([])
   const [loading,     setLoading]     = useState(false)
-  const [currentPage, setCurrentPage] = useState(() => ss('chess-habits-page', 1))
-  const [rowsPerPage, setRowsPerPage] = useState(() => ss('chess-habits-rows', HABITS_ITEMS_PER_PAGE))
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(HABITS_ITEMS_PER_PAGE)
   const [totalCount,  setTotalCount]  = useState(0)
+  const [hydrated,    setHydrated]    = useState(false)
 
   useEffect(() => {
     const saved = sessionStorage.getItem(STORAGE_KEY)
@@ -61,19 +68,25 @@ function HabitsContent() {
         if (s.showDismissed) setShowDismissed(s.showDismissed)
       } catch { /* ignore corrupt storage */ }
     }
+    setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}habits-page`, 1))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}habits-rows`, HABITS_ITEMS_PER_PAGE))
+    setHydrated(true)
   }, [])
 
   useEffect(() => {
+    if (!hydrated) return
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ color, quality, sortBy, minMove, minReached, showDismissed }))
-  }, [color, quality, sortBy, minMove, minReached, showDismissed])
+  }, [color, quality, sortBy, minMove, minReached, showDismissed, hydrated])
 
   useEffect(() => {
-    try { sessionStorage.setItem('chess-habits-page', JSON.stringify(currentPage)) } catch {}
-  }, [currentPage])
+    if (!hydrated) return
+    try { sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}habits-page`, JSON.stringify(currentPage)) } catch {}
+  }, [currentPage, hydrated])
 
   useEffect(() => {
-    try { sessionStorage.setItem('chess-habits-rows', JSON.stringify(rowsPerPage)) } catch {}
-  }, [rowsPerPage])
+    if (!hydrated) return
+    try { sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}habits-rows`, JSON.stringify(rowsPerPage)) } catch {}
+  }, [rowsPerPage, hydrated])
 
   useEffect(() => {
     async function loadPlayers() {
@@ -84,18 +97,27 @@ function HabitsContent() {
   }, [])
 
   //
-  //  Reset back to page 1 whenever the filters change, same as when the user
-  //  changed them directly.
+  //  Reset back to page 1 whenever the filters genuinely change, same as when the user
+  //  changed them directly — guarded via filtersResetKeyRef so the one-time hydration
+  //  restore above (which also changes color/quality/etc.) isn't mistaken for a real
+  //  change and doesn't clobber the just-restored page number.
   //
+  const filtersResetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    setCurrentPage(1)
-  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed])
+    if (!hydrated) return
+    const key = JSON.stringify({ playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed })
+    if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
+      setCurrentPage(1)
+    }
+    filtersResetKeyRef.current = key
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, hydrated])
 
   useEffect(() => {
+    if (!hydrated) return
     async function loadCount() {
-      if (usernamesToFetch.length === 0) { setTotalCount(0); return }
+      if (playersToFetch.length === 0) { setTotalCount(0); return }
       const count = await getHabitsCount({
-        players: usernamesToFetch,
+        players: playersToFetch,
         color: color === 'all' ? undefined : color,
         quality,
         minReached,
@@ -104,16 +126,16 @@ function HabitsContent() {
       setTotalCount(count)
     }
     loadCount()
-  }, [usernamesToFetch, color, quality, minMove, minReached, showDismissed])
+  }, [playersToFetch, color, quality, minMove, minReached, showDismissed, hydrated])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
   const load = useCallback(async () => {
-    if (usernamesToFetch.length === 0) return
+    if (!hydrated || playersToFetch.length === 0) return
     setLoading(true)
     try {
       const data = await getHabitsData({
-        players:    usernamesToFetch,
+        players:    playersToFetch,
         color:      color === 'all' ? undefined : color,
         quality,
         sortBy,
@@ -126,7 +148,7 @@ function HabitsContent() {
     } finally {
       setLoading(false)
     }
-  }, [usernamesToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage, rowsPerPage])
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage, rowsPerPage, hydrated])
 
   useEffect(() => { load() }, [load])
 

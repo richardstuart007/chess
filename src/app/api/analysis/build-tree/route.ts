@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const forceNewRun = searchParams.get('newRun') === 'true'
 
   try {
-    const result = await buildPositionTree({ limit, playerUsername: player, skipSync, forceNewRun })
+    const result = await buildPositionTree({ limit, player, skipSync, forceNewRun })
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('build-tree route error', err)

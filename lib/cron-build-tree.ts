@@ -9,7 +9,7 @@ import { DEFAULT_BATCH_SIZE } from '../src/lib/constants'
 console.log('Running buildPositionTree() directly ...')
 
 async function main() {
-  const result = await buildPositionTree({ limit: DEFAULT_BATCH_SIZE, playerUsername: undefined, skipSync: true, forceNewRun: false })
+  const result = await buildPositionTree({ limit: DEFAULT_BATCH_SIZE, player: undefined, skipSync: true, forceNewRun: false })
   console.log(JSON.stringify(result, null, 2))
 }
 

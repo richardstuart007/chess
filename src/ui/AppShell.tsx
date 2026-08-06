@@ -18,7 +18,7 @@ function PlayerHeader() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [players,   setPlayers]   = useState<{ username: string; display_name: string | null }[]>([])
+  const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
   const [dbPlayers, setDbPlayers] = useState<any[]>([])
   const [dbRatings, setDbRatings] = useState<Record<string, Record<string, number>>>({})
 
@@ -29,26 +29,26 @@ function PlayerHeader() {
       const ps = await getPlayers()
       setPlayers(ps)
       const [playerResults, ratingResults] = await Promise.all([
-        Promise.all(ps.map(p => getPlayer(p.username))),
-        Promise.all(ps.map(p => getPlayerRatings(p.username)))
+        Promise.all(ps.map(p => getPlayer(p.player))),
+        Promise.all(ps.map(p => getPlayerRatings(p.player)))
       ])
       setDbPlayers(playerResults)
       const ratingsMap: Record<string, Record<string, number>> = {}
       ps.forEach((p, i) => {
-        const allowed = getPlayerTimeClasses(p.username)
+        const allowed = getPlayerTimeClasses(p.player)
         const filtered: Record<string, number> = {}
         for (const [timeClass, rating] of Object.entries(ratingResults[i])) {
           if (allowed.includes(timeClass)) filtered[timeClass] = rating
         }
-        ratingsMap[p.username] = filtered
+        ratingsMap[p.player] = filtered
       })
       setDbRatings(ratingsMap)
     }
     loadAll()
   }, [])
 
-  function handleClick(username: string) {
-    const next = playerFilter === username ? BOTH : username
+  function handleClick(player: string) {
+    const next = playerFilter === player ? BOTH : player
     const params = new URLSearchParams(searchParams.toString())
     if (next) params.set('player', next); else params.delete('player')
     const qs = params.toString()
@@ -62,16 +62,16 @@ function PlayerHeader() {
       <div className={players.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'}>
         {players.map((p, i) => {
           const db      = dbPlayers[i]
-          const ratings = dbRatings[p.username] ?? {}
+          const ratings = dbRatings[p.player] ?? {}
           return (
             <PlayerProfile
-              key={p.username}
-              username={db?.pl_player ?? p.username}
+              key={p.player}
+              player={db?.pl_player ?? p.player}
               displayName={db?.pl_display_name ?? undefined}
               avatar={db?.pl_avatar}
               ratings={Object.keys(ratings).length > 0 ? ratings : undefined}
-              onClick={players.length > 1 ? () => handleClick(p.username) : undefined}
-              selected={players.length > 1 && playerFilter === p.username}
+              onClick={players.length > 1 ? () => handleClick(p.player) : undefined}
+              selected={players.length > 1 && playerFilter === p.player}
             />
           )
         })}

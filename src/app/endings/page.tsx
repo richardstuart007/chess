@@ -6,7 +6,7 @@ import TerminationChart from '@/src/ui/charts/TerminationChart'
 import { getPlayers } from '@/src/lib/actions/players'
 
 function EndingsContent() {
-  const [players, setPlayers] = useState<{ username: string; display_name: string | null }[]>([])
+  const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
 
   useEffect(() => {
     async function loadPlayers() {

@@ -12,12 +12,12 @@ import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import { getTerminationStats } from '@/src/lib/actions/games'
-import { DEFAULT_DATE_FROM } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
 interface TerminationChartProps {
-  players: { username: string; display_name: string | null }[]
+  players: { player: string; display_name: string | null }[]
 }
 
 function ss<T>(key: string, fallback: T): T {
@@ -27,23 +27,36 @@ function ss<T>(key: string, fallback: T): T {
 export default function TerminationChart({ players }: TerminationChartProps) {
   const searchParams = useSearchParams()
   const playerFilter = searchParams.get('player') ?? ''
-  const usernames = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.username),
+  const playersToFetch = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.player),
     [playerFilter, players]
   )
 
-  const [color, setColor] = useState(() => ss('chess-tc-color', ''))
-  const [dateFrom, setDateFrom] = useState(() => ss('chess-tc-dateFrom', DEFAULT_DATE_FROM))
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [color, setColor] = useState('')
+  const [dateFrom, setDateFrom] = useState(DEFAULT_DATE_FROM)
   const [data, setData] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
   const [loading, setLoading] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    if (usernames.length === 0) return
+    setColor(ss(`${SESSION_STORAGE_PREFIX}tc-color`, ''))
+    setDateFrom(ss(`${SESSION_STORAGE_PREFIX}tc-dateFrom`, DEFAULT_DATE_FROM))
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || playersToFetch.length === 0) return
     let cancelled = false
     setLoading(true)
     async function load() {
       const rows = await getTerminationStats(
-        usernames,
+        playersToFetch,
         dateFrom || undefined,
         color || undefined
       )
@@ -51,14 +64,15 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [usernames, color, dateFrom])
+  }, [playersToFetch, color, dateFrom, hydrated])
 
   useEffect(() => {
+    if (!hydrated) return
     try {
-      sessionStorage.setItem('chess-tc-color', JSON.stringify(color))
-      sessionStorage.setItem('chess-tc-dateFrom', JSON.stringify(dateFrom))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}tc-color`, JSON.stringify(color))
+      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}tc-dateFrom`, JSON.stringify(dateFrom))
     } catch {}
-  }, [color, dateFrom])
+  }, [color, dateFrom, hydrated])
 
   const chartData = data.map(r => ({
     name: r.termination,

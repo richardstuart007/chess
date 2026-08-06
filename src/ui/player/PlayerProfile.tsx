@@ -3,7 +3,7 @@
 import MyBox from 'nextjs-shared/MyBox'
 
 interface PlayerProfileProps {
-  username: string
+  player: string
   displayName?: string
   avatar?: string
   ratings?: Record<string, number>
@@ -12,7 +12,7 @@ interface PlayerProfileProps {
 }
 
 export default function PlayerProfile({
-  username,
+  player,
   displayName,
   avatar,
   ratings,
@@ -28,7 +28,7 @@ export default function PlayerProfile({
         {avatar && (
           <img
             src={avatar}
-            alt={username}
+            alt={player}
             className='h-16 w-16 rounded-full'
           />
         )}
@@ -36,7 +36,7 @@ export default function PlayerProfile({
           {displayName && (
             <h2 className='text-sm font-bold'>{displayName}</h2>
           )}
-          <p className='text-xs text-gray-500'>{username}</p>
+          <p className='text-xs text-gray-500'>{player}</p>
 
           {ratings && Object.keys(ratings).length > 0 && (
             <div className='mt-2 flex flex-wrap gap-2'>

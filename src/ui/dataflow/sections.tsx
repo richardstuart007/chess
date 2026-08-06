@@ -336,7 +336,7 @@ function TgamGamePositionsSection() {
         <Code>chessdb.ts</Code> — <Code>getMovesForPosition</Code>/
         <Code>getMoveSummaryForPosition</Code> query <Code>tgam_game_positions</Code> directly and
         live for per-move win/loss/CP breakdowns (<Code>mov_wins</Code>, <Code>mov_losses</Code>,{' '}
-        <Code>mov_result_cp</Code> — the resulting position&apos;s own Stockfish eval, looked up
+        <Code>eva_cp</Code> — the resulting position&apos;s own Stockfish eval, looked up
         directly via <Code>gam_resulting_pos_id</Code>, not averaged). Used by the Position Detail
         page&apos;s &quot;Your Moves&quot; tab and the Analyze page&apos;s &quot;Moves From This
         Position&quot; panel — not the Habits page itself, which reads the separate materialized{' '}

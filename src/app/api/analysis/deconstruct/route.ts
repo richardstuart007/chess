@@ -16,17 +16,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const players = playerParam
-      ? [{ username: playerParam }]
+      ? [{ player: playerParam }]
       : await getPlayers()
 
-    const results: { username: string; processed: number; skipped: number; errors: number }[] = []
+    const results: { player: string; processed: number; skipped: number; errors: number }[] = []
 
     for (const p of players) {
       const batchSize = limit > 0 ? limit : 500
       const acc = { processed: 0, skipped: 0, errors: 0 }
 
       while (true) {
-        const res = await deconstructGames(p.username, batchSize)
+        const res = await deconstructGames(p.player, batchSize)
         acc.processed += res.processed
         acc.skipped   += res.skipped
         acc.errors    += res.errors
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
         if (res.processed === 0 && res.errors > 0) break
       }
 
-      results.push({ username: p.username, ...acc })
+      results.push({ player: p.player, ...acc })
     }
 
     return NextResponse.json({ ok: true, results })

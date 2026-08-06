@@ -43,7 +43,7 @@ function normalizeTermination(raw: string | undefined): string {
 //  getUndeconstructedCount — count raw games not yet deconstructed for a player
 //----------------------------------------------------------------------------------
 export async function getUndeconstructedCount(
-  playerUsername: string,
+  player: string,
   timeClasses: string[] = INCLUDED_TIME_CLASSES
 ): Promise<number> {
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
@@ -51,7 +51,7 @@ export async function getUndeconstructedCount(
     caller: 'getUndeconstructedCount',
     table: RAW_TABLE,
     query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
-    params: [playerUsername.toLowerCase(), ...timeClasses]
+    params: [player.toLowerCase(), ...timeClasses]
   })
   return Number(rows[0].count)
 }
@@ -59,10 +59,10 @@ export async function getUndeconstructedCount(
 //----------------------------------------------------------------------------------
 //  getDeconstructedCount — count deconstructed games for a player
 //----------------------------------------------------------------------------------
-export async function getDeconstructedCount(playerUsername: string): Promise<number> {
+export async function getDeconstructedCount(player: string): Promise<number> {
   return table_count({
     table: DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'gd_player', value: playerUsername.toLowerCase() }],
+    whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     caller: 'getDeconstructedCount'
   })
 }
@@ -71,19 +71,19 @@ export async function getDeconstructedCount(playerUsername: string): Promise<num
 //  deconstructGames — process raw games into tgd_gamesdecon
 //----------------------------------------------------------------------------------
 export async function deconstructGames(
-  playerUsername: string,
+  playerParam: string,
   limit: number,
   timeClasses: string[] = INCLUDED_TIME_CLASSES
 ): Promise<{ processed: number; skipped: number; errors: number }> {
-  const username = playerUsername.toLowerCase()
-  await logStart('deconstructGames', 'gameSyncPipeline', `deconstructing raw games for ${username}`, 2)
+  const player = playerParam.toLowerCase()
+  await logStart('deconstructGames', 'gameSyncPipeline', `deconstructing raw games for ${player}`, 2)
 
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
   const rawGames = await table_query({
     caller: 'deconstructGames',
     query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
-    params: [username, ...timeClasses],
+    params: [player, ...timeClasses],
     table: RAW_TABLE,
     level: 2,
     severity: 'D'
@@ -113,7 +113,7 @@ export async function deconstructGames(
 
       const whiteUsername = (rawData.white?.username ?? '').toLowerCase()
       const blackUsername = (rawData.black?.username ?? '').toLowerCase()
-      const isWhite = whiteUsername === username
+      const isWhite = whiteUsername === player
       const playerColor = isWhite ? 'white' : 'black'
 
       const playerSide = isWhite ? rawData.white : rawData.black
@@ -130,7 +130,7 @@ export async function deconstructGames(
           { column: 'gd_black_username', value: blackUsername },
           { column: 'gd_white_rating', value: rawData.white?.rating ?? 0 },
           { column: 'gd_black_rating', value: rawData.black?.rating ?? 0 },
-          { column: 'gd_player', value: username },
+          { column: 'gd_player', value: player },
           { column: 'gd_player_color', value: playerColor },
           { column: 'gd_player_result', value: playerResult },
           { column: 'gd_opponent_username', value: isWhite ? blackUsername : whiteUsername },

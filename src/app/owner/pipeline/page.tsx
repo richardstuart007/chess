@@ -189,7 +189,7 @@ function StatusBadge({ complete }: { complete: boolean | null }) {
 }
 
 export default function PipelinePage() {
-  const [players, setPlayers] = useState<{ username: string; display_name: string | null }[]>([])
+  const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
 
   // ── Global parameters (shared by all steps) ────────────────────────────────
   const [globalDepth,     setGlobalDepth]     = useState(STOCKFISH_DEPTH)
@@ -300,7 +300,7 @@ export default function PipelinePage() {
 
   // ── Step 1: Game Sync ──────────────────────────────────────────────────────
   const [syncRunning, setSyncRunning] = useState(false)
-  const [syncResult,  setSyncResult]  = useState<{ players: { username: string; inserted: number; deconstructed: number }[] } | null>(null)
+  const [syncResult,  setSyncResult]  = useState<{ players: { player: string; inserted: number; deconstructed: number }[] } | null>(null)
   const [syncError,   setSyncError]   = useState('')
 
   async function handleGameSync() {

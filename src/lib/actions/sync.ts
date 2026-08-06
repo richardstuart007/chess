@@ -15,7 +15,7 @@ const GAMES_TABLE = 'tgr_gamesraw'
 //  insertRawGame — insert one raw game row; returns true if inserted, false if already existed
 //----------------------------------------------------------------------------------
 async function insertRawGame(data: {
-  player_username: string
+  player: string
   chesscom_uuid: string
   raw_data: object
   pgn?: string | null
@@ -26,7 +26,7 @@ async function insertRawGame(data: {
     caller: 'insertRawGame',
     table: GAMES_TABLE,
     columnValuePairs: [
-      { column: 'gr_player', value: data.player_username.toLowerCase() },
+      { column: 'gr_player', value: data.player.toLowerCase() },
       { column: 'gr_chesscom_uuid', value: data.chesscom_uuid },
       { column: 'gr_raw_data', value: JSON.stringify(data.raw_data) },
       { column: 'gr_pgn', value: data.pgn ?? null },
@@ -43,19 +43,19 @@ async function insertRawGame(data: {
 //  getLatestGameEndTime — resume cutoff for a player, read from tpl_players
 //  (not tgr_gamesraw) so tgr_gamesraw can be archived/truncated independently
 //----------------------------------------------------------------------------------
-async function getLatestGameEndTime(playerUsername: string): Promise<number | null> {
-  return getPlayerLastSyncedEndTime(playerUsername)
+async function getLatestGameEndTime(player: string): Promise<number | null> {
+  return getPlayerLastSyncedEndTime(player)
 }
 
 //----------------------------------------------------------------------------------
 //  initSync — fetch chess.com archive list; optionally clear existing games first
 //----------------------------------------------------------------------------------
 export async function initSync(
-  playerUsername: string,
+  playerParam: string,
   syncType: 'full_replace' | 'refresh'
 ): Promise<{ archives: string[]; latestEndTime: number | null }> {
-  const username = playerUsername.toLowerCase()
-  await logStart('initSync', 'gameSyncPipeline', `fetching archive list for ${username} (${syncType})`, 2)
+  const player = playerParam.toLowerCase()
+  await logStart('initSync', 'gameSyncPipeline', `fetching archive list for ${player} (${syncType})`, 2)
 
   //
   //  tgr_gamesraw is a per-run transaction/staging table — cleared for this
@@ -64,7 +64,7 @@ export async function initSync(
   //
   await table_delete({
     table: GAMES_TABLE,
-    whereColumnValuePairs: [{ column: 'gr_player', value: username }],
+    whereColumnValuePairs: [{ column: 'gr_player', value: player }],
     caller: 'initSync_clearStaging',
     skipCache: true,
     level: 2,
@@ -72,11 +72,11 @@ export async function initSync(
   })
 
   const latestEndTime = syncType === 'refresh'
-    ? await getLatestGameEndTime(username)
+    ? await getLatestGameEndTime(player)
     : null
 
-  const archivesRes = await fetch(`https://api.chess.com/pub/player/${username}/games/archives`)
-  if (!archivesRes.ok) throw new Error(`Failed to fetch archives for ${username}`)
+  const archivesRes = await fetch(`https://api.chess.com/pub/player/${player}/games/archives`)
+  if (!archivesRes.ok) throw new Error(`Failed to fetch archives for ${player}`)
   const { archives } = await archivesRes.json() as { archives: string[] }
 
   await logEnd('initSync', 'gameSyncPipeline', `${archives.length} archives found, resume cutoff ${latestEndTime}`, 2)
@@ -87,12 +87,12 @@ export async function initSync(
 //  syncArchive — download one monthly archive and insert new games
 //----------------------------------------------------------------------------------
 export async function syncArchive(params: {
-  username: string
+  player: string
   archiveUrl: string
   syncType: 'full_replace' | 'refresh'
   latestEndTime: number | null
 }): Promise<{ inserted: number; skipped: number; total: number }> {
-  const { username, archiveUrl, syncType, latestEndTime } = params
+  const { player, archiveUrl, syncType, latestEndTime } = params
   await logStart('syncArchive', 'gameSyncPipeline', `downloading archive ${archiveUrl}`, 2)
 
   try {
@@ -132,7 +132,7 @@ export async function syncArchive(params: {
       }
 
       const wasInserted = await insertRawGame({
-        player_username: username,
+        player,
         chesscom_uuid: uuid,
         raw_data: game,
         pgn: game.pgn ?? null,
@@ -164,47 +164,47 @@ export async function syncArchive(params: {
 //  (which keeps its own CRON_SECRET check for the external scheduled trigger).
 //----------------------------------------------------------------------------------
 export async function runGameSync(): Promise<{
-  players: { username: string; inserted: number; deconstructed: number }[]
+  players: { player: string; inserted: number; deconstructed: number }[]
   totalInserted: number
   totalDeconstructed: number
 }> {
   const players = await getPlayers(true, 1, 'D')
   await logStart('runGameSync', 'vercelCronSync', `game sync for ${players.length} players`, 1)
   const t0 = Date.now()
-  const summary: { username: string; inserted: number; deconstructed: number }[] = []
+  const summary: { player: string; inserted: number; deconstructed: number }[] = []
   let errors = 0
   let totalRead = 0
 
-  for (const player of players) {
-    const username = player.username
+  for (const p of players) {
+    const player = p.player
     let totalInserted = 0
-    await logStart('runGameSync', 'runGameSync', `syncing ${username}`, 2)
+    await logStart('runGameSync', 'runGameSync', `syncing ${player}`, 2)
 
     try {
-      const { archives, latestEndTime } = await initSync(username, 'refresh')
+      const { archives, latestEndTime } = await initSync(player, 'refresh')
 
       for (const archiveUrl of archives) {
-        const result = await syncArchive({ username, archiveUrl, syncType: 'refresh', latestEndTime })
+        const result = await syncArchive({ player, archiveUrl, syncType: 'refresh', latestEndTime })
         totalInserted += result.inserted
         totalRead     += result.total
       }
 
-      const { processed } = await deconstructGames(username, 0)
-      await updatePlayerRating(username)
-      await markPlayerSynced(username, Math.floor(Date.now() / 1000))
-      summary.push({ username, inserted: totalInserted, deconstructed: processed })
-      await logEnd('runGameSync', 'runGameSync', `${username}: ${totalInserted} inserted, ${processed} deconstructed`, 2)
+      const { processed } = await deconstructGames(player, 0)
+      await updatePlayerRating(player)
+      await markPlayerSynced(player, Math.floor(Date.now() / 1000))
+      summary.push({ player, inserted: totalInserted, deconstructed: processed })
+      await logEnd('runGameSync', 'runGameSync', `${player}: ${totalInserted} inserted, ${processed} deconstructed`, 2)
     } catch (err) {
-      console.error(`runGameSync: failed for ${username}:`, err)
+      console.error(`runGameSync: failed for ${player}:`, err)
       await write_logging({
         lg_functionname: 'runGameSync',
         lg_caller: 'runGameSync',
-        lg_msg: `runGameSync failed for ${username}: ` + (err as Error).message,
+        lg_msg: `runGameSync failed for ${player}: ` + (err as Error).message,
         lg_severity: 'E'
       })
-      summary.push({ username, inserted: totalInserted, deconstructed: 0 })
+      summary.push({ player, inserted: totalInserted, deconstructed: 0 })
       errors++
-      await logEnd('runGameSync', 'runGameSync', `${username}: failed — ` + (err as Error).message, 2)
+      await logEnd('runGameSync', 'runGameSync', `${player}: failed — ` + (err as Error).message, 2)
     }
   }
 

@@ -12,9 +12,9 @@ import { BACK_KEY } from '@/src/lib/constants'
 function OpeningsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [players, setPlayers] = useState<{ username: string; display_name: string | null }[]>([])
+  const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
   const highlightParam = searchParams.get('highlight')
-  const lastAnalyzedGameId = highlightParam ? parseInt(highlightParam, 10) : undefined
+  const lastAnalyzedGdid = highlightParam ? parseInt(highlightParam, 10) : undefined
 
   useEffect(() => {
     async function loadPlayers() {
@@ -24,11 +24,11 @@ function OpeningsContent() {
     loadPlayers()
   }, [])
 
-  function handleSelectGame(game: ChessComGame, username: string) {
-    const gameId = (game as any)._gameId
-    if (gameId) {
+  function handleSelectGame(game: ChessComGame, player: string) {
+    const gdid = (game as any)._gdid
+    if (gdid) {
       saveBackNav(BACK_KEY)
-      router.push(`/analyze?game=${gameId}&user=${encodeURIComponent(username)}`)
+      router.push(`/analyze?game=${gdid}&user=${encodeURIComponent(player)}`)
     }
   }
 
@@ -38,7 +38,7 @@ function OpeningsContent() {
         <OpeningScoreChart
           players={players}
           onSelectGame={handleSelectGame}
-          lastAnalyzedGameId={lastAnalyzedGameId}
+          lastAnalyzedGdid={lastAnalyzedGdid}
         />
       )}
     </div>

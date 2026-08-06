@@ -10,9 +10,9 @@ import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import { getPlayers } from '@/src/lib/actions/players'
 import { getEarliestGameDate, GameFilters } from '@/src/lib/actions/games'
-import { DEFAULT_DATE_FROM } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 
-const STORAGE_KEY = 'graph_filters'
+const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}graph_filters`
 const TODAY = new Date().toISOString().slice(0, 10)
 const GRAPH_LIMIT_OPTIONS: { value: string; label: string }[] = [
   { value: '1000', label: '1,000' },
@@ -26,16 +26,23 @@ function ss<T>(key: string, fallback: T): T {
 
 function GraphContent() {
   const searchParams = useSearchParams()
-  const [players,   setPlayers]   = useState<{ username: string; display_name: string | null }[]>([])
+  const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
   const playerFilter = searchParams.get('player') ?? ''
-  const [dateFrom,  setDateFrom]  = useState(() => ss(STORAGE_KEY + '_dateFrom', DEFAULT_DATE_FROM))
-  const [timeClass, setTimeClass] = useState(() => ss(STORAGE_KEY + '_timeClass', ''))
-  const [limit,     setLimit]     = useState(() => ss(STORAGE_KEY + '_limit', 1000))
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [dateFrom,  setDateFrom]  = useState(DEFAULT_DATE_FROM)
+  const [timeClass, setTimeClass] = useState('')
+  const [limit,     setLimit]     = useState(1000)
   const [minDate,   setMinDate]   = useState<string | undefined>()
   const [loading,   setLoading]   = useState(false)
+  const [hydrated,  setHydrated]  = useState(false)
 
   const playerOptions = useMemo(
-    () => players.map(p => ({ username: p.username, displayName: p.display_name })),
+    () => players.map(p => ({ player: p.player, displayName: p.display_name })),
     [players]
   )
 
@@ -52,16 +59,24 @@ function GraphContent() {
   }, [])
 
   useEffect(() => {
+    setDateFrom(ss(STORAGE_KEY + '_dateFrom', DEFAULT_DATE_FROM))
+    setTimeClass(ss(STORAGE_KEY + '_timeClass', ''))
+    setLimit(ss(STORAGE_KEY + '_limit', 1000))
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
     sessionStorage.setItem(STORAGE_KEY + '_dateFrom', JSON.stringify(dateFrom))
     sessionStorage.setItem(STORAGE_KEY + '_timeClass', JSON.stringify(timeClass))
     sessionStorage.setItem(STORAGE_KEY + '_limit', JSON.stringify(limit))
-  }, [dateFrom, timeClass, limit])
+  }, [dateFrom, timeClass, limit, hydrated])
 
   useEffect(() => {
     async function fetchMin() {
-      const usernames = playerFilter ? [playerFilter] : players.map(p => p.username)
-      if (usernames.length === 0) return
-      const min = await getEarliestGameDate(usernames)
+      const playersToFetch = playerFilter ? [playerFilter] : players.map(p => p.player)
+      if (playersToFetch.length === 0) return
+      const min = await getEarliestGameDate(playersToFetch)
       if (min) setMinDate(min)
     }
     fetchMin()
@@ -69,13 +84,15 @@ function GraphContent() {
 
   //
   //  Applied filters only change on Refresh, same draft/applied split the shared
-  //  Games/Graph tab used to have, kept local to this page now.
+  //  Games/Graph tab used to have, kept local to this page now. Also re-syncs once right
+  //  after the hydration restore above (`hydrated` flips true) so a restored dateFrom/
+  //  timeClass/limit doesn't show as a spurious "pending" change the user never made.
   //
   useEffect(() => {
     setAppliedFilters({ dateFrom: dateFrom || undefined, timeClass: timeClass || undefined })
     setAppliedLimit(limit)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerFilter])
+  }, [playerFilter, hydrated])
 
   function handleRefresh() {
     setAppliedFilters({ dateFrom: dateFrom || undefined, timeClass: timeClass || undefined })
