@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
+import { MyButton } from 'nextjs-shared/MyButton'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import { saveBackNav } from 'nextjs-shared/useBackNav'
 import { useTabQueryState } from 'nextjs-shared/useTabQueryState'
@@ -11,7 +12,7 @@ import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
-import { BACK_KEY } from '@/src/lib/constants'
+import { BACK_KEY, POSITION_BOARD_SIZE_PX } from '@/src/lib/constants'
 
 interface GameHit {
   player:       string
@@ -19,6 +20,7 @@ interface GameHit {
   move_num:     number | null
   playerResult: string | null
   gdid:         number | null
+  date:         string | null
 }
 
 interface PositionDetailProps {
@@ -94,7 +96,7 @@ export default function PositionDetail({
   ]
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-3">
+    <div className="max-w-5xl p-4 space-y-3">
       <MyBox>
         <div className="flex items-center justify-between">
           <MyBackHomeNav backPath='/habits' />
@@ -107,7 +109,7 @@ export default function PositionDetail({
           <Chessboard
             options={{
               position: position.pos_fen,
-              boardStyle: { width: '400px', height: '400px' },
+              boardStyle: { width: POSITION_BOARD_SIZE_PX, height: POSITION_BOARD_SIZE_PX },
               allowDragging: false,
               boardOrientation: orientation,
               arrows: customArrows
@@ -220,12 +222,12 @@ export default function PositionDetail({
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
                     Filtered: {selectedMove}
                   </span>
-                  <button
+                  <MyButton
                     onClick={() => setSelectedMove('')}
-                    className="text-xs text-gray-400 hover:text-gray-600"
+                    overrideClass="text-xs text-gray-400 hover:text-gray-600"
                   >
                     × clear
-                  </button>
+                  </MyButton>
                 </div>
               )}
               {filteredGames.length === 0 ? (
@@ -234,6 +236,7 @@ export default function PositionDetail({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-gray-500 uppercase text-left border-b">
+                      <th className="py-1.5 pr-3">Date</th>
                       <th className="py-1.5 pr-3">Game ID</th>
                       <th className="py-1.5 pr-3">Move</th>
                       <th className="py-1.5 text-center">Result</th>
@@ -253,6 +256,9 @@ export default function PositionDetail({
                             router.push(`/analyze?game=${g.gdid}&user=${g.player}`)
                           }}
                         >
+                          <td className="py-1.5 pr-3 whitespace-nowrap text-xs text-gray-500">
+                            {g.date ?? '—'}
+                          </td>
                           <td className="py-1.5 pr-3 tabular-nums text-xs text-gray-500">
                             {g.gdid ?? '—'}
                           </td>

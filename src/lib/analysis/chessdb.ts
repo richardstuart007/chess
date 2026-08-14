@@ -389,20 +389,28 @@ export async function gamePositionExists(gdid: number, posId: number): Promise<b
 //  since those aren't player-specific and don't need duplicating into thab_habits.
 //  move_cp is the resulting position's eva_cp (via hab_resulting_pos_id), not the
 //  hab_move_cp delta — that delta stays internal, driving the quality filter/sort only.
+//  opening_name/eco_code come straight from thab_habits' own hab_opening_name/hab_eco_code
+//  columns (denormalized by buildHabits() at build time) rather than a live join — see
+//  buildHabits.ts for how they're computed.
 //----------------------------------------------------------------------------------
+
 function buildHabitsFilter(opts: {
   players?: string[]
   color?: 'w' | 'b'
   minReached?: number
   dismissed?: boolean
   quality?: 'bad' | 'good'
+  opening?: string
+  eco?: string
 }): {
   params: (string | number | boolean)[]
-  playerPlaceholders: string
+  playerFilter: string
   dismissedPlaceholder: string
   minReachedPlaceholder: string
   colorFilter: string
   qualityFilter: string
+  openingFilter: string
+  ecoFilter: string
 } {
   const players    = (opts.players ?? []).map(p => p.toLowerCase())
   const minReached = opts.minReached ?? 3
@@ -412,13 +420,20 @@ function buildHabitsFilter(opts: {
   const playerPlaceholders = players
     .map(p => { params.push(p); return `$${params.length}` })
     .join(', ')
+  const playerFilter = players.length > 0 ? `AND h.hab_player IN (${playerPlaceholders})` : ''
   params.push(dismissed)
   const dismissedPlaceholder = `$${params.length}`
   params.push(minReached)
   const minReachedPlaceholder = `$${params.length}`
   const colorFilter = opts.color ? `AND p.pos_color = $${params.push(opts.color)}` : ''
   const qualityFilter = quality === 'good' ? 'AND h.hab_move_cp > 0' : 'AND h.hab_move_cp < 0'
-  return { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter }
+  const openingFilter = opts.opening
+    ? `AND LOWER(h.hab_opening_name) LIKE $${params.push(`%${opts.opening.toLowerCase()}%`)}`
+    : ''
+  const ecoFilter = opts.eco
+    ? `AND LOWER(h.hab_eco_code) LIKE $${params.push(`%${opts.eco.toLowerCase()}%`)}`
+    : ''
+  return { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter }
 }
 
 export async function getHabitsData(opts: {
@@ -430,23 +445,25 @@ export async function getHabitsData(opts: {
   minReached?: number
   dismissed?: boolean
   quality?: 'bad' | 'good'
+  opening?: string
+  eco?: string
 }): Promise<Array<{
-  pos_id:      number
-  pos_fen:     string
-  pos_color:   string | null
-  pos_cp:      number | null
-  player:      string
-  move_san:    string
-  move_uci:    string | null
-  move_num:    number | null
-  move_times:  number
-  move_wins:   number
-  move_losses: number
-  move_cp:     number | null
+  pos_id:       number
+  pos_fen:      string
+  pos_color:    string | null
+  pos_cp:       number | null
+  player:       string
+  move_san:     string
+  move_uci:     string | null
+  move_num:     number | null
+  move_times:   number
+  move_wins:    number
+  move_losses:  number
+  move_cp:      number | null
+  opening_name: string | null
+  eco_code:     string | null
 }>> {
-  if (!opts.players || opts.players.length === 0) return []
-
-  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter } = buildHabitsFilter(opts)
+  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter } = buildHabitsFilter(opts)
   const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
   const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
@@ -468,16 +485,20 @@ export async function getHabitsData(opts: {
         h.hab_move_times                                  AS move_times,
         h.hab_move_wins                                   AS move_wins,
         h.hab_move_losses                                 AS move_losses,
-        e2.eva_cp                                          AS move_cp
+        e2.eva_cp                                          AS move_cp,
+        h.hab_opening_name                                AS opening_name,
+        h.hab_eco_code                                    AS eco_code
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
       LEFT JOIN teva_evaluations e  ON e.eva_pos_id  = h.hab_pos_id
       LEFT JOIN teva_evaluations e2 ON e2.eva_pos_id = h.hab_resulting_pos_id
-      WHERE h.hab_player IN (${playerPlaceholders})
-        AND h.hab_dismissed = ${dismissedPlaceholder}
+      WHERE h.hab_dismissed = ${dismissedPlaceholder}
         AND h.hab_move_times >= ${minReachedPlaceholder}
+        ${playerFilter}
         ${colorFilter}
         ${qualityFilter}
+        ${openingFilter}
+        ${ecoFilter}
       ORDER BY ${orderClause}
       ${limitClause}
       ${offsetClause}
@@ -485,18 +506,20 @@ export async function getHabitsData(opts: {
     params
   })
   return rows.map((r: any) => ({
-    pos_id:      Number(r.pos_id),
-    pos_fen:     r.pos_fen,
-    pos_color:   r.pos_color,
-    pos_cp:      r.pos_cp  != null ? Number(r.pos_cp)  : null,
-    player:      r.player,
-    move_san:    r.move_san,
-    move_uci:    r.move_uci ?? null,
-    move_num:    r.move_num != null ? Number(r.move_num) : null,
-    move_times:  Number(r.move_times),
-    move_wins:   Number(r.move_wins),
-    move_losses: Number(r.move_losses),
-    move_cp:     r.move_cp != null ? Number(r.move_cp) : null
+    pos_id:       Number(r.pos_id),
+    pos_fen:      r.pos_fen,
+    pos_color:    r.pos_color,
+    pos_cp:       r.pos_cp  != null ? Number(r.pos_cp)  : null,
+    player:       r.player,
+    move_san:     r.move_san,
+    move_uci:     r.move_uci ?? null,
+    move_num:     r.move_num != null ? Number(r.move_num) : null,
+    move_times:   Number(r.move_times),
+    move_wins:    Number(r.move_wins),
+    move_losses:  Number(r.move_losses),
+    move_cp:      r.move_cp != null ? Number(r.move_cp) : null,
+    opening_name: r.opening_name ?? null,
+    eco_code:     r.eco_code ?? null
   }))
 }
 
@@ -510,10 +533,10 @@ export async function getHabitsCount(opts: {
   minReached?: number
   dismissed?: boolean
   quality?: 'bad' | 'good'
+  opening?: string
+  eco?: string
 }): Promise<number> {
-  if (!opts.players || opts.players.length === 0) return 0
-
-  const { params, playerPlaceholders, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter } = buildHabitsFilter(opts)
+  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter } = buildHabitsFilter(opts)
 
   const rows = await table_query({
     caller: 'getHabitsCount',
@@ -521,11 +544,13 @@ export async function getHabitsCount(opts: {
       SELECT COUNT(*)::int AS total
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
-      WHERE h.hab_player IN (${playerPlaceholders})
-        AND h.hab_dismissed = ${dismissedPlaceholder}
+      WHERE h.hab_dismissed = ${dismissedPlaceholder}
         AND h.hab_move_times >= ${minReachedPlaceholder}
+        ${playerFilter}
         ${colorFilter}
         ${qualityFilter}
+        ${openingFilter}
+        ${ecoFilter}
     `,
     params
   })
@@ -590,6 +615,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     move_num:     number | null
     playerResult: string | null
     gdid:         number | null
+    date:         string | null
   }>
 }> {
   const gameCountParams: (number | string)[] = [posId]
@@ -660,7 +686,8 @@ export async function getPositionDetail(posId: number, player?: string): Promise
           gp.gam_move_played,
           gp.gam_move_num,
           d.gd_player_result,
-          d.gd_gdid
+          d.gd_gdid,
+          TO_CHAR(TO_TIMESTAMP(d.gd_end_time), 'YYYY-MM-DD') AS game_date
         FROM tgam_game_positions gp
         LEFT JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
         WHERE gp.gam_pos_id = $1
@@ -683,7 +710,8 @@ export async function getPositionDetail(posId: number, player?: string): Promise
       move_played:  r.gam_move_played,
       move_num:     r.gam_move_num != null ? Number(r.gam_move_num) : null,
       playerResult: r.gd_player_result ?? null,
-      gdid:         r.gd_gdid      != null ? Number(r.gd_gdid)      : null
+      gdid:         r.gd_gdid      != null ? Number(r.gd_gdid)      : null,
+      date:         r.game_date ?? null
     }))
   }
 }

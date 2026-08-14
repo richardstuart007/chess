@@ -6,16 +6,23 @@ import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
-import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterTextInput from '@/src/ui/filters/FilterTextInput'
 import FilterNumberRange from '@/src/ui/filters/FilterNumberRange'
-import FilterMultiCheckbox from '@/src/ui/filters/FilterMultiCheckbox'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
+import ColorSelect from '@/src/ui/filters/ColorSelect'
+import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
+import ResultSelect from '@/src/ui/filters/ResultSelect'
+import TerminationMultiSelect from '@/src/ui/filters/TerminationMultiSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
-import { GAME_LIST_ITEMS_PER_PAGE, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
+import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
+import {
+  GAME_LIST_ROWS_DEFAULT, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX,
+  WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
+  WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
+} from '@/src/lib/constants'
 
 interface PlayerOption {
   player: string
@@ -31,7 +38,6 @@ interface GameListProps {
 
 const BOTH = ''
 const TODAY = new Date().toISOString().slice(0, 10)
-const TERMINATION_OPTIONS = ['Resignation', 'Checkmate', 'Time', 'Repetition', 'Agreement', 'Stalemate', 'Insufficient', '50 Moves', 'Timeout', 'Abandoned']
 
 const RESULT_STYLES: Record<string, string> = {
   win: 'text-green-600 font-bold',
@@ -53,27 +59,82 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
   const playerFilter = searchParams.get('player') ?? BOTH
 
   //
+  //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
+  //  every other page with a Time filter via `?timeClass=` — applies immediately, unlike the
+  //  rest of `filters` below, which only updates when Filter is clicked.
+  //
+  const timeClassFilter = searchParams.get('timeClass') ?? ''
+
+  //
+  //  Date From, Opening, and ECO are also global (shared via URL with every other page that has
+  //  these filters) — but unlike timeClass, they stay gated behind the Filter button below (a
+  //  date picker/typed text shouldn't fire a query on every change). Absent dateFrom still
+  //  defaults to DEFAULT_DATE_FROM, matching today's behavior (user-decided — URL params can't
+  //  distinguish "never set" from "explicitly cleared" the way sessionStorage could).
+  //
+  const [rawDateFromFilter] = useGlobalFilter('dateFrom')
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const [openingFilter] = useGlobalFilter('opening')
+  const [ecoFilter] = useGlobalFilter('eco')
+  //
+  //  handleApplyFilters below sets dateFrom/opening/eco together in one push — each
+  //  useGlobalFilter's own setValue is unsafe for that (see useGlobalFilters' own comment).
+  //
+  const setGlobalFilters = useGlobalFilters()
+
+  //
   //  Draft state feeds the filter inputs directly (instant, responsive typing). Applied
   //  state is what actually gets queried — only updated when Filter is clicked, so an
-  //  expensive re-query doesn't fire on every keystroke. Both are persisted so navigating
-  //  away to another page and back doesn't reset them (including an unapplied draft edit).
+  //  expensive re-query doesn't fire on every keystroke. draftFilters/filters are persisted so
+  //  navigating away to another page and back doesn't reset them (including an unapplied draft
+  //  edit); draftDateFrom/draftOpening/draftEco mirror the global values instead, since those
+  //  are now the source of truth.
   //
   //  Initialized to plain defaults (matching the server render) rather than reading
   //  sessionStorage synchronously — sessionStorage is only available client-side, so
   //  restoring persisted state happens in the effect below, after mount, to avoid a
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
-  const [draftFilters, setDraftFilters] = useState<GameFilters>({ dateFrom: DEFAULT_DATE_FROM })
-  const [filters, setFilters] = useState<GameFilters>({ dateFrom: DEFAULT_DATE_FROM })
+  const [draftFilters, setDraftFilters] = useState<GameFilters>({})
+  const [filters, setFilters] = useState<GameFilters>({})
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
+  const [draftOpening, setDraftOpening] = useState(openingFilter)
+  const [draftEco, setDraftEco] = useState(ecoFilter)
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ITEMS_PER_PAGE)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT)
   const [hydrated, setHydrated] = useState(false)
 
+  //
+  //  Keeps the draft text/date boxes in sync whenever the global values change from elsewhere
+  //  (initial mount, tab navigation carrying them in, or this page's own Filter click writing
+  //  them back) — never from local typing, since that only touches draftDateFrom/etc. directly.
+  //
   useEffect(() => {
-    setDraftFilters(ss(`${SESSION_STORAGE_PREFIX}gl-draftFilters`, { dateFrom: DEFAULT_DATE_FROM }))
-    setFilters(ss(`${SESSION_STORAGE_PREFIX}gl-filters`, { dateFrom: DEFAULT_DATE_FROM }))
+    setDraftDateFrom(dateFromFilter)
+    setDraftOpening(openingFilter)
+    setDraftEco(ecoFilter)
+  }, [dateFromFilter, openingFilter, ecoFilter])
+
+  useEffect(() => {
+    //
+    //  timeClass/dateFrom/opening/eco are no longer part of the draft/apply flow (now global,
+    //  URL-driven filters) — strip any stale values a returning user's sessionStorage might
+    //  still carry from before this change, so they can't cause a false "pending" mismatch below.
+    //
+    const hydratedDraft = ss<GameFilters>(`${SESSION_STORAGE_PREFIX}gl-draftFilters`, {})
+    const hydratedFilters = ss<GameFilters>(`${SESSION_STORAGE_PREFIX}gl-filters`, {})
+    delete hydratedDraft.timeClass
+    delete hydratedFilters.timeClass
+    delete hydratedDraft.dateFrom
+    delete hydratedFilters.dateFrom
+    delete hydratedDraft.opening
+    delete hydratedFilters.opening
+    delete hydratedDraft.eco
+    delete hydratedFilters.eco
+    setDraftFilters(hydratedDraft)
+    setFilters(hydratedFilters)
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}gl-page`, 1))
-    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ITEMS_PER_PAGE))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ROWS_DEFAULT))
     setHydrated(true)
   }, [])
 
@@ -96,6 +157,32 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
         ? [playerFilter]
         : players.map(p => p.player)
   ), [players, playerFilter])
+
+  //
+  //  Passed to the actual query functions instead of playersToFetch — "All" (playerFilter
+  //  unset, more than one tracked player) means no player filter at all, not every tracked
+  //  username enumerated. playersToFetch itself stays as the "player list not loaded yet" guard.
+  //
+  const queryPlayers = useMemo(() => (
+    players.length === 1
+      ? [players[0].player]
+      : playerFilter
+        ? [playerFilter]
+        : []
+  ), [players, playerFilter])
+
+  //
+  //  timeClass/dateFrom/opening/eco merged in fresh from the URL, overriding whatever
+  //  filters.* holds (always undefined after the hydration strip above, but kept explicit for
+  //  clarity) — the live global values, not the draft/apply-gated ones.
+  //
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    timeClass: timeClassFilter || undefined,
+    dateFrom: dateFromFilter || undefined,
+    opening: openingFilter || undefined,
+    eco: ecoFilter || undefined
+  }), [filters, timeClassFilter, dateFromFilter, openingFilter, ecoFilter])
 
   function updateFilter(key: keyof GameFilters, value: string) {
     setDraftFilters(prev => {
@@ -121,6 +208,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
 
   function handleApplyFilters() {
     setFilters(draftFilters)
+    setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
   }
 
   useEffect(() => {
@@ -142,12 +230,12 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
   const filtersResetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!hydrated) return
-    const key = JSON.stringify({ playersToFetch, filters })
+    const key = JSON.stringify({ playersToFetch, effectiveFilters })
     if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
       setCurrentPage(1)
     }
     filtersResetKeyRef.current = key
-  }, [playersToFetch, filters, hydrated])
+  }, [playersToFetch, effectiveFilters, hydrated])
 
   //
   //  Total row count — only depends on players/filters, not the current page, so it's
@@ -162,12 +250,12 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
         if (!cancelled) { setTotalCount(0) }
         return
       }
-      const count = await getGamesPageCount(playersToFetch, filters, 1)
+      const count = await getGamesPageCount(queryPlayers, effectiveFilters, 1)
       if (!cancelled) { setTotalCount(count) }
     }
     fetchCount()
     return () => { cancelled = true }
-  }, [playersToFetch, filters, hydrated])
+  }, [playersToFetch, queryPlayers, effectiveFilters, hydrated])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
@@ -182,7 +270,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
         return
       }
 
-      const rows = await fetchFilteredGames(playersToFetch, filters, currentPage, rowsPerPage)
+      const rows = await fetchFilteredGames(queryPlayers, effectiveFilters, currentPage, rowsPerPage)
 
       if (!cancelled) {
         setGames(rows)
@@ -192,7 +280,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
 
     fetchPage().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [playersToFetch, filters, currentPage, rowsPerPage, hydrated])
+  }, [playersToFetch, queryPlayers, effectiveFilters, currentPage, rowsPerPage, hydrated])
 
   function handleSelectGame(row: any) {
     const rowPlayer = row.gd_player
@@ -226,6 +314,9 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
   }
 
   const filtersPending = JSON.stringify(draftFilters) !== JSON.stringify(filters)
+    || draftDateFrom !== dateFromFilter
+    || draftOpening !== openingFilter
+    || draftEco !== ecoFilter
   const dRMin = draftFilters.opponentRatingMin ?? ''
   const dRMax = draftFilters.opponentRatingMax ?? ''
 
@@ -244,7 +335,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
               <th className='pb-1 pr-2 text-center'>Opp. rating</th>
               <th className='pb-1 pr-2 text-center'>My rating</th>
               <th className='pb-1 pr-2 text-center'>Result</th>
-              <th className='pb-1 pr-2 text-center'>End</th>
+              <th className='pb-1 pr-2 text-center w-36'>Termination</th>
               <th className='pb-1 pr-2'>Opening</th>
               <th className='pb-1 pr-2'>ECO</th>
               <th className='pb-1'></th>
@@ -253,42 +344,44 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
                 <FilterDateInput
-                  value={draftFilters.dateFrom ?? ''}
-                  onChange={v => updateFilter('dateFrom', v)}
+                  value={draftDateFrom}
+                  onChange={setDraftDateFrom}
                   min={minDate}
                   max={TODAY}
-                  width='w-32'
+                  width={WIDTH_DATE_FROM}
+                  borderClass={GLOBAL_FILTER_BORDER_CLASS}
                 />
               </th>
               <th className='pb-2 pr-2'>
                 <FilterPlayerSelect
                   players={players.map(p => ({ player: p.player, display_name: p.displayName }))}
                   label=''
-                  width='w-20'
                 />
               </th>
               <th className='pb-2 pr-2'>
-                <FilterSelect
-                  options={[{ value: '', label: 'All' }, { value: 'white', label: 'White' }, { value: 'black', label: 'Black' }]}
-                  value={draftFilters.color ?? ''}
-                  onChange={v => updateFilter('color', v)}
-                  width='w-16'
-                />
+                <div className='flex justify-center'>
+                  <ColorSelect
+                    value={draftFilters.color ?? ''}
+                    onChange={v => updateFilter('color', v)}
+                    label=''
+                    width={WIDTH_COLOR_GAMES}
+                  />
+                </div>
               </th>
               <th className='pb-2 pr-2'>
-                <FilterSelect
-                  options={[{ value: '', label: 'All' }, { value: 'blitz', label: 'Blitz' }, { value: 'rapid', label: 'Rapid' }]}
-                  value={draftFilters.timeClass ?? ''}
-                  onChange={v => updateFilter('timeClass', v)}
-                  width='w-16'
-                />
+                <div className='flex justify-center'>
+                  <FilterTimeClassSelect
+                    label=''
+                    width={WIDTH_TIME_CLASS_GAMES}
+                  />
+                </div>
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
                   value={draftFilters.opponent ?? ''}
                   onChange={v => updateFilter('opponent', v)}
-                  placeholder='Filter...'
-                  width='w-24'
+                  placeholder={PLACEHOLDER_TEXT_FILTER}
+                  width={WIDTH_OPPONENT}
                 />
               </th>
               <th className='pb-2 pr-2'>
@@ -297,42 +390,44 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
                   max={String(dRMax)}
                   onMinChange={v => updateFilter('opponentRatingMin', v)}
                   onMaxChange={v => updateFilter('opponentRatingMax', v)}
-                  width='w-12'
+                  width={WIDTH_OPPONENT_RATING}
                 />
               </th>
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
-                <FilterSelect
-                  options={[{ value: '', label: 'All' }, { value: 'win', label: 'Win' }, { value: 'loss', label: 'Loss' }, { value: 'draw', label: 'Draw' }]}
-                  value={draftFilters.result ?? ''}
-                  onChange={v => updateFilter('result', v)}
-                  width='w-16'
-                />
+                <div className='flex justify-center'>
+                  <ResultSelect
+                    value={draftFilters.result ?? ''}
+                    onChange={v => updateFilter('result', v)}
+                    label=''
+                    width={WIDTH_RESULT}
+                  />
+                </div>
               </th>
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
-                  <FilterMultiCheckbox
-                    options={TERMINATION_OPTIONS}
+                  <TerminationMultiSelect
                     selected={draftFilters.termination ?? []}
                     onChange={updateTerminationFilter}
-                    width='w-20'
+                    label=''
                   />
                 </div>
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.opening ?? ''}
-                  onChange={v => updateFilter('opening', v)}
-                  placeholder='Filter...'
-                  width='w-40'
+                  value={draftOpening}
+                  onChange={setDraftOpening}
+                  placeholder={PLACEHOLDER_TEXT_FILTER}
+                  width={WIDTH_OPENING}
+                  borderClass={GLOBAL_FILTER_BORDER_CLASS}
                 />
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.eco ?? ''}
-                  onChange={v => updateFilter('eco', v)}
-                  placeholder='e.g. B27'
-                  width='w-16'
+                  value={draftEco}
+                  onChange={v => setDraftEco(v.toUpperCase())}
+                  width={WIDTH_ECO}
+                  borderClass={GLOBAL_FILTER_BORDER_CLASS}
                 />
               </th>
               <th className='pb-2'>
@@ -398,7 +493,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
                     </div>
                   </td>
                   <td className='py-1.5 pr-2 text-center text-gray-500'>{row.gd_termination}</td>
-                  <td className='py-1.5 pr-2 max-w-40 truncate' title={row.gd_opening_name}>
+                  <td className={`py-1.5 pr-2 ${WIDTH_OPENING} truncate`} title={row.gd_opening_name}>
                     {row.gd_opening_name || 'Unknown'}
                   </td>
                   <td className='py-1.5 pr-2 text-gray-400'>{row.gd_eco_code}</td>
@@ -427,11 +522,9 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
             rowsPerPage={rowsPerPage}
             setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
             rowsOptions={GAME_LIST_ROWS_OPTIONS}
+            overrideClass='flex-1'
           />
         )}
-        <span className='text-xxs text-gray-400'>
-          Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} games)
-        </span>
       </div>
     </MyBox>
   )

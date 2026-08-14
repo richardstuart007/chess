@@ -9,7 +9,8 @@ import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
-import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
+import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
+import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, HABITS_ROWS_OPTIONS, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
 
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
@@ -42,6 +43,21 @@ function HabitsContent() {
   const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE)
   const [minReached,  setMinReached]  = useState(3)
   const [showDismissed, setShowDismissed] = useState(false)
+  //
+  //  Opening/ECO are also global (shared via URL with GameList's own Opening/ECO filters) and
+  //  applied on an explicit Filter click, not instantly like the filters above —
+  //  draftOpening/draftEco track the text inputs as typed, openingFilter/ecoFilter (the applied,
+  //  global values) drive the actual query and only change when the Filter button is clicked.
+  //
+  const [openingFilter] = useGlobalFilter('opening')
+  const [ecoFilter]     = useGlobalFilter('eco')
+  //
+  //  handleApplyOpeningEcoFilter below sets both together in one push — each useGlobalFilter's
+  //  own setValue is unsafe for that (see useGlobalFilters' own comment).
+  //
+  const setGlobalFilters = useGlobalFilters()
+  const [draftOpening, setDraftOpening] = useState(openingFilter)
+  const [draftEco,     setDraftEco]     = useState(ecoFilter)
   const [rows,        setRows]        = useState<any[]>([])
   const [loading,     setLoading]     = useState(false)
   //
@@ -72,6 +88,16 @@ function HabitsContent() {
     setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}habits-rows`, HABITS_ITEMS_PER_PAGE))
     setHydrated(true)
   }, [])
+
+  //
+  //  Keeps the draft Opening/ECO boxes in sync whenever the global values change from
+  //  elsewhere (initial mount, tab navigation carrying them in from GameList, or this page's
+  //  own Filter click writing them back) — never from local typing.
+  //
+  useEffect(() => {
+    setDraftOpening(openingFilter)
+    setDraftEco(ecoFilter)
+  }, [openingFilter, ecoFilter])
 
   useEffect(() => {
     if (!hydrated) return
@@ -105,28 +131,30 @@ function HabitsContent() {
   const filtersResetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!hydrated) return
-    const key = JSON.stringify({ playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed })
+    const key = JSON.stringify({ playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter })
     if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
       setCurrentPage(1)
     }
     filtersResetKeyRef.current = key
-  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, hydrated])
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter, hydrated])
 
   useEffect(() => {
     if (!hydrated) return
     async function loadCount() {
       if (playersToFetch.length === 0) { setTotalCount(0); return }
       const count = await getHabitsCount({
-        players: playersToFetch,
+        players: playerFilter ? [playerFilter] : undefined,
         color: color === 'all' ? undefined : color,
         quality,
         minReached,
-        dismissed: showDismissed
+        dismissed: showDismissed,
+        opening: openingFilter || undefined,
+        eco: ecoFilter || undefined
       })
       setTotalCount(count)
     }
     loadCount()
-  }, [playersToFetch, color, quality, minMove, minReached, showDismissed, hydrated])
+  }, [playersToFetch, color, quality, minMove, minReached, showDismissed, openingFilter, ecoFilter, hydrated])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
@@ -135,20 +163,22 @@ function HabitsContent() {
     setLoading(true)
     try {
       const data = await getHabitsData({
-        players:    playersToFetch,
+        players:    playerFilter ? [playerFilter] : undefined,
         color:      color === 'all' ? undefined : color,
         quality,
         sortBy,
         limit:      rowsPerPage,
         offset:     (currentPage - 1) * rowsPerPage,
         minReached,
-        dismissed:  showDismissed
+        dismissed:  showDismissed,
+        opening:    openingFilter || undefined,
+        eco:        ecoFilter || undefined
       })
       setRows(data)
     } finally {
       setLoading(false)
     }
-  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, currentPage, rowsPerPage, hydrated])
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter, currentPage, rowsPerPage, hydrated])
 
   useEffect(() => { load() }, [load])
 
@@ -168,6 +198,10 @@ function HabitsContent() {
     setRows(rows => rows.filter(r => !(r.pos_id === posId && r.move_san === moveSan)))
     setTotalCount(c => Math.max(0, c - 1))
   }, [showDismissed])
+
+  const handleApplyOpeningEcoFilter = useCallback(() => {
+    setGlobalFilters({ opening: draftOpening, eco: draftEco })
+  }, [draftOpening, draftEco, setGlobalFilters])
 
   return (
     <div className="space-y-4">
@@ -196,6 +230,12 @@ function HabitsContent() {
             sortBy={sortBy}
             onSortByChange={setSortBy}
             onShowDismissedToggle={() => setShowDismissed(v => !v)}
+            opening={draftOpening}
+            onOpeningChange={setDraftOpening}
+            eco={draftEco}
+            onEcoChange={(v: string) => setDraftEco(v.toUpperCase())}
+            onApplyOpeningEcoFilter={handleApplyOpeningEcoFilter}
+            openingEcoFilterPending={draftOpening !== openingFilter || draftEco !== ecoFilter}
           />
         )}
 
@@ -208,11 +248,10 @@ function HabitsContent() {
               setStateCurrentPage={setCurrentPage}
               rowsPerPage={rowsPerPage}
               setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
+              rowsOptions={HABITS_ROWS_OPTIONS}
+              overrideClass='flex-1'
             />
           )}
-          <span className="text-xs text-gray-400">
-            Page {currentPage} of {totalPages} ({totalCount.toLocaleString()} {showDismissed ? 'dismissed' : quality} move{totalCount !== 1 ? 's' : ''})
-          </span>
         </div>
       </MyBox>
     </div>

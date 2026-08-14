@@ -8,9 +8,11 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
+import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
 import { getPlayers } from '@/src/lib/actions/players'
 import { getEarliestGameDate, GameFilters } from '@/src/lib/actions/games'
-import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
+import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
+import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, WIDTH_GRAPH_LIMIT, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}graph_filters`
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -29,13 +31,25 @@ function GraphContent() {
   const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
   const playerFilter = searchParams.get('player') ?? ''
   //
+  //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
+  //  every other page with a Time filter via `?timeClass=` — applies immediately, unlike
+  //  dateFrom/limit below, which only update on Refresh.
+  //
+  const timeClassFilter = searchParams.get('timeClass') ?? ''
+  //
+  //  Date From is also global (shared via URL with every other page that has this filter) —
+  //  but unlike timeClass, stays gated behind Refresh below. Absent still defaults to
+  //  DEFAULT_DATE_FROM, matching today's behavior.
+  //
+  const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
+  //
   //  Initialized to plain defaults (matching the server render) rather than reading
   //  sessionStorage synchronously — sessionStorage is only available client-side, so
   //  restoring persisted state happens in the effect below, after mount, to avoid a
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
-  const [dateFrom,  setDateFrom]  = useState(DEFAULT_DATE_FROM)
-  const [timeClass, setTimeClass] = useState('')
   const [limit,     setLimit]     = useState(1000)
   const [minDate,   setMinDate]   = useState<string | undefined>()
   const [loading,   setLoading]   = useState(false)
@@ -46,7 +60,6 @@ function GraphContent() {
     [players]
   )
 
-  const [appliedFilters, setAppliedFilters] = useState<GameFilters>({ dateFrom: DEFAULT_DATE_FROM })
   const [appliedLimit,   setAppliedLimit]   = useState(1000)
   const [refreshNonce,   setRefreshNonce]   = useState(0)
 
@@ -58,50 +71,68 @@ function GraphContent() {
     loadPlayers()
   }, [])
 
+  //
+  //  Keeps the draft date box in sync whenever the global value changes from elsewhere
+  //  (initial mount, tab navigation carrying it in, or this page's own Refresh click writing
+  //  it back) — never from local typing, since that only touches draftDateFrom directly.
+  //
   useEffect(() => {
-    setDateFrom(ss(STORAGE_KEY + '_dateFrom', DEFAULT_DATE_FROM))
-    setTimeClass(ss(STORAGE_KEY + '_timeClass', ''))
+    setDraftDateFrom(dateFromFilter)
+  }, [dateFromFilter])
+
+  useEffect(() => {
     setLimit(ss(STORAGE_KEY + '_limit', 1000))
     setHydrated(true)
   }, [])
 
   useEffect(() => {
     if (!hydrated) return
-    sessionStorage.setItem(STORAGE_KEY + '_dateFrom', JSON.stringify(dateFrom))
-    sessionStorage.setItem(STORAGE_KEY + '_timeClass', JSON.stringify(timeClass))
     sessionStorage.setItem(STORAGE_KEY + '_limit', JSON.stringify(limit))
-  }, [dateFrom, timeClass, limit, hydrated])
+  }, [limit, hydrated])
 
   useEffect(() => {
+    //
+    //  "All" (playerFilter unset) means no player filter at all, not every tracked
+    //  username enumerated — the players.length guard below covers "player list not
+    //  loaded yet" instead, since queryPlayers is legitimately [] once players.length > 0.
+    //
     async function fetchMin() {
-      const playersToFetch = playerFilter ? [playerFilter] : players.map(p => p.player)
-      if (playersToFetch.length === 0) return
-      const min = await getEarliestGameDate(playersToFetch)
+      if (players.length === 0) return
+      const queryPlayers = playerFilter ? [playerFilter] : []
+      const min = await getEarliestGameDate(queryPlayers)
       if (min) setMinDate(min)
     }
     fetchMin()
   }, [playerFilter, players])
 
   //
-  //  Applied filters only change on Refresh, same draft/applied split the shared
-  //  Games/Graph tab used to have, kept local to this page now. Also re-syncs once right
-  //  after the hydration restore above (`hydrated` flips true) so a restored dateFrom/
-  //  timeClass/limit doesn't show as a spurious "pending" change the user never made.
+  //  Applied limit only changes on Refresh. Also re-syncs once right after the hydration
+  //  restore above (`hydrated` flips true) so a restored limit doesn't show as a spurious
+  //  "pending" change the user never made. dateFrom/timeClass are handled separately below
+  //  (effectiveFilters) since they're global URL values, not part of this local gate.
   //
   useEffect(() => {
-    setAppliedFilters({ dateFrom: dateFrom || undefined, timeClass: timeClass || undefined })
     setAppliedLimit(limit)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerFilter, hydrated])
 
   function handleRefresh() {
-    setAppliedFilters({ dateFrom: dateFrom || undefined, timeClass: timeClass || undefined })
+    setDateFromFilter(draftDateFrom)
     setAppliedLimit(limit)
     setRefreshNonce(n => n + 1)
   }
 
-  const filtersPending = (dateFrom || undefined) !== appliedFilters.dateFrom
-    || (timeClass || undefined) !== appliedFilters.timeClass
+  //
+  //  dateFrom/timeClass merged in fresh from the URL — timeClass is instant, dateFrom is
+  //  gated behind Refresh (via setDateFromFilter in handleRefresh above) but both live in the
+  //  URL, not local component state.
+  //
+  const effectiveFilters: GameFilters = useMemo(() => ({
+    dateFrom: dateFromFilter || undefined,
+    timeClass: timeClassFilter || undefined
+  }), [dateFromFilter, timeClassFilter])
+
+  const filtersPending = draftDateFrom !== dateFromFilter
     || limit !== appliedLimit
 
   return (
@@ -109,31 +140,26 @@ function GraphContent() {
       <div className='flex items-center justify-between flex-wrap gap-3'>
         <h1 className='text-2xl font-bold'>Rating Graph</h1>
         <div className='flex items-end gap-3 text-xs'>
-          <FilterPlayerSelect players={players} width='w-24' />
+          <FilterPlayerSelect players={players} />
 
           <FilterDateInput
             label='From'
-            value={dateFrom}
-            onChange={setDateFrom}
+            value={draftDateFrom}
+            onChange={setDraftDateFrom}
             min={minDate}
             max={TODAY}
-            width='w-32'
+            width={WIDTH_DATE_FROM}
+            borderClass={GLOBAL_FILTER_BORDER_CLASS}
           />
 
-          <FilterSelect
-            label='Time'
-            options={[{ value: '', label: 'All' }, { value: 'blitz', label: 'Blitz' }, { value: 'rapid', label: 'Rapid' }]}
-            value={timeClass}
-            onChange={setTimeClass}
-            width='w-20'
-          />
+          <FilterTimeClassSelect />
 
           <FilterSelect
             label='Records'
             options={GRAPH_LIMIT_OPTIONS}
             value={String(limit)}
             onChange={v => setLimit(Number(v))}
-            width='w-20'
+            width={WIDTH_GRAPH_LIMIT}
           />
 
           <FilterActionButton
@@ -150,7 +176,7 @@ function GraphContent() {
         <RatingChart
           players={playerOptions}
           playerFilter={playerFilter}
-          filters={appliedFilters}
+          filters={effectiveFilters}
           limit={appliedLimit}
           onLoadingChange={setLoading}
           refreshNonce={refreshNonce}

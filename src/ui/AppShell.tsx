@@ -55,6 +55,18 @@ function PlayerHeader() {
     router.push(qs ? `${pathname}?${qs}` : pathname)
   }
 
+  //
+  //  Filters on both player and time class at once — not the toggle-off-on-second-click
+  //  behavior handleClick has, always sets both values.
+  //
+  function handleRatingClick(player: string, control: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('player', player)
+    params.set('timeClass', control)
+    const qs = params.toString()
+    router.push(qs ? `${pathname}?${qs}` : pathname)
+  }
+
   if (players.length === 0) return <AppNav />
 
   return (
@@ -71,7 +83,8 @@ function PlayerHeader() {
               avatar={db?.pl_avatar}
               ratings={Object.keys(ratings).length > 0 ? ratings : undefined}
               onClick={players.length > 1 ? () => handleClick(p.player) : undefined}
-              selected={players.length > 1 && playerFilter === p.player}
+              selected={players.length > 1 && (playerFilter === p.player || playerFilter === BOTH)}
+              onRatingClick={control => handleRatingClick(p.player, control)}
             />
           )
         })}

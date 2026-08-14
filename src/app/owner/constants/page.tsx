@@ -20,9 +20,10 @@ import {
   PIPELINE_CRON_SCHEDULE,
   POSITION_INSERT_CHUNK_SIZE,
   GAMES_ITEMS_PER_PAGE,
-  GAME_LIST_ITEMS_PER_PAGE,
+  GAME_LIST_ROWS_DEFAULT,
   PIPELINE_LOG_ROWS_PER_PAGE,
   HABITS_ITEMS_PER_PAGE,
+  HABITS_ROWS_OPTIONS,
   GAME_ENDINGS_CONCURRENCY,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
@@ -34,7 +35,42 @@ import {
   STOCKFISH_DEEP_ANALYSIS_DEPTH,
   STOCKFISH_DEEP_ANALYSIS_MULTIPV,
   VALUE_DISPLAY_MAX_LENGTH,
-  SESSION_STORAGE_PREFIX
+  HABITS_BOARD_SIZE_PX,
+  POSITION_BOARD_SIZE_PX,
+  SESSION_STORAGE_PREFIX,
+  WIDTH_PLAYER,
+  WIDTH_DATE_FROM,
+  WIDTH_OPPONENT_RATING,
+  GLOBAL_FILTER_BORDER_CLASS,
+  OPTIONS_COLOR,
+  WIDTH_COLOR,
+  OPTIONS_COLOR_MULTI,
+  WIDTH_COLOR_MULTI,
+  OPTIONS_TIME_CLASS,
+  WIDTH_TIME_CLASS,
+  OPTIONS_RESULT,
+  WIDTH_RESULT,
+  OPTIONS_RESULT_MULTI,
+  WIDTH_RESULT_MULTI,
+  OPTIONS_TERMINATION,
+  WIDTH_TERMINATION,
+  WIDTH_COLOR_GAMES,
+  WIDTH_TIME_CLASS_GAMES,
+  WIDTH_OPPONENT,
+  WIDTH_OPENING,
+  WIDTH_ECO,
+  PLACEHOLDER_TEXT_FILTER,
+  WIDTH_MIN_GAMES,
+  WIDTH_SORT_DIRECTION,
+  WIDTH_RESULTS_COUNT,
+  WIDTH_GAME_SORT,
+  WIDTH_GRAPH_LIMIT,
+  WIDTH_HABITS_OPENING,
+  WIDTH_POSITION_COLOR,
+  WIDTH_QUALITY,
+  WIDTH_MIN_MOVE,
+  WIDTH_MIN_REACHED,
+  WIDTH_SORT_BY
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -51,6 +87,44 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'DEFAULT_MIN_GAMES', value: DEFAULT_MIN_GAMES, description: 'Default minimum-games threshold for the Opening Score chart filter.', consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
       { name: 'DEFAULT_FILTER_TERMINATIONS', value: DEFAULT_FILTER_TERMINATIONS, description: 'Default termination reasons pre-selected in the Opening Score chart filter.', consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
       { name: 'TERMINATION_CHART_TYPES', value: TERMINATION_CHART_TYPES, description: 'The only termination reasons shown on the Endings chart — every other reason has too few games to be visually meaningful and is filtered out entirely, both in the SQL and the chart.', consumers: ['games.ts: getTerminationStats'] }
+    ]
+  },
+  {
+    heading: 'Filter Settings',
+    entries: [
+      { name: 'GLOBAL_FILTER_BORDER_CLASS', value: GLOBAL_FILTER_BORDER_CLASS, description: 'Purple border marking a filter as global (shared across every tab via a URL param) instead of page-local. Applied only to the actual global-role instances of these shared components.', consumers: ['FilterPlayerSelect.tsx: FilterPlayerSelect', 'FilterTimeClassSelect.tsx: FilterTimeClassSelect', 'GameList.tsx: GameList', 'graph/page.tsx: GraphContent', 'OpeningScoreChart.tsx: OpeningScoreChart', 'TerminationChart.tsx: TerminationChart', 'HabitsTable.tsx: HabitsTable'] },
+      { name: 'OPTIONS_COLOR', value: OPTIONS_COLOR, description: 'gd_player_color single-select options (All/White/Black), owned by ColorSelect.', consumers: ['ColorSelect.tsx: ColorSelect'] },
+      { name: 'OPTIONS_COLOR_MULTI', value: OPTIONS_COLOR_MULTI, description: 'gd_player_color multi-select options (White/Black, no All sentinel), owned by ColorMultiSelect.', consumers: ['ColorMultiSelect.tsx: ColorMultiSelect'] },
+      { name: 'OPTIONS_RESULT', value: OPTIONS_RESULT, description: 'gd_player_result single-select options (All/Win/Loss/Draw), owned by ResultSelect.', consumers: ['ResultSelect.tsx: ResultSelect'] },
+      { name: 'OPTIONS_RESULT_MULTI', value: OPTIONS_RESULT_MULTI, description: 'gd_player_result multi-select options (Win/Loss/Draw, no All sentinel), owned by ResultMultiSelect.', consumers: ['ResultMultiSelect.tsx: ResultMultiSelect'] },
+      { name: 'OPTIONS_TERMINATION', value: OPTIONS_TERMINATION, description: "Full gd_termination taxonomy — TerminationMultiSelect's default options, overridable per call site.", consumers: ['TerminationMultiSelect.tsx: TerminationMultiSelect'] },
+      { name: 'OPTIONS_TIME_CLASS', value: OPTIONS_TIME_CLASS, description: 'gd_time_class select options (All/Blitz/Rapid), owned by TimeClassSelect.', consumers: ['TimeClassSelect.tsx: TimeClassSelect'] },
+      { name: 'PLACEHOLDER_TEXT_FILTER', value: PLACEHOLDER_TEXT_FILTER, description: 'Shared placeholder text for the opponent and opening text filters.', consumers: ['GameList.tsx: GameList'] },
+      { name: 'WIDTH_COLOR', value: WIDTH_COLOR, description: 'Default width for ColorSelect.', consumers: ['ColorSelect.tsx: ColorSelect'] },
+      { name: 'WIDTH_COLOR_GAMES', value: WIDTH_COLOR_GAMES, description: "GameList's own narrower ColorSelect width override, for its tight table-header filter row.", consumers: ['GameList.tsx: GameList'] },
+      { name: 'WIDTH_COLOR_MULTI', value: WIDTH_COLOR_MULTI, description: 'Default width for ColorMultiSelect.', consumers: ['ColorMultiSelect.tsx: ColorMultiSelect'] },
+      { name: 'WIDTH_DATE_FROM', value: WIDTH_DATE_FROM, description: "Shared width for the 'date from' FilterDateInput, identical across every page it appears on.", consumers: ['GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart', 'TerminationChart.tsx: TerminationChart', 'graph/page.tsx: GraphContent'] },
+      { name: 'WIDTH_ECO', value: WIDTH_ECO, description: 'Width for the gd_eco_code text filter/column.', consumers: ['GameList.tsx: GameList', 'HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_GAME_SORT', value: WIDTH_GAME_SORT, description: "Width for the Openings page's nested game-list Sort (date/moves) dropdown.", consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_GRAPH_LIMIT', value: WIDTH_GRAPH_LIMIT, description: "Width for the Rating Graph page's Records limit dropdown.", consumers: ['graph/page.tsx: GraphContent'] },
+      { name: 'WIDTH_HABITS_OPENING', value: WIDTH_HABITS_OPENING, description: "Width for the Habits table's Opening column (name, from the latest game that reached that position) — matches GameList's own WIDTH_OPENING.", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_MIN_GAMES', value: WIDTH_MIN_GAMES, description: "Width for the Openings page's Min games threshold dropdown.", consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_MIN_MOVE', value: WIDTH_MIN_MOVE, description: "Width for the Habits table's minimum-move-number filter.", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_MIN_REACHED', value: WIDTH_MIN_REACHED, description: "Width for the Habits table's minimum-reached-count filter.", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_OPENING', value: WIDTH_OPENING, description: 'Width for the gd_opening_name text filter.', consumers: ['GameList.tsx: GameList'] },
+      { name: 'WIDTH_OPPONENT', value: WIDTH_OPPONENT, description: 'Width for the gd_opponent_username text filter.', consumers: ['GameList.tsx: GameList'] },
+      { name: 'WIDTH_OPPONENT_RATING', value: WIDTH_OPPONENT_RATING, description: 'Shared width for the gd_opponent_rating FilterNumberRange, identical in both places it appears.', consumers: ['GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_PLAYER', value: WIDTH_PLAYER, description: 'Default dropdown width for FilterPlayerSelect, shared by every page it appears on.', consumers: ['FilterPlayerSelect.tsx: FilterPlayerSelect'] },
+      { name: 'WIDTH_POSITION_COLOR', value: WIDTH_POSITION_COLOR, description: "Width for the Habits table's pos_color filter (distinct from gd_player_color's ColorSelect — a different DD column with a different value domain, 'w'/'b' vs 'white'/'black').", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_QUALITY', value: WIDTH_QUALITY, description: "Width for the Habits table's Bad/Good quality filter.", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_RESULT', value: WIDTH_RESULT, description: 'Default width for ResultSelect.', consumers: ['ResultSelect.tsx: ResultSelect'] },
+      { name: 'WIDTH_RESULTS_COUNT', value: WIDTH_RESULTS_COUNT, description: "Width for the Openings page's Show results-count dropdown.", consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_RESULT_MULTI', value: WIDTH_RESULT_MULTI, description: 'Default width for ResultMultiSelect.', consumers: ['ResultMultiSelect.tsx: ResultMultiSelect'] },
+      { name: 'WIDTH_SORT_BY', value: WIDTH_SORT_BY, description: "Width for the Habits table's sort-by dropdown.", consumers: ['HabitsTable.tsx: HabitsTable'] },
+      { name: 'WIDTH_SORT_DIRECTION', value: WIDTH_SORT_DIRECTION, description: "Width for the Openings page's Best/Worst sort-direction dropdown.", consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_TERMINATION', value: WIDTH_TERMINATION, description: 'Default width for TerminationMultiSelect.', consumers: ['TerminationMultiSelect.tsx: TerminationMultiSelect'] },
+      { name: 'WIDTH_TIME_CLASS', value: WIDTH_TIME_CLASS, description: 'Default width for TimeClassSelect.', consumers: ['TimeClassSelect.tsx: TimeClassSelect'] },
+      { name: 'WIDTH_TIME_CLASS_GAMES', value: WIDTH_TIME_CLASS_GAMES, description: "GameList's own narrower TimeClassSelect width override, for its tight table-header filter row.", consumers: ['GameList.tsx: GameList'] }
     ]
   },
   {
@@ -74,9 +148,10 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'CRON_DEEPEN_POPULAR_BATCH_SIZE', value: CRON_DEEPEN_POPULAR_BATCH_SIZE, description: "Batch size for the Deepen Popular Positions step, distinct from DEFAULT_BATCH_SIZE since it's a genuinely different value (100 vs 200) — used as the route's fallback default, which is what the unattended cron relies on.", consumers: ['api/analysis/deepen-popular-positions/route.ts: GET'] },
       { name: 'POSITION_INSERT_CHUNK_SIZE', value: POSITION_INSERT_CHUNK_SIZE, description: 'Target rows per bulk INSERT (tgam_game_positions, thab_habits) — keeps query params well under the Postgres per-statement limit.', consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings', 'buildPositionTree.ts: insertGamePositions', 'buildHabits.ts: buildHabits'] },
       { name: 'GAMES_ITEMS_PER_PAGE', value: GAMES_ITEMS_PER_PAGE, description: 'Page size for the games-list server action.', consumers: ['games.ts: fetchFilteredGames, getGamesPageCount'] },
-      { name: 'GAME_LIST_ITEMS_PER_PAGE', value: GAME_LIST_ITEMS_PER_PAGE, description: 'Page size for the GameList UI component.', consumers: ['GameList.tsx: GameList'] },
+      { name: 'GAME_LIST_ROWS_DEFAULT', value: GAME_LIST_ROWS_DEFAULT, description: 'Default rows-per-page for the GameList UI component.', consumers: ['GameList.tsx: GameList'] },
       { name: 'PIPELINE_LOG_ROWS_PER_PAGE', value: PIPELINE_LOG_ROWS_PER_PAGE, description: 'Page size for the /owner/pipelinelog viewer.', consumers: ['PipelineLogTable.tsx: fetchdata'] },
-      { name: 'HABITS_ITEMS_PER_PAGE', value: HABITS_ITEMS_PER_PAGE, description: 'Page size for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
+      { name: 'HABITS_ITEMS_PER_PAGE', value: HABITS_ITEMS_PER_PAGE, description: 'Default rows-per-page for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
+      { name: 'HABITS_ROWS_OPTIONS', value: HABITS_ROWS_OPTIONS, description: 'Rows-per-page dropdown options for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
       { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
       { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipeline/page.tsx: PipelinePage'] }
     ]
@@ -103,7 +178,9 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'UI Display',
     entries: [
-      { name: 'VALUE_DISPLAY_MAX_LENGTH', value: VALUE_DISPLAY_MAX_LENGTH, description: "Value strings longer than this (or any object/array) render behind this page's Show popover button instead of inline.", consumers: ['ConstantsViewer.tsx: renderValue'] }
+      { name: 'VALUE_DISPLAY_MAX_LENGTH', value: VALUE_DISPLAY_MAX_LENGTH, description: "Value strings longer than this (or any object/array) render behind this page's Show popover button instead of inline.", consumers: ['ConstantsViewer.tsx: renderValue'] },
+      { name: 'HABITS_BOARD_SIZE_PX', value: HABITS_BOARD_SIZE_PX, description: "Default width/height for MiniBoard, used by the Habits table.", consumers: ['MiniBoard.tsx: MiniBoard'] },
+      { name: 'POSITION_BOARD_SIZE_PX', value: POSITION_BOARD_SIZE_PX, description: "Width/height of the main chessboard on the /position/[id] page.", consumers: ['PositionDetail.tsx: PositionDetail'] }
     ]
   },
   {
@@ -131,6 +208,8 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'TerminationChart.tsx: TerminationChart': 'Stacked bar chart of win/loss counts by game termination type, filterable by colour and date.',
   'games.ts: getTerminationStats': 'Aggregates win/loss/total counts per termination type for a set of players from tgd_gamesdecon.',
   'HabitsTable.tsx: HabitsTable': 'Filterable table of recurring move habits (good/bad) with mini boards, stats, and dismiss/restore controls.',
+  'MiniBoard.tsx: MiniBoard': 'Renders one small read-only chessboard (configurable size, defaults to the Habits table\'s size), memoized to avoid react-chessboard\'s animation-loop bug.',
+  'PositionDetail.tsx: PositionDetail': 'Full detail view for one tracked position — board, per-move stats, evaluation, and the games that reached it.',
   'buildHabits.ts: buildHabits': 'Full recompute of recurring move habits per (player, position, move) into thab_habits, preserving dismissed flags.',
   'habits/page.tsx: HabitsContent': "Habits page content — paginated, filterable table of a player's recurring good/bad moves sourced from thab_habits.",
   'buildPositionTree.ts: buildPositionTree': 'Replays new games with chess.js to record per-move positions into tgam_game_positions, then syncs tpos_positions.',
@@ -171,7 +250,15 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'nextjs-shared/src/tables/tableGeneric/write_logging.ts': 'Exports write_logging, which inserts an application log row into xlg_logging (or falls back to console output).',
   'src/app/api/cron/sync/route.ts': 'Cron-triggered API route, auth-checked via CRON_SECRET, that runs runGameSync for all players.',
   'lib/cron-sync.ts': 'Standalone CLI script that calls the local /api/cron/sync endpoint with the CRON_SECRET bearer token.',
-  'src/lib/analysis/enrichPositionsStockfish.ts': 'Server actions module implementing the Stockfish engine wrappers and batch position/game-ending evaluation pipeline steps.'
+  'src/lib/analysis/enrichPositionsStockfish.ts': 'Server actions module implementing the Stockfish engine wrappers and batch position/game-ending evaluation pipeline steps.',
+  'FilterPlayerSelect.tsx: FilterPlayerSelect': 'Player picker shared by every page, reading/writing the ?player= URL param.',
+  'FilterTimeClassSelect.tsx: FilterTimeClassSelect': 'Time-class picker shared by every page with a Time filter (Games, Graph, Openings, Endings), reading/writing the ?timeClass= URL param — applies instantly, same as player selection.',
+  'ColorSelect.tsx: ColorSelect': 'Reusable gd_player_color single-select dropdown (GameList, OpeningScoreChart, TerminationChart).',
+  'ColorMultiSelect.tsx: ColorMultiSelect': "Reusable gd_player_color multi-select checkbox group (OpeningScoreChart's nested game table).",
+  'TimeClassSelect.tsx: TimeClassSelect': 'Reusable gd_time_class select dropdown, wrapped by FilterTimeClassSelect for the global ?timeClass= filter (Games, Graph, Openings, Endings).',
+  'ResultSelect.tsx: ResultSelect': 'Reusable gd_player_result single-select dropdown (GameList).',
+  'ResultMultiSelect.tsx: ResultMultiSelect': "Reusable gd_player_result multi-select checkbox group (OpeningScoreChart's nested game table).",
+  'TerminationMultiSelect.tsx: TerminationMultiSelect': 'Reusable gd_termination multi-select checkbox group, options overridable per call site (GameList default list, OpeningScoreChart dynamic list).'
 }
 
 //----------------------------------------------------------------------------------

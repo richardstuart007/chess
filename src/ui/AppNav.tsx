@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 
 const SECTIONS = [
   { key: 'games',    label: 'Games',    href: '/' },
@@ -11,8 +11,30 @@ const SECTIONS = [
   { key: 'endings',  label: 'Endings',  href: '/endings' }
 ] as const
 
+//
+//  Explicitly enumerated (not "forward the whole query string") because ?highlight= already
+//  lives in the URL on / and /openings as a page-specific, one-time "just analyzed this game"
+//  signal — blindly forwarding it would leak it into unrelated tabs.
+//
+const GLOBAL_FILTER_KEYS = ['player', 'timeClass', 'dateFrom', 'opening', 'eco']
+
 export default function AppNav() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  //
+  //  Carries every global filter across tab navigation — without this, each SECTIONS href is
+  //  a bare path with no query string, so clicking a tab drops them entirely and silently
+  //  resets the selection.
+  //
+  function buildHref(base: string): string {
+    const params = new URLSearchParams()
+    for (const key of GLOBAL_FILTER_KEYS) {
+      const value = searchParams.get(key)
+      if (value) params.set(key, value)
+    }
+    const qs = params.toString()
+    return qs ? `${base}?${qs}` : base
+  }
   //
   //  /analyze and /position/[id] are cross-cutting detail views reached from more than
   //  one section (Games/Habits/Openings) — no single tab owns them, so none is highlighted.
@@ -29,7 +51,7 @@ export default function AppNav() {
       {SECTIONS.map(s => (
         <Link
           key={s.key}
-          href={s.href}
+          href={buildHref(s.href)}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             activeKey === s.key
               ? 'border-blue-600 text-blue-600'

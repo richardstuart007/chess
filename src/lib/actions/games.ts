@@ -295,9 +295,11 @@ export type GameFilters = {
 
 function buildFilters(players: string[], filters: GameFilters): Filter[] {
   const lowered = players.map(u => u.toLowerCase())
-  const result: Filter[] = lowered.length > 1
-    ? [{ column: 'gd_player', operator: 'IN', value: lowered }]
-    : [{ column: 'gd_player', operator: '=', value: lowered[0] }]
+  const result: Filter[] = lowered.length === 0
+    ? []
+    : lowered.length > 1
+      ? [{ column: 'gd_player', operator: 'IN', value: lowered }]
+      : [{ column: 'gd_player', operator: '=', value: lowered[0] }]
 
   if (filters.opponent) {
     result.push({ column: 'gd_opponent_username', operator: 'LIKE', value: filters.opponent })
@@ -381,21 +383,23 @@ export async function getGamesPageCount(
 
 export async function getOpeningScores(
   players: string[],
-  color: 'white' | 'black' | 'both',
+  color: 'white' | 'black' | '',
   minGames: number = 100,
   limit: number = 20,
   sortDir: 'ASC' | 'DESC' = 'DESC',
-  dateFrom?: string
+  dateFrom?: string,
+  timeClass?: string
 ): Promise<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]> {
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const params: (string | number)[] = []
   const playerPlaceholders = players
     .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
     .join(', ')
+  const playerFilter = players.length > 0 ? `AND gd_player IN (${playerPlaceholders})` : ''
   params.push(minGames)
   const minGamesPlaceholder = `$${params.length}`
   let colorFilter = ''
-  if (color !== 'both') {
+  if (color !== '') {
     params.push(color)
     colorFilter = ` AND gd_player_color = $${params.length}`
   }
@@ -403,6 +407,11 @@ export async function getOpeningScores(
   if (dateFrom) {
     params.push(Math.floor(new Date(dateFrom).getTime() / 1000))
     dateFilter += ` AND gd_end_time >= $${params.length}`
+  }
+  let timeClassFilter = ''
+  if (timeClass) {
+    params.push(timeClass)
+    timeClassFilter = ` AND gd_time_class = $${params.length}`
   }
   const rows = await table_query({
     caller: 'getOpeningScores',
@@ -418,9 +427,11 @@ export async function getOpeningScores(
           ELSE 0
         END)) AS score_pct
       FROM tgd_gamesdecon
-      WHERE gd_player IN (${playerPlaceholders})
+      WHERE 1=1
+        ${playerFilter}
         ${colorFilter}
         ${dateFilter}
+        ${timeClassFilter}
       GROUP BY gd_eco_code, gd_opening_name
       HAVING COUNT(*) >= ${minGamesPlaceholder}
       ORDER BY score_pct ${sortDir}
@@ -439,12 +450,14 @@ export async function getOpeningScores(
 export async function getTerminationStats(
   players: string[],
   dateFrom?: string,
-  color?: string
+  color?: string,
+  timeClass?: string
 ): Promise<{ termination: string; win: number; loss: number; total: number }[]> {
   const params: (string | number)[] = []
   const playerPlaceholders = players
     .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
     .join(', ')
+  const playerFilter = players.length > 0 ? `AND gd_player IN (${playerPlaceholders})` : ''
   const terminationPlaceholders = TERMINATION_CHART_TYPES
     .map(t => { params.push(t); return `$${params.length}` })
     .join(', ')
@@ -457,6 +470,10 @@ export async function getTerminationStats(
     params.push(Math.floor(new Date(dateFrom).getTime() / 1000))
     filters += ` AND gd_end_time >= $${params.length}`
   }
+  if (timeClass) {
+    params.push(timeClass)
+    filters += ` AND gd_time_class = $${params.length}`
+  }
   const rows = await table_query({
     caller: 'getTerminationStats',
     table: DECON_TABLE,
@@ -467,8 +484,8 @@ export async function getTerminationStats(
         COUNT(*) FILTER (WHERE gd_player_result = 'loss') AS loss,
         COUNT(*) AS total
       FROM tgd_gamesdecon
-      WHERE gd_player IN (${playerPlaceholders})
-        AND gd_termination IN (${terminationPlaceholders})
+      WHERE gd_termination IN (${terminationPlaceholders})
+        ${playerFilter}
         ${filters}
       GROUP BY gd_termination
       ORDER BY total DESC
@@ -528,10 +545,11 @@ export async function backfillOpeningMoves(
 
 export async function getEarliestGameDate(players: string[]): Promise<string | null> {
   const placeholders = players.map((_, i) => `$${i + 1}`).join(', ')
+  const playerFilter = players.length > 0 ? `WHERE gd_player IN (${placeholders})` : ''
   const rows = await table_query({
     caller: 'getEarliestGameDate',
     table: DECON_TABLE,
-    query: `SELECT MIN(gd_end_time) AS min_time FROM tgd_gamesdecon WHERE gd_player IN (${placeholders})`,
+    query: `SELECT MIN(gd_end_time) AS min_time FROM tgd_gamesdecon ${playerFilter}`,
     params: players.map(u => u.toLowerCase())
   })
   const minTime = rows[0]?.min_time

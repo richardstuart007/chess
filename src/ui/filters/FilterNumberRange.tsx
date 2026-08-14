@@ -1,5 +1,7 @@
 'use client'
 
+import { MyInput } from 'nextjs-shared/MyInput'
+
 interface FilterNumberRangeProps {
   label?: string
   min: string
@@ -21,21 +23,21 @@ export default function FilterNumberRange({ label, min, max, onMinChange, onMaxC
     <div className='flex flex-col gap-0.5'>
       {label && <span className='text-xxs text-gray-500'>{label}</span>}
       <div className='flex items-center justify-center gap-1'>
-        <input
+        <MyInput
           type='text'
           inputMode='numeric'
           value={min}
           onChange={e => onMinChange(e.target.value.replace(/\D/g, ''))}
           placeholder='Min'
-          className={inputClass}
+          overrideClass={inputClass}
         />
-        <input
+        <MyInput
           type='text'
           inputMode='numeric'
           value={max}
           onChange={e => onMaxChange(e.target.value.replace(/\D/g, ''))}
           placeholder='Max'
-          className={inputClass}
+          overrideClass={inputClass}
         />
       </div>
       {overlap && <div className='text-center text-xxs text-red-500'>min &gt; max</div>}

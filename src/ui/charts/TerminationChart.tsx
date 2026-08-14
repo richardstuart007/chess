@@ -8,11 +8,13 @@ import {
 } from 'recharts'
 import MyBox from 'nextjs-shared/MyBox'
 import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
-import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
+import ColorSelect from '@/src/ui/filters/ColorSelect'
+import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
 import { getTerminationStats } from '@/src/lib/actions/games'
-import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
+import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
+import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -33,20 +35,43 @@ export default function TerminationChart({ players }: TerminationChartProps) {
   )
 
   //
+  //  Passed to the actual query functions instead of playersToFetch — "All" (playerFilter
+  //  unset) means no player filter at all, not every tracked username enumerated.
+  //  playersToFetch itself stays as the "player list not loaded yet" guard.
+  //
+  const queryPlayers = useMemo(
+    () => playerFilter ? [playerFilter] : [],
+    [playerFilter]
+  )
+
+  //
+  //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
+  //  every other page with a Time filter via `?timeClass=` — applies immediately.
+  //
+  const timeClassFilter = searchParams.get('timeClass') ?? ''
+
+  //
+  //  Date From is also global (shared via URL with every other page that has this filter).
+  //  This page has no Filter/Refresh gate at all — every filter already applies instantly — so
+  //  dateFrom becomes global the same way, no draft state needed. Absent still defaults to
+  //  DEFAULT_DATE_FROM, matching today's behavior.
+  //
+  const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+
+  //
   //  Initialized to plain defaults (matching the server render) rather than reading
   //  sessionStorage synchronously — sessionStorage is only available client-side, so
   //  restoring persisted state happens in the effect below, after mount, to avoid a
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
   const [color, setColor] = useState('')
-  const [dateFrom, setDateFrom] = useState(DEFAULT_DATE_FROM)
   const [data, setData] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
   const [loading, setLoading] = useState(false)
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     setColor(ss(`${SESSION_STORAGE_PREFIX}tc-color`, ''))
-    setDateFrom(ss(`${SESSION_STORAGE_PREFIX}tc-dateFrom`, DEFAULT_DATE_FROM))
     setHydrated(true)
   }, [])
 
@@ -56,23 +81,23 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     setLoading(true)
     async function load() {
       const rows = await getTerminationStats(
-        playersToFetch,
-        dateFrom || undefined,
-        color || undefined
+        queryPlayers,
+        dateFromFilter || undefined,
+        color || undefined,
+        timeClassFilter || undefined
       )
       if (!cancelled) { setData(rows); setLoading(false) }
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [playersToFetch, color, dateFrom, hydrated])
+  }, [playersToFetch, queryPlayers, color, dateFromFilter, timeClassFilter, hydrated])
 
   useEffect(() => {
     if (!hydrated) return
     try {
       sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}tc-color`, JSON.stringify(color))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}tc-dateFrom`, JSON.stringify(dateFrom))
     } catch {}
-  }, [color, dateFrom, hydrated])
+  }, [color, hydrated])
 
   const chartData = data.map(r => ({
     name: r.termination,
@@ -84,24 +109,23 @@ export default function TerminationChart({ players }: TerminationChartProps) {
   return (
     <MyBox title='How Games End'>
       <div className='mb-3 flex flex-wrap items-center gap-3'>
-        <FilterPlayerSelect players={players} width='w-24' />
-        <FilterSelect
-          label='Colour'
-          options={[{ value: '', label: 'All' }, { value: 'white', label: 'White' }, { value: 'black', label: 'Black' }]}
+        <FilterPlayerSelect players={players} />
+        <ColorSelect
           value={color}
           onChange={setColor}
-          width='w-20'
         />
+        <FilterTimeClassSelect />
         <FilterDateInput
           label='From'
-          value={dateFrom}
-          onChange={setDateFrom}
+          value={dateFromFilter}
+          onChange={setDateFromFilter}
           max={TODAY}
-          width='w-32'
+          width={WIDTH_DATE_FROM}
+          borderClass={GLOBAL_FILTER_BORDER_CLASS}
         />
-        {dateFrom && (
+        {rawDateFromFilter && (
           <FilterActionButton
-            onClick={() => setDateFrom('')}
+            onClick={() => setDateFromFilter('')}
             variant='secondary'
           >
             Clear

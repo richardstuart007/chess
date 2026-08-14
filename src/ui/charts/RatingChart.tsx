@@ -123,6 +123,19 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
   ), [players, playerFilter])
 
   //
+  //  Passed to the actual query functions instead of playersToFetch — "All" (playerFilter
+  //  unset, more than one tracked player) means no player filter at all, not every tracked
+  //  username enumerated. playersToFetch itself stays as the "player list not loaded yet" guard.
+  //
+  const queryPlayers = useMemo(() => (
+    players.length === 1
+      ? [players[0].player]
+      : playerFilter
+        ? [playerFilter]
+        : []
+  ), [players, playerFilter])
+
+  //
   //  A rating point reflects the player's true rating, shaped by their entire game
   //  history — narrowing by Color/Opponent/Result/Termination/Opening/ECO wouldn't
   //  produce a meaningful "rating over time" trend, only a sparser set of the same
@@ -150,13 +163,13 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
         if (!cancelled) { setGames([]); finish() }
         return
       }
-      const rows = await fetchFilteredGames(playersToFetch, graphFilters, 1, limit)
+      const rows = await fetchFilteredGames(queryPlayers, graphFilters, 1, limit)
       if (!cancelled) { setGames(rows); finish() }
     }
 
     load().catch(() => { if (!cancelled) finish() })
     return () => { cancelled = true }
-  }, [playersToFetch, graphFilters, limit, refreshNonce])
+  }, [playersToFetch, queryPlayers, graphFilters, limit, refreshNonce])
 
   // Derive unique (player, timeClass) series from the game data
   const allSeries = useMemo(() => {

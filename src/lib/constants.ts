@@ -9,6 +9,58 @@ export const DEFAULT_FILTER_TERMINATIONS = ['Checkmate', 'Resignation']
 export const TERMINATION_CHART_TYPES = ['Resignation', 'Checkmate', 'Time']
 
 //----------------------------------------------------------------------------------
+//  Filter Settings — shared components (src/ui/filters/*)
+//----------------------------------------------------------------------------------
+export const WIDTH_PLAYER = 'w-24'
+export const WIDTH_DATE_FROM = 'w-32'
+export const WIDTH_OPPONENT_RATING = 'w-12'
+
+//
+//  Applied only to filters that are actually global (player, timeClass, dateFrom, opening, eco)
+//  — every other, page-local use of the same shared components keeps the default blue border.
+//
+export const GLOBAL_FILTER_BORDER_CLASS = 'border-purple-400 hover:border-purple-400 focus:border-purple-400'
+
+export const OPTIONS_COLOR = [{ value: '', label: 'All' }, { value: 'white', label: 'white' }, { value: 'black', label: 'black' }]
+export const WIDTH_COLOR = 'w-20'
+export const OPTIONS_COLOR_MULTI = [{ value: 'white', label: 'white' }, { value: 'black', label: 'black' }]
+export const WIDTH_COLOR_MULTI = 'w-20'
+export const OPTIONS_TIME_CLASS = [{ value: '', label: 'All' }, { value: 'blitz', label: 'blitz' }, { value: 'rapid', label: 'rapid' }]
+export const WIDTH_TIME_CLASS = 'w-20'
+export const OPTIONS_RESULT = [{ value: '', label: 'All' }, { value: 'win', label: 'win' }, { value: 'loss', label: 'loss' }, { value: 'draw', label: 'draw' }]
+export const WIDTH_RESULT = 'w-16'
+export const OPTIONS_RESULT_MULTI = [{ value: 'win', label: 'win' }, { value: 'loss', label: 'loss' }, { value: 'draw', label: 'draw' }]
+export const WIDTH_RESULT_MULTI = 'w-20'
+export const OPTIONS_TERMINATION = ['Resignation', 'Checkmate', 'Time', 'Repetition', 'Agreement', 'Stalemate', 'Insufficient', '50 Moves', 'Timeout', 'Abandoned']
+export const WIDTH_TERMINATION = 'w-20'
+
+//
+//  Per-call-site width overrides — same DD item as above, but a tighter table-header layout
+//  context (GameList's filter row) needs a narrower control than the open filter bars elsewhere
+//
+export const WIDTH_COLOR_GAMES = 'w-16'
+export const WIDTH_TIME_CLASS_GAMES = 'w-16'
+
+export const WIDTH_OPPONENT = 'w-48'
+export const WIDTH_OPENING = 'w-96'
+export const WIDTH_ECO = 'w-16'
+export const PLACEHOLDER_TEXT_FILTER = 'Filter...'
+
+export const WIDTH_MIN_GAMES = 'w-16'
+export const WIDTH_SORT_DIRECTION = 'w-16'
+export const WIDTH_RESULTS_COUNT = 'w-16'
+export const WIDTH_GAME_SORT = 'w-28'
+
+export const WIDTH_GRAPH_LIMIT = 'w-20'
+
+export const WIDTH_POSITION_COLOR = 'w-20'
+export const WIDTH_QUALITY = 'w-20'
+export const WIDTH_MIN_MOVE = 'w-20'
+export const WIDTH_MIN_REACHED = 'w-20'
+export const WIDTH_SORT_BY = 'w-24'
+export const WIDTH_HABITS_OPENING = 'w-96'
+
+//----------------------------------------------------------------------------------
 //  Analysis Pipeline Thresholds
 //----------------------------------------------------------------------------------
 export const MIN_ANALYSIS_MOVE = 4
@@ -32,11 +84,12 @@ export const DEFAULT_BATCH_SIZE = 200
 export const CRON_DEEPEN_POPULAR_BATCH_SIZE = 100
 export const POSITION_INSERT_CHUNK_SIZE = 500
 export const GAMES_ITEMS_PER_PAGE = 25
-export const GAME_LIST_ITEMS_PER_PAGE = 15
+export const GAME_LIST_ROWS_DEFAULT = 20
 export const GAME_LIST_ROWS_OPTIONS = [10, 15, 20, 50] as const
 export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const PIPELINE_LOG_ROWS_OPTIONS = [10, 20, 40, 100] as const
-export const HABITS_ITEMS_PER_PAGE = 10
+export const HABITS_ITEMS_PER_PAGE = 3
+export const HABITS_ROWS_OPTIONS = [3, 6, 10, 20, 50] as const
 export const GAME_ENDINGS_CONCURRENCY = 4
 export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
   1: '3:00am',  // Game Sync
@@ -81,6 +134,8 @@ export const STOCKFISH_DEEP_ANALYSIS_MULTIPV = 3
 //  UI Display
 //----------------------------------------------------------------------------------
 export const VALUE_DISPLAY_MAX_LENGTH = 40
+export const HABITS_BOARD_SIZE_PX = '200px'
+export const POSITION_BOARD_SIZE_PX = '400px'
 
 //----------------------------------------------------------------------------------
 //  Back-Navigation Keys

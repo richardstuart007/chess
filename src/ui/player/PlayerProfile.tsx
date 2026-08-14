@@ -9,6 +9,7 @@ interface PlayerProfileProps {
   ratings?: Record<string, number>
   onClick?: () => void
   selected?: boolean
+  onRatingClick?: (control: string) => void
 }
 
 export default function PlayerProfile({
@@ -17,12 +18,13 @@ export default function PlayerProfile({
   avatar,
   ratings,
   onClick,
-  selected
+  selected,
+  onRatingClick
 }: PlayerProfileProps) {
   return (
-    <MyBox className='bg-blue-50'>
+    <MyBox className={`bg-blue-50 ${selected ? 'outline outline-2 outline-yellow-400' : ''}`}>
       <div
-        className={`flex items-start gap-4 rounded ${onClick ? 'cursor-pointer hover:bg-blue-50' : ''} ${selected ? 'outline outline-2 outline-blue-400 rounded' : ''}`}
+        className={`flex items-start gap-4 rounded ${onClick ? 'cursor-pointer hover:bg-blue-50' : ''}`}
         onClick={onClick}
       >
         {avatar && (
@@ -43,7 +45,8 @@ export default function PlayerProfile({
               {Object.entries(ratings).map(([control, rating]) => (
                 <span
                   key={control}
-                  className='rounded bg-gray-100 px-2 py-0.5 text-xs'
+                  className={`rounded bg-gray-100 px-2 py-0.5 text-xs ${onRatingClick ? 'cursor-pointer hover:bg-gray-200' : ''}`}
+                  onClick={onRatingClick ? (e) => { e.stopPropagation(); onRatingClick(control) } : undefined}
                 >
                   {control}: <span className='text-red-600 font-semibold'>{rating}</span>
                 </span>

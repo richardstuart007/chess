@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { MyButton } from 'nextjs-shared/MyButton'
 
 //----------------------------------------------------------------------------------------------
 //  STEPS — structured data flow for all 3 pipeline steps
@@ -139,26 +140,26 @@ export default function PipelineHelp() {
 
   return (
     <span className='inline-block'>
-      <button
+      <MyButton
         onClick={() => setOpen(o => !o)}
-        className='text-xs text-blue-600 hover:text-blue-800 border border-blue-300 rounded px-1.5 py-0.5 leading-none'
+        overrideClass='text-xs text-blue-600 hover:text-blue-800 border border-blue-300 rounded px-1.5 py-0.5 leading-none'
         type='button'
       >
         Help
-      </button>
+      </MyButton>
 
       {open && (
         <div className='absolute z-20 mt-1 left-0 w-[min(2000px,90vw)] max-h-[85vh] overflow-y-auto p-4 bg-blue-50 border border-blue-200 rounded-md shadow-xl text-xs'>
 
           <div className='flex justify-between items-center mb-3'>
             <p className='font-semibold text-blue-800 text-sm'>Analysis Pipeline — Data Flow</p>
-            <button
+            <MyButton
               onClick={() => setOpen(false)}
-              className='ml-4 text-gray-400 hover:text-gray-700 text-base leading-none font-bold'
+              overrideClass='ml-4 text-gray-400 hover:text-gray-700 text-base leading-none font-bold'
               type='button'
             >
               ×
-            </button>
+            </MyButton>
           </div>
 
           <div className='space-y-3'>

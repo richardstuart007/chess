@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { MyButton } from 'nextjs-shared/MyButton'
 import { AnalysisTree, MoveNode } from '@/src/lib/analysisTree'
 import { MoveEvaluation } from '@/src/lib/stockfish'
 import { formatCp } from '@/src/lib/formatCp'
@@ -53,11 +54,11 @@ function MoveBadge({
   const ann = annotationSymbol(ev)
 
   return (
-    <button
+    <MyButton
       onClick={onClick}
       data-node-id={node.id}
-      className={`inline-flex items-center gap-0.5 px-0.5 py-0.5 text-xs font-medium transition-all ${textColor} ${
-        isActive ? 'bg-green-200 rounded' : ''
+      overrideClass={`inline-flex items-center gap-0.5 px-0.5 py-0.5 text-xs font-medium transition-all ${textColor} ${
+        isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
       }`}
     >
       <span>{node.san}</span>
@@ -65,7 +66,7 @@ function MoveBadge({
       {count !== undefined && count > 1 && (
         <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
       )}
-    </button>
+    </MyButton>
   )
 }
 

@@ -1,7 +1,8 @@
 'use client'
 
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import FilterSelect from './FilterSelect'
+import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
+import { WIDTH_PLAYER, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const ALL = ''
 
@@ -18,28 +19,19 @@ interface FilterPlayerSelectProps {
 //  (blank param) alongside each tracked player. Renders nothing when there's only one player
 //  tracked, since there's nothing to choose between.
 //----------------------------------------------------------------------------------------------
-export default function FilterPlayerSelect({ players, label = 'Player', width = 'w-24' }: FilterPlayerSelectProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const value = searchParams.get('player') ?? ALL
-
-  function handleChange(next: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (next) params.set('player', next); else params.delete('player')
-    const qs = params.toString()
-    router.push(qs ? `${pathname}?${qs}` : pathname)
-  }
+export default function FilterPlayerSelect({ players, label = 'Player', width = WIDTH_PLAYER }: FilterPlayerSelectProps) {
+  const [value, setValue] = useGlobalFilter('player')
 
   if (players.length <= 1) return null
 
   return (
     <FilterSelect
       label={label}
-      options={[{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.player, label: p.display_name ?? p.player }))]}
+      options={[{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.player, label: p.player }))]}
       value={value}
-      onChange={handleChange}
+      onChange={setValue}
       width={width}
+      borderClass={GLOBAL_FILTER_BORDER_CLASS}
     />
   )
 }

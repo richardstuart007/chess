@@ -1,0 +1,27 @@
+'use client'
+
+import FilterMultiCheckbox from './FilterMultiCheckbox'
+import { OPTIONS_RESULT_MULTI, WIDTH_RESULT_MULTI } from '@/src/lib/constants'
+
+interface ResultMultiSelectProps {
+  selected: string[]
+  onChange: (values: string[]) => void
+  label?: string
+  width?: string
+}
+
+//----------------------------------------------------------------------------------------------
+//  ResultMultiSelect — gd_player_result multi-select filter (OpeningScoreChart's nested game
+//  table). Same DD column as ResultSelect, no "All" sentinel needed for multi-select.
+//----------------------------------------------------------------------------------------------
+export default function ResultMultiSelect({ selected, onChange, label = 'Result', width = WIDTH_RESULT_MULTI }: ResultMultiSelectProps) {
+  return (
+    <FilterMultiCheckbox
+      label={label}
+      options={OPTIONS_RESULT_MULTI}
+      selected={selected}
+      onChange={onChange}
+      width={width}
+    />
+  )
+}
