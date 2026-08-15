@@ -3,7 +3,7 @@
 //----------------------------------------------------------------------------------
 export const INCLUDED_TIME_CLASSES = ['blitz', 'rapid']
 export const DEFAULT_PLAYER = 'stricade'
-export const DEFAULT_DATE_FROM = '2025-01-01'
+export const DEFAULT_DATE_FROM = '2024-01-01'
 export const DEFAULT_MIN_GAMES = '25'
 export const DEFAULT_FILTER_TERMINATIONS = ['Checkmate', 'Resignation']
 export const TERMINATION_CHART_TYPES = ['Resignation', 'Checkmate', 'Time']
@@ -14,6 +14,7 @@ export const TERMINATION_CHART_TYPES = ['Resignation', 'Checkmate', 'Time']
 export const WIDTH_PLAYER = 'w-24'
 export const WIDTH_DATE_FROM = 'w-32'
 export const WIDTH_OPPONENT_RATING = 'w-12'
+export const WIDTH_GAME_NUMBER = 'w-16'
 
 //
 //  Applied only to filters that are actually global (player, timeClass, dateFrom, opening, eco)
@@ -122,6 +123,7 @@ export function getPlayerTimeClasses(player: string): string[] {
 //  Stockfish Analysis
 //----------------------------------------------------------------------------------
 export const STOCKFISH_DEPTH = 16
+export const STOCKFISH_REANALYZE_DEFAULT_DEPTH = 20
 export const STOCKFISH_BLUNDER_CP = 200
 export const STOCKFISH_MISTAKE_CP = 100
 export const STOCKFISH_INACCURACY_CP = 50
@@ -136,11 +138,6 @@ export const STOCKFISH_DEEP_ANALYSIS_MULTIPV = 3
 export const VALUE_DISPLAY_MAX_LENGTH = 40
 export const HABITS_BOARD_SIZE_PX = '200px'
 export const POSITION_BOARD_SIZE_PX = '400px'
-
-//----------------------------------------------------------------------------------
-//  Back-Navigation Keys
-//----------------------------------------------------------------------------------
-export const BACK_KEY = 'back_key_chess'
 
 //----------------------------------------------------------------------------------
 //  Session Storage

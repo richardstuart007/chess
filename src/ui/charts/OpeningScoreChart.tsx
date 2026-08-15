@@ -53,10 +53,9 @@ function sso<T>(key: string, fallback: T): T {
 interface OpeningScoreChartProps {
   players: { player: string; display_name: string | null }[]
   onSelectGame?: (game: ChessComGame, player: string) => void
-  lastAnalyzedGdid?: number
 }
 
-export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedGdid }: OpeningScoreChartProps) {
+export default function OpeningScoreChart({ players, onSelectGame }: OpeningScoreChartProps) {
   const searchParams = useSearchParams()
   const playerFilter = searchParams.get('player') ?? ''
   const playersToFetch = useMemo(
@@ -451,7 +450,7 @@ export default function OpeningScoreChart({ players, onSelectGame, lastAnalyzedG
                             return (
                               <tr
                                 key={row.gd_gdid}
-                                className={`border-b border-gray-100 ${onSelectGame ? 'cursor-pointer hover:bg-blue-50' : ''} ${row.gd_gdid === lastAnalyzedGdid ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
+                                className={`border-b border-gray-100 ${onSelectGame ? 'cursor-pointer hover:bg-blue-50' : ''}`}
                                 onClick={() => handleSelectGame(row)}
                               >
                                 <td className='py-1 pr-2 text-gray-600'>{row.gd_player}</td>

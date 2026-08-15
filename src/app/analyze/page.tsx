@@ -4,27 +4,25 @@ import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
-import { useBackNav } from 'nextjs-shared/useBackNav'
+import BackButton from '@/src/ui/BackButton'
 import ChessBoardView from '@/src/ui/board/ChessBoardView'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { getGameById, getGameEvals } from '@/src/lib/actions/games'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
-import { BACK_KEY } from '@/src/lib/constants'
 
 function AnalyzeContent() {
   const searchParams = useSearchParams()
 
   const gdidParam = searchParams.get('game')
-  const player = searchParams.get('user') ?? ''
-  const backPath = useBackNav(BACK_KEY) ?? '/'
+  const player = searchParams.get('player') ?? ''
 
   const [game, setGame] = useState<ChessComGame | null>(null)
   const [gdid, setGdid] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.depth)
-  const [deepAnalysisDepth, setDeepAnalysisDepth] = useState<number | 'infinite'>(STOCKFISH_DEFAULTS.deepAnalysisDepth)
+  const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.reanalyzeDepth)
+  const [deepAnalysisDepth, setDeepAnalysisDepth] = useState<number>(STOCKFISH_DEFAULTS.deepAnalysisDepth)
   const [deepAnalysisMultiPv, setDeepAnalysisMultiPv] = useState(STOCKFISH_DEFAULTS.deepAnalysisMultiPv)
 
   useEffect(() => {
@@ -66,7 +64,9 @@ function AnalyzeContent() {
             username: row.gd_black_username,
             rating:   row.gd_black_rating,
             result:   isPlayerWhite ? oppositeResult(row.gd_player_result) : row.gd_player_result
-          }
+          },
+          termination: row.gd_termination,
+          finalEval:   row.gd_final_eval
         }
 
         const storedEvals = await getGameEvals(row.gd_gdid)
@@ -93,7 +93,10 @@ function AnalyzeContent() {
     return (
       <div className='text-center py-8'>
         <p className='text-red-600 text-sm'>{error}</p>
-        <MyBackHomeNav backPath={backPath} />
+        <div className='flex items-center justify-center gap-3'>
+          <MyBackHomeNav />
+          <BackButton fallback='/' />
+        </div>
       </div>
     )
   }
@@ -113,7 +116,6 @@ function AnalyzeContent() {
       deepAnalysisMultiPv={deepAnalysisMultiPv}
       onDeepAnalysisDepthChange={setDeepAnalysisDepth}
       onDeepAnalysisMultiPvChange={setDeepAnalysisMultiPv}
-      backPath={backPath}
     />
   )
 }

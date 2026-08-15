@@ -38,6 +38,7 @@ export interface MoveRow {
   mov_wins:    number
   mov_losses:  number
   eva_cp:      number | null
+  eva_depth:   number | null
 }
 
 export interface EvaluationRow {
@@ -77,7 +78,7 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
   return await table_query({
     caller: 'getMovesForPosition',
     query: `
-      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp, e.eva_depth
       FROM (
         SELECT
           gp.gam_move_played                                   AS move_played,
@@ -151,7 +152,7 @@ export async function getMoveSummaryForPosition(fen: string, player: string): Pr
   return await table_query({
     caller: 'getMoveSummaryForPosition',
     query: `
-      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.eva_cp, e.eva_depth
       FROM (
         SELECT
           gp.gam_move_played                                   AS move_played,
@@ -358,6 +359,35 @@ export async function upgradePositionEvaluation(data: {
   return true
 }
 
+//----------------------------------------------------------------------------------
+//  getPositionEvaluationsBulk — batched teva_evaluations lookup for a list of FENs,
+//  keyed by truncated FEN (matching every other position lookup in this file). Used
+//  by runAnalysis() to skip re-running Stockfish on positions already cached deep
+//  enough, instead of one lookup per position.
+//----------------------------------------------------------------------------------
+export async function getPositionEvaluationsBulk(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
+  const truncated = fens.map(truncateFen)
+  const rows = await table_query({
+    caller: 'getPositionEvaluationsBulk',
+    table: 'teva_evaluations',
+    query: `
+      SELECT p.pos_fen, e.eva_cp, e.eva_best_move, e.eva_depth
+      FROM tpos_positions p
+      JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+      WHERE p.pos_fen = ANY($1) AND e.eva_cp IS NOT NULL AND e.eva_depth IS NOT NULL
+    `,
+    // table_query's params type doesn't declare array elements (needed for = ANY($1)),
+    // even though the underlying driver handles them fine — narrow cast, not a real risk
+    params: [truncated] as unknown as string[]
+  }) as { pos_fen: string; eva_cp: number; eva_best_move: string | null; eva_depth: number }[]
+
+  const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = {}
+  for (const row of rows) {
+    result[row.pos_fen] = { cp: row.eva_cp, bestMove: row.eva_best_move, depth: row.eva_depth }
+  }
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // Game Positions
 // ---------------------------------------------------------------------------
@@ -402,6 +432,7 @@ function buildHabitsFilter(opts: {
   quality?: 'bad' | 'good'
   opening?: string
   eco?: string
+  sinceDate?: string
 }): {
   params: (string | number | boolean)[]
   playerFilter: string
@@ -411,6 +442,7 @@ function buildHabitsFilter(opts: {
   qualityFilter: string
   openingFilter: string
   ecoFilter: string
+  sinceFilter: string
 } {
   const players    = (opts.players ?? []).map(p => p.toLowerCase())
   const minReached = opts.minReached ?? 3
@@ -433,7 +465,10 @@ function buildHabitsFilter(opts: {
   const ecoFilter = opts.eco
     ? `AND LOWER(h.hab_eco_code) LIKE $${params.push(`%${opts.eco.toLowerCase()}%`)}`
     : ''
-  return { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter }
+  const sinceFilter = opts.sinceDate
+    ? `AND h.hab_last_occurred >= $${params.push(Math.floor(new Date(opts.sinceDate).getTime() / 1000))}`
+    : ''
+  return { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter }
 }
 
 export async function getHabitsData(opts: {
@@ -447,6 +482,7 @@ export async function getHabitsData(opts: {
   quality?: 'bad' | 'good'
   opening?: string
   eco?: string
+  sinceDate?: string
 }): Promise<Array<{
   pos_id:       number
   pos_fen:      string
@@ -462,8 +498,9 @@ export async function getHabitsData(opts: {
   move_cp:      number | null
   opening_name: string | null
   eco_code:     string | null
+  last_occurred: number | null
 }>> {
-  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter } = buildHabitsFilter(opts)
+  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter } = buildHabitsFilter(opts)
   const limitClause  = (opts.limit  ?? 0) > 0 ? `LIMIT ${opts.limit}`   : ''
   const offsetClause = (opts.offset ?? 0) > 0 ? `OFFSET ${opts.offset}` : ''
   const orderClause = opts.sortBy === 'reached'
@@ -487,7 +524,8 @@ export async function getHabitsData(opts: {
         h.hab_move_losses                                 AS move_losses,
         e2.eva_cp                                          AS move_cp,
         h.hab_opening_name                                AS opening_name,
-        h.hab_eco_code                                    AS eco_code
+        h.hab_eco_code                                    AS eco_code,
+        h.hab_last_occurred                               AS last_occurred
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
       LEFT JOIN teva_evaluations e  ON e.eva_pos_id  = h.hab_pos_id
@@ -499,6 +537,7 @@ export async function getHabitsData(opts: {
         ${qualityFilter}
         ${openingFilter}
         ${ecoFilter}
+        ${sinceFilter}
       ORDER BY ${orderClause}
       ${limitClause}
       ${offsetClause}
@@ -519,7 +558,8 @@ export async function getHabitsData(opts: {
     move_losses:  Number(r.move_losses),
     move_cp:      r.move_cp != null ? Number(r.move_cp) : null,
     opening_name: r.opening_name ?? null,
-    eco_code:     r.eco_code ?? null
+    eco_code:     r.eco_code ?? null,
+    last_occurred: r.last_occurred != null ? Number(r.last_occurred) : null
   }))
 }
 
@@ -535,8 +575,9 @@ export async function getHabitsCount(opts: {
   quality?: 'bad' | 'good'
   opening?: string
   eco?: string
+  sinceDate?: string
 }): Promise<number> {
-  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter } = buildHabitsFilter(opts)
+  const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter } = buildHabitsFilter(opts)
 
   const rows = await table_query({
     caller: 'getHabitsCount',
@@ -551,6 +592,7 @@ export async function getHabitsCount(opts: {
         ${qualityFilter}
         ${openingFilter}
         ${ecoFilter}
+        ${sinceFilter}
     `,
     params
   })

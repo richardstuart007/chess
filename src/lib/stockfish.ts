@@ -1,7 +1,9 @@
 import { Chess } from 'chess.js'
 import { MultiPvResult } from './analysisTree'
+import { truncateFen } from './fen'
 import {
   STOCKFISH_DEPTH,
+  STOCKFISH_REANALYZE_DEFAULT_DEPTH,
   STOCKFISH_BLUNDER_CP,
   STOCKFISH_MISTAKE_CP,
   STOCKFISH_INACCURACY_CP,
@@ -44,6 +46,7 @@ export interface InfiniteAnalysisUpdate {
 
 export const STOCKFISH_DEFAULTS = {
   depth: STOCKFISH_DEPTH,
+  reanalyzeDepth: STOCKFISH_REANALYZE_DEFAULT_DEPTH,
   blunderCp: STOCKFISH_BLUNDER_CP,
   mistakeCp: STOCKFISH_MISTAKE_CP,
   inaccuracyCp: STOCKFISH_INACCURACY_CP,
@@ -138,14 +141,14 @@ export class StockfishEngine {
 
   /**
    * Start deep analysis on a position. Calls onUpdate with live results as
-   * the engine searches deeper. Stops automatically once maxDepth is reached
-   * (or runs unbounded if maxDepth is 'infinite'), or earlier if stopAnalysis()
-   * is called. Either way, onComplete fires once the engine's bestmove arrives.
+   * the engine searches deeper. Stops automatically once maxDepth is reached,
+   * or earlier if stopAnalysis() is called. Either way, onComplete fires once
+   * the engine's bestmove arrives.
    */
   startInfiniteAnalysis(
     fen: string,
     numLines: number,
-    maxDepth: number | 'infinite',
+    maxDepth: number,
     onUpdate: (result: InfiniteAnalysisUpdate) => void,
     onComplete?: () => void
   ): void {
@@ -235,7 +238,7 @@ export class StockfishEngine {
     this.send(`setoption name MultiPV value ${numLines}`)
     this.send('ucinewgame')
     this.send(`position fen ${fen}`)
-    this.send(maxDepth === 'infinite' ? 'go infinite' : `go depth ${maxDepth}`)
+    this.send(`go depth ${maxDepth}`)
   }
 
   /**
@@ -298,19 +301,37 @@ export class StockfishEngine {
     fens: string[],
     sans: string[],
     onProgress?: ProgressCallback,
-    depth?: number
+    depth?: number,
+    cachedEvals?: Record<string, { cp: number; bestMove: string | null; depth: number }>
   ): Promise<{ evaluations: MoveEvaluation[]; finalPosition: { fen: string; cp: number; bestMove: string } }> {
     if (!this.worker || !this.ready) throw new Error('Stockfish not initialized')
 
     const evaluations: MoveEvaluation[] = []
+    const analysisDepth = depth ?? STOCKFISH_DEFAULTS.depth
 
     // Step 1: Evaluate every position ONCE (N+1 positions for N moves)
     // This eliminates oscillation from evaluating the same position twice
-    const positionEvals: { cp: number; bestMove: string; pv: string }[] = []
+    const positionEvals: { cp: number; bestMove: string; pv: string; depth: number }[] = []
 
     for (let i = 0; i <= sans.length; i++) {
       onProgress?.({ current: i, total: sans.length, move: i > 0 ? sans[i - 1] : 'starting position' })
-      const analysisDepth = depth ?? STOCKFISH_DEFAULTS.depth
+
+      // teva_evaluations already stores cp from White's perspective (same convention
+      // upgradePositionEvaluation's every caller uses) — no perspective flip needed
+      // for a cached hit, unlike a fresh engine result below. No pv is cached (the
+      // table only stores a single best move, not a full line), so a cached position
+      // contributes no bestLineSans for its ply.
+      const cached = cachedEvals?.[truncateFen(fens[i])]
+      if (cached && cached.depth >= analysisDepth) {
+        positionEvals.push({
+          cp: cached.cp,
+          bestMove: cached.bestMove ?? '',
+          pv: '',
+          depth: cached.depth
+        })
+        continue
+      }
+
       const result = await this.evaluate(fens[i], analysisDepth)
 
       // Normalize to white's perspective
@@ -322,7 +343,8 @@ export class StockfishEngine {
       positionEvals.push({
         cp: cpWhitePerspective,
         bestMove: result.bestMove,
-        pv: result.pv
+        pv: result.pv,
+        depth: analysisDepth
       })
     }
 
@@ -367,7 +389,10 @@ export class StockfishEngine {
         cpLoss,
         cpChange,
         classification: classifyMove(cpLoss),
-        depth: depth ?? STOCKFISH_DEFAULTS.depth
+        // The weaker of this ply's two constituent position depths — a cached hit can be
+        // deeper than the requested depth, but never treat a ply as deeper than its
+        // shallower side actually was
+        depth: Math.min(positionEvals[i].depth, positionEvals[i + 1].depth)
       })
     }
 

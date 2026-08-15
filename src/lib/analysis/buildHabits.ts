@@ -2,6 +2,7 @@
 
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
+import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, HABITS_MOVE_CP_CLAMP, POSITION_INSERT_CHUNK_SIZE } from '../constants'
@@ -19,6 +20,7 @@ interface HabitAggregate {
   resultingPosId:   number | null
   openingName:      string | null
   ecoCode:          string | null
+  lastOccurred:     number | null
 }
 
 //----------------------------------------------------------------------------------
@@ -80,7 +82,8 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
           COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int   AS move_wins,
           COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int  AS move_losses,
           (ARRAY_AGG(gp.gam_cp_change ORDER BY ABS(gp.gam_cp_change) DESC))[1] AS move_cp,
-          (ARRAY_AGG(gp.gam_resulting_pos_id))[1]                   AS resulting_pos_id
+          (ARRAY_AGG(gp.gam_resulting_pos_id))[1]                   AS resulting_pos_id,
+          MAX(d.gd_end_time)::int                                   AS last_occurred
         FROM tgam_game_positions gp
         JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
         JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
@@ -120,25 +123,26 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
     moveCp:         Math.max(-HABITS_MOVE_CP_CLAMP, Math.min(HABITS_MOVE_CP_CLAMP, Number(r.move_cp))),
     resultingPosId: r.resulting_pos_id != null ? Number(r.resulting_pos_id) : null,
     openingName:    r.opening_name ?? null,
-    ecoCode:        r.eco_code ?? null
+    ecoCode:        r.eco_code ?? null,
+    lastOccurred:   r.last_occurred != null ? Number(r.last_occurred) : null
   }))
 
   let built = 0
   for (const chunk of chunkRows(aggregates, POSITION_INSERT_CHUNK_SIZE)) {
     const values = chunk.map((_, i) => {
-      const b = i * 12
-      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12})`
+      const b = i * 13
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13})`
     }).join(',')
     const params = chunk.flatMap(a => [
       a.player, a.posId, a.moveSan, a.moveUci, a.moveNum,
       a.moveTimes, a.moveWins, a.moveLosses, a.moveCp, a.resultingPosId,
-      a.openingName, a.ecoCode
+      a.openingName, a.ecoCode, a.lastOccurred
     ])
     const upsertRes = await table_query({
       caller: 'buildHabits_upsert',
       query: `
         INSERT INTO thab_habits
-          (hab_player, hab_pos_id, hab_move_san, hab_move_uci, hab_move_num, hab_move_times, hab_move_wins, hab_move_losses, hab_move_cp, hab_resulting_pos_id, hab_opening_name, hab_eco_code)
+          (hab_player, hab_pos_id, hab_move_san, hab_move_uci, hab_move_num, hab_move_times, hab_move_wins, hab_move_losses, hab_move_cp, hab_resulting_pos_id, hab_opening_name, hab_eco_code, hab_last_occurred)
         VALUES ${values}
         ON CONFLICT (hab_player, hab_pos_id, hab_move_san) DO UPDATE SET
           hab_move_uci          = EXCLUDED.hab_move_uci,
@@ -149,7 +153,8 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
           hab_move_cp           = EXCLUDED.hab_move_cp,
           hab_resulting_pos_id  = EXCLUDED.hab_resulting_pos_id,
           hab_opening_name      = EXCLUDED.hab_opening_name,
-          hab_eco_code          = EXCLUDED.hab_eco_code
+          hab_eco_code          = EXCLUDED.hab_eco_code,
+          hab_last_occurred     = EXCLUDED.hab_last_occurred
         RETURNING hab_habid
       `,
       params,
@@ -158,6 +163,8 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
     })
     built += upsertRes.length
   }
+
+  cache_clearTable('thab_habits', 'buildHabits')
 
   const durationMs = Date.now() - t0
 

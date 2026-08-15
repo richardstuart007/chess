@@ -27,6 +27,7 @@ import {
   GAME_ENDINGS_CONCURRENCY,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
+  STOCKFISH_REANALYZE_DEFAULT_DEPTH,
   STOCKFISH_BLUNDER_CP,
   STOCKFISH_MISTAKE_CP,
   STOCKFISH_INACCURACY_CP,
@@ -41,6 +42,7 @@ import {
   WIDTH_PLAYER,
   WIDTH_DATE_FROM,
   WIDTH_OPPONENT_RATING,
+  WIDTH_GAME_NUMBER,
   GLOBAL_FILTER_BORDER_CLASS,
   OPTIONS_COLOR,
   WIDTH_COLOR,
@@ -114,6 +116,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'WIDTH_OPENING', value: WIDTH_OPENING, description: 'Width for the gd_opening_name text filter.', consumers: ['GameList.tsx: GameList'] },
       { name: 'WIDTH_OPPONENT', value: WIDTH_OPPONENT, description: 'Width for the gd_opponent_username text filter.', consumers: ['GameList.tsx: GameList'] },
       { name: 'WIDTH_OPPONENT_RATING', value: WIDTH_OPPONENT_RATING, description: 'Shared width for the gd_opponent_rating FilterNumberRange, identical in both places it appears.', consumers: ['GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart'] },
+      { name: 'WIDTH_GAME_NUMBER', value: WIDTH_GAME_NUMBER, description: "Width for the Games table's gd_gdid exact-match filter input.", consumers: ['GameList.tsx: GameList'] },
       { name: 'WIDTH_PLAYER', value: WIDTH_PLAYER, description: 'Default dropdown width for FilterPlayerSelect, shared by every page it appears on.', consumers: ['FilterPlayerSelect.tsx: FilterPlayerSelect'] },
       { name: 'WIDTH_POSITION_COLOR', value: WIDTH_POSITION_COLOR, description: "Width for the Habits table's pos_color filter (distinct from gd_player_color's ColorSelect — a different DD column with a different value domain, 'w'/'b' vs 'white'/'black').", consumers: ['HabitsTable.tsx: HabitsTable'] },
       { name: 'WIDTH_QUALITY', value: WIDTH_QUALITY, description: "Width for the Habits table's Bad/Good quality filter.", consumers: ['HabitsTable.tsx: HabitsTable'] },
@@ -166,12 +169,13 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     heading: 'Stockfish Analysis',
     entries: [
       { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, and the Owner Pipeline UI\'s initial Depth field value.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET', 'owner/pipeline/page.tsx: PipelinePage'] },
+      { name: 'STOCKFISH_REANALYZE_DEFAULT_DEPTH', value: STOCKFISH_REANALYZE_DEFAULT_DEPTH, description: "Initial value of /analyze's Game Analysis \"Depth\" dropdown — must match one of that dropdown's own option values (20/22/24/26/28/30/40), unlike STOCKFISH_DEPTH (16) which isn't one of them.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'analyze/page.tsx: AnalyzeContent'] },
       { name: 'STOCKFISH_BLUNDER_CP', value: STOCKFISH_BLUNDER_CP, description: 'CP-loss threshold above which a move is classified a blunder.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_MISTAKE_CP', value: STOCKFISH_MISTAKE_CP, description: 'CP-loss threshold above which a move is classified a mistake.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_INACCURACY_CP', value: STOCKFISH_INACCURACY_CP, description: 'CP-loss threshold above which a move is classified an inaccuracy.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_HASH', value: STOCKFISH_HASH, description: 'Stockfish engine hash table size (MB).', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_BESTLINE_LENGTH', value: STOCKFISH_BESTLINE_LENGTH, description: "Max number of moves shown in the engine's best-line suggestion.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
-      { name: 'STOCKFISH_DEEP_ANALYSIS_DEPTH', value: STOCKFISH_DEEP_ANALYSIS_DEPTH, description: 'Search depth used for deep/infinite analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
+      { name: 'STOCKFISH_DEEP_ANALYSIS_DEPTH', value: STOCKFISH_DEEP_ANALYSIS_DEPTH, description: 'Search depth used for deep analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_DEEP_ANALYSIS_MULTIPV', value: STOCKFISH_DEEP_ANALYSIS_MULTIPV, description: 'Number of candidate lines (MultiPV) shown in deep analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] }
     ]
   },

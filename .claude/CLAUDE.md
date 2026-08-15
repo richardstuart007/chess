@@ -68,6 +68,16 @@ added in the cron-constants session — `DEFAULT_BATCH_SIZE`, `CRON_DEEPEN_POPUL
 `STOCKFISH_DEPTH`'s new route entries — were written as bare `'api/analysis/.../route.ts'` strings
 with no function name, inconsistent with every other entry on the page.)
 
+### sessionStorage keys — always prefix with `SESSION_STORAGE_PREFIX`
+
+Every `sessionStorage` key in this project (filter drafts, pagination state, the back-navigation
+stack, etc.) must be built from `SESSION_STORAGE_PREFIX` (`'rs7_chess_'`, in `src/lib/constants.ts`)
+— e.g. `` `${SESSION_STORAGE_PREFIX}habits_filters` ``, `` `${SESSION_STORAGE_PREFIX}back_stack` ``.
+Never write a raw, unprefixed string key directly. The prefix namespaces this project's keys against
+any other app that might share the same browser origin (e.g. during local dev on `localhost`), and
+keeps every key visually identifiable as this project's own when inspecting `sessionStorage` in
+devtools.
+
 ### Deliberate exception: `purgeStaleReachOnePositions` runs a real, automated `DELETE`
 
 `src/lib/analysis/purgePositions.ts`'s `purgeStaleReachOnePositions()`, wired into

@@ -10,7 +10,7 @@ import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
 import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
-import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, HABITS_ROWS_OPTIONS, SESSION_STORAGE_PREFIX } from '@/src/lib/constants'
+import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, HABITS_ROWS_OPTIONS, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM } from '@/src/lib/constants'
 
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
@@ -44,18 +44,23 @@ function HabitsContent() {
   const [minReached,  setMinReached]  = useState(3)
   const [showDismissed, setShowDismissed] = useState(false)
   //
-  //  Opening/ECO are also global (shared via URL with GameList's own Opening/ECO filters) and
-  //  applied on an explicit Filter click, not instantly like the filters above —
-  //  draftOpening/draftEco track the text inputs as typed, openingFilter/ecoFilter (the applied,
-  //  global values) drive the actual query and only change when the Filter button is clicked.
+  //  Date From/Opening/ECO are also global (shared via URL with GameList/Graph/OpeningScoreChart/
+  //  TerminationChart's own Date From/Opening/ECO filters) and applied on an explicit Filter
+  //  click, not instantly like the filters above — draftDateFrom/draftOpening/draftEco track the
+  //  inputs as typed/picked, dateFromFilter/openingFilter/ecoFilter (the applied, global values)
+  //  drive the actual query and only change when the Filter button is clicked. Absent dateFrom
+  //  still defaults to DEFAULT_DATE_FROM, matching every other consumer of this global filter.
   //
+  const [rawDateFromFilter] = useGlobalFilter('dateFrom')
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
   const [openingFilter] = useGlobalFilter('opening')
   const [ecoFilter]     = useGlobalFilter('eco')
   //
-  //  handleApplyOpeningEcoFilter below sets both together in one push — each useGlobalFilter's
+  //  handleApplyFilters below sets all three together in one push — each useGlobalFilter's
   //  own setValue is unsafe for that (see useGlobalFilters' own comment).
   //
   const setGlobalFilters = useGlobalFilters()
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
   const [draftOpening, setDraftOpening] = useState(openingFilter)
   const [draftEco,     setDraftEco]     = useState(ecoFilter)
   const [rows,        setRows]        = useState<any[]>([])
@@ -90,14 +95,15 @@ function HabitsContent() {
   }, [])
 
   //
-  //  Keeps the draft Opening/ECO boxes in sync whenever the global values change from
+  //  Keeps the draft Date From/Opening/ECO boxes in sync whenever the global values change from
   //  elsewhere (initial mount, tab navigation carrying them in from GameList, or this page's
   //  own Filter click writing them back) — never from local typing.
   //
   useEffect(() => {
+    setDraftDateFrom(dateFromFilter)
     setDraftOpening(openingFilter)
     setDraftEco(ecoFilter)
-  }, [openingFilter, ecoFilter])
+  }, [dateFromFilter, openingFilter, ecoFilter])
 
   useEffect(() => {
     if (!hydrated) return
@@ -131,12 +137,12 @@ function HabitsContent() {
   const filtersResetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!hydrated) return
-    const key = JSON.stringify({ playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter })
+    const key = JSON.stringify({ playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, dateFromFilter, openingFilter, ecoFilter })
     if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
       setCurrentPage(1)
     }
     filtersResetKeyRef.current = key
-  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter, hydrated])
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, dateFromFilter, openingFilter, ecoFilter, hydrated])
 
   useEffect(() => {
     if (!hydrated) return
@@ -149,12 +155,13 @@ function HabitsContent() {
         minReached,
         dismissed: showDismissed,
         opening: openingFilter || undefined,
-        eco: ecoFilter || undefined
+        eco: ecoFilter || undefined,
+        sinceDate: dateFromFilter || undefined
       })
       setTotalCount(count)
     }
     loadCount()
-  }, [playersToFetch, color, quality, minMove, minReached, showDismissed, openingFilter, ecoFilter, hydrated])
+  }, [playersToFetch, color, quality, minMove, minReached, showDismissed, dateFromFilter, openingFilter, ecoFilter, hydrated])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
@@ -172,22 +179,23 @@ function HabitsContent() {
         minReached,
         dismissed:  showDismissed,
         opening:    openingFilter || undefined,
-        eco:        ecoFilter || undefined
+        eco:        ecoFilter || undefined,
+        sinceDate:  dateFromFilter || undefined
       })
       setRows(data)
     } finally {
       setLoading(false)
     }
-  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, openingFilter, ecoFilter, currentPage, rowsPerPage, hydrated])
+  }, [playersToFetch, color, quality, sortBy, minMove, minReached, showDismissed, dateFromFilter, openingFilter, ecoFilter, currentPage, rowsPerPage, hydrated])
 
   useEffect(() => { load() }, [load])
 
   //
-  //  handleToggleDismiss — dismisses or restores depending on which view is showing,
-  //  then drops the row from the current page locally instead of refetching (avoids a
-  //  page/offset shift for the other rows still on screen) — either direction removes
-  //  the row from whichever view is currently active. Uses the row's own player (not the
-  //  page-level filter) since "All" can show rows from multiple players at once.
+  //  handleToggleDismiss — dismisses or restores depending on which view is showing, then
+  //  re-fetches the current page so it backfills to rowsPerPage from the next row in sort
+  //  order, rather than just dropping the row locally and leaving the page short — either
+  //  direction removes the row from whichever view is currently active. Uses the row's own
+  //  player (not the page-level filter) since "All" can show rows from multiple players at once.
   //
   const handleToggleDismiss = useCallback(async (posId: number, moveSan: string, rowPlayer: string) => {
     if (showDismissed) {
@@ -195,13 +203,13 @@ function HabitsContent() {
     } else {
       await dismissHabit(rowPlayer, posId, moveSan)
     }
-    setRows(rows => rows.filter(r => !(r.pos_id === posId && r.move_san === moveSan)))
     setTotalCount(c => Math.max(0, c - 1))
-  }, [showDismissed])
+    load()
+  }, [showDismissed, load])
 
-  const handleApplyOpeningEcoFilter = useCallback(() => {
-    setGlobalFilters({ opening: draftOpening, eco: draftEco })
-  }, [draftOpening, draftEco, setGlobalFilters])
+  const handleApplyFilters = useCallback(() => {
+    setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
+  }, [draftDateFrom, draftOpening, draftEco, setGlobalFilters])
 
   return (
     <div className="space-y-4">
@@ -230,12 +238,14 @@ function HabitsContent() {
             sortBy={sortBy}
             onSortByChange={setSortBy}
             onShowDismissedToggle={() => setShowDismissed(v => !v)}
+            dateFrom={draftDateFrom}
+            onDateFromChange={setDraftDateFrom}
             opening={draftOpening}
             onOpeningChange={setDraftOpening}
             eco={draftEco}
             onEcoChange={(v: string) => setDraftEco(v.toUpperCase())}
-            onApplyOpeningEcoFilter={handleApplyOpeningEcoFilter}
-            openingEcoFilterPending={draftOpening !== openingFilter || draftEco !== ecoFilter}
+            onApplyFilters={handleApplyFilters}
+            filtersPending={draftDateFrom !== dateFromFilter || draftOpening !== openingFilter || draftEco !== ecoFilter}
           />
         )}
 
@@ -250,6 +260,7 @@ function HabitsContent() {
               setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
               rowsOptions={HABITS_ROWS_OPTIONS}
               overrideClass='flex-1'
+              totalRows={totalCount}
             />
           )}
         </div>

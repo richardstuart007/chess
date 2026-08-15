@@ -1,21 +1,23 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { MyButton } from 'nextjs-shared/MyButton'
 import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import FilterTextInput from '@/src/ui/filters/FilterTextInput'
+import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import MiniBoard from '@/src/ui/board/MiniBoard'
 import {
   MIN_ANALYSIS_MOVE, WIDTH_POSITION_COLOR, WIDTH_QUALITY, WIDTH_MIN_MOVE,
-  WIDTH_MIN_REACHED, WIDTH_SORT_BY, WIDTH_HABITS_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER,
-  GLOBAL_FILTER_BORDER_CLASS
+  WIDTH_MIN_REACHED, WIDTH_SORT_BY, WIDTH_HABITS_OPENING, WIDTH_ECO, WIDTH_DATE_FROM,
+  PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
+import { pushBackTarget } from '@/src/lib/backNav'
 
 interface HabitRow {
   pos_id:       number
@@ -32,6 +34,7 @@ interface HabitRow {
   move_cp:      number | null
   opening_name: string | null
   eco_code:     string | null
+  last_occurred: number | null
 }
 
 type Color   = 'all' | 'w' | 'b'
@@ -54,12 +57,22 @@ interface HabitsTableProps {
   sortBy: SortBy
   onSortByChange: (v: SortBy) => void
   onShowDismissedToggle: () => void
+  dateFrom: string
+  onDateFromChange: (v: string) => void
   opening: string
   onOpeningChange: (v: string) => void
   eco: string
   onEcoChange: (v: string) => void
-  onApplyOpeningEcoFilter: () => void
-  openingEcoFilterPending: boolean
+  onApplyFilters: () => void
+  filtersPending: boolean
+}
+
+function formatLastOccurred(epochSeconds: number): string {
+  const date = new Date(epochSeconds * 1000)
+  const dd = String(date.getDate()).padStart(2, '0')
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const yy = String(date.getFullYear()).slice(2)
+  return `${dd}/${mm}/${yy}`
 }
 
 function cpClass(cp: number | null): string {
@@ -84,14 +97,18 @@ export default function HabitsTable({
   sortBy,
   onSortByChange,
   onShowDismissedToggle,
+  dateFrom,
+  onDateFromChange,
   opening,
   onOpeningChange,
   eco,
   onEcoChange,
-  onApplyOpeningEcoFilter,
-  openingEcoFilterPending
+  onApplyFilters,
+  filtersPending
 }: HabitsTableProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   return (
     <div className="overflow-x-auto">
@@ -128,6 +145,12 @@ export default function HabitsTable({
               <span className="inline-flex items-center justify-end gap-1">
                 Eval
                 <MyHelpField text="Stockfish's evaluation of the position after this move, white's perspective." />
+              </span>
+            </th>
+            <th className="px-3 py-2 text-right">
+              <span className="inline-flex items-center justify-end gap-1">
+                Last occurred
+                <MyHelpField text="Date of the most recent game this move was played from this position." />
               </span>
             </th>
             <th className="px-3 py-2 w-8" />
@@ -212,13 +235,17 @@ export default function HabitsTable({
               </div>
             </th>
             <th className="px-3 py-1.5">
+              <div className="flex justify-end">
+                <FilterDateInput
+                  value={dateFrom}
+                  onChange={onDateFromChange}
+                  width={WIDTH_DATE_FROM}
+                  borderClass={GLOBAL_FILTER_BORDER_CLASS}
+                />
+              </div>
+            </th>
+            <th className="px-3 py-1.5">
               <div className="flex items-center gap-1">
-                <FilterActionButton
-                  onClick={onApplyOpeningEcoFilter}
-                  variant={openingEcoFilterPending ? 'pending' : 'primary'}
-                >
-                  Filter
-                </FilterActionButton>
                 <MyButton
                   type="button"
                   onClick={onShowDismissedToggle}
@@ -227,6 +254,12 @@ export default function HabitsTable({
                 >
                   {dismissedView ? '↺' : '✕'}
                 </MyButton>
+                <FilterActionButton
+                  onClick={onApplyFilters}
+                  variant={filtersPending ? 'pending' : 'primary'}
+                >
+                  Filter
+                </FilterActionButton>
               </div>
             </th>
           </tr>
@@ -234,7 +267,7 @@ export default function HabitsTable({
         <tbody className="divide-y divide-gray-100">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={13} className="text-center py-12 text-gray-500 text-sm">
+              <td colSpan={14} className="text-center py-12 text-gray-500 text-sm">
                 {dismissedView
                   ? 'No dismissed habits.'
                   : `No ${quality} habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.`}
@@ -245,7 +278,11 @@ export default function HabitsTable({
             <tr
               key={`${row.pos_id}-${row.move_san}-${i}`}
               className="hover:bg-gray-50 cursor-pointer"
-              onClick={() => router.push(`/position/${row.pos_id}?player=${row.player}`)}
+              onClick={() => {
+                const qs = searchParams.toString()
+                pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
+                router.push(`/position/${row.pos_id}?player=${row.player}`)
+              }}
             >
               {/* Player */}
               <td className="px-3 py-2 text-gray-600">
@@ -309,13 +346,18 @@ export default function HabitsTable({
                 {row.move_cp != null ? formatCp(row.move_cp) : '—'}
               </td>
 
+              {/* Last occurred */}
+              <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                {row.last_occurred != null ? formatLastOccurred(row.last_occurred) : '—'}
+              </td>
+
               {/* Dismiss / Restore */}
               <td className="px-3 py-2">
                 <MyButton
                   type="button"
                   title={dismissedView ? 'Restore — show this habit again' : "Dismiss — don't show this habit again"}
                   onClick={e => { e.stopPropagation(); onToggleDismiss(row.pos_id, row.move_san, row.player) }}
-                  overrideClass="text-gray-400 hover:text-red-600 text-xs leading-none px-1"
+                  overrideClass="text-gray-400 hover:text-red-600 text-xs leading-none px-1 bg-transparent hover:bg-transparent"
                 >
                   {dismissedView ? '↺' : '✕'}
                 </MyButton>

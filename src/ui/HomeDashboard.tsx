@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import GameList from '@/src/ui/games/GameList'
 import MyBox from 'nextjs-shared/MyBox'
-import { saveBackNav } from 'nextjs-shared/useBackNav'
 import { getEarliestGameDate } from '@/src/lib/actions/games'
 import { ChessComGame } from '@/src/lib/chesscom'
-import { BACK_KEY } from '@/src/lib/constants'
+import { pushBackTarget } from '@/src/lib/backNav'
 
 interface Player {
   player: string
@@ -16,11 +15,12 @@ interface Player {
 
 interface HomeDashboardProps {
   players: Player[]
-  lastAnalyzedGdid?: number
 }
 
-export default function HomeDashboard({ players, lastAnalyzedGdid }: HomeDashboardProps) {
+export default function HomeDashboard({ players }: HomeDashboardProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   const [minDate, setMinDate] = useState<string | undefined>()
 
@@ -47,8 +47,9 @@ export default function HomeDashboard({ players, lastAnalyzedGdid }: HomeDashboa
   function handleSelectGame(game: ChessComGame, player: string) {
     const gdid = (game as any)._gdid
     if (gdid) {
-      saveBackNav(BACK_KEY)
-      router.push(`/analyze?game=${gdid}&user=${encodeURIComponent(player)}`)
+      const qs = searchParams.toString()
+      pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
+      router.push(`/analyze?game=${gdid}&player=${encodeURIComponent(player)}`)
     }
   }
 
@@ -69,7 +70,6 @@ export default function HomeDashboard({ players, lastAnalyzedGdid }: HomeDashboa
       <GameList
         players={playerOptions}
         onSelectGame={handleSelectGame}
-        lastAnalyzedGdid={lastAnalyzedGdid}
         minDate={minDate}
       />
     </div>

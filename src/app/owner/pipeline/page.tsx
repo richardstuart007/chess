@@ -561,7 +561,7 @@ export default function PipelinePage() {
             options={recentRunIds.map(id => `Run #${id}`)}
             value={selectedRunId != null ? `Run #${selectedRunId}` : ''}
             onChange={e => handleSelectRunId(parseInt(e.target.value.replace('Run #', ''), 10))}
-            overrideClass='w-28'
+            overrideClass='w-28 h-6 md:h-6'
           />
           <MyButton onClick={doRefreshRuns} disabled={runsLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{runsLoading ? '…' : '↻'}</MyButton>
         </div>

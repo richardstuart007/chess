@@ -12,9 +12,8 @@ const SECTIONS = [
 ] as const
 
 //
-//  Explicitly enumerated (not "forward the whole query string") because ?highlight= already
-//  lives in the URL on / and /openings as a page-specific, one-time "just analyzed this game"
-//  signal — blindly forwarding it would leak it into unrelated tabs.
+//  Explicitly enumerated (not "forward the whole query string") — a page-specific param that
+//  isn't meant to be shared globally would otherwise leak into unrelated tabs.
 //
 const GLOBAL_FILTER_KEYS = ['player', 'timeClass', 'dateFrom', 'opening', 'eco']
 

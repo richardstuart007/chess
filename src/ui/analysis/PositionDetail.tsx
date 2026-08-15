@@ -1,18 +1,19 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
-import { saveBackNav } from 'nextjs-shared/useBackNav'
 import { useTabQueryState } from 'nextjs-shared/useTabQueryState'
 import MyBox from 'nextjs-shared/MyBox'
 import AppTab from '@/src/ui/AppTab'
+import BackButton from '@/src/ui/BackButton'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, MoveRow, EvaluationRow } from '@/src/lib/analysis/chessdb'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
-import { BACK_KEY, POSITION_BOARD_SIZE_PX } from '@/src/lib/constants'
+import { pushBackTarget } from '@/src/lib/backNav'
+import { POSITION_BOARD_SIZE_PX } from '@/src/lib/constants'
 
 interface GameHit {
   player:       string
@@ -48,6 +49,8 @@ export default function PositionDetail({
   games
 }: PositionDetailProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [tab,          setTab]          = useTabQueryState('tab', 'moves')
   const [selectedMove, setSelectedMove] = useTabQueryState('move', '')
 
@@ -99,7 +102,10 @@ export default function PositionDetail({
     <div className="max-w-5xl p-4 space-y-3">
       <MyBox>
         <div className="flex items-center justify-between">
-          <MyBackHomeNav backPath='/habits' />
+          <div className="flex gap-3">
+            <MyBackHomeNav />
+            <BackButton fallback="/habits" />
+          </div>
         </div>
       </MyBox>
 
@@ -252,8 +258,9 @@ export default function PositionDetail({
                           className={canClick ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}
                           onClick={() => {
                             if (!canClick) return
-                            saveBackNav(BACK_KEY)
-                            router.push(`/analyze?game=${g.gdid}&user=${g.player}`)
+                            const qs = searchParams.toString()
+                            pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
+                            router.push(`/analyze?game=${g.gdid}&player=${g.player}`)
                           }}
                         >
                           <td className="py-1.5 pr-3 whitespace-nowrap text-xs text-gray-500">

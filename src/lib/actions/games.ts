@@ -28,7 +28,6 @@ export type GameEvalRow = {
 
 const GAMES_TABLE = 'tgr_gamesraw'
 const DECON_TABLE = 'tgd_gamesdecon'
-const SAVED_TABLE = 'tsa_savedanalyses'
 
 // -----------------------------------------------------------------------
 // Games
@@ -170,81 +169,20 @@ export async function getGameEvals(gdid: number): Promise<GameEvalRow[]> {
 //  before this move, unrelated to a resulting-position evaluation. Mirrors
 //  upgradePositionEvaluation's guard/pattern for teva_evaluations.
 //----------------------------------------------------------------------------------
-export async function upgradeGameEval(gdid: number, ply: number, cp: number, depth: number): Promise<boolean> {
+export async function upgradeGameEval(gdid: number, ply: number, cp: number, depth: number, cpChange: number): Promise<boolean> {
   const updated = await table_query({
     caller: 'upgradeGameEval_update',
     table: 'tgev_game_evals',
     query: `
       UPDATE tgev_game_evals
-      SET gev_cp = $1, gev_depth = $2
+      SET gev_cp = $1, gev_depth = $2, gev_cp_change = $5
       WHERE gev_gdid = $3 AND gev_ply = $4 AND gev_depth < $2
       RETURNING gev_gdid
     `,
-    params: [cp, depth, gdid, ply],
+    params: [cp, depth, gdid, ply, cpChange],
     isupdate: true
   })
   return updated.length > 0
-}
-
-// -----------------------------------------------------------------------
-// Saved Analyses
-// -----------------------------------------------------------------------
-
-export async function saveAnalysisLine(data: {
-  game_id?: number
-  title: string
-  notes?: string
-  line_pgn: string
-  line_moves: object[]
-  starting_fen: string
-  starting_ply: number
-  eco_code?: string
-  opening_name?: string
-}) {
-  return table_write({
-    caller: 'saveAnalysisLine',
-    table: SAVED_TABLE,
-    columnValuePairs: [
-      { column: 'sa_gdid', value: data.game_id ?? 0 },
-      { column: 'sa_save_type', value: 'line' },
-      { column: 'sa_title', value: data.title },
-      { column: 'sa_notes', value: data.notes ?? '' },
-      { column: 'sa_line_pgn', value: data.line_pgn },
-      { column: 'sa_line_moves', value: JSON.stringify(data.line_moves) },
-      { column: 'sa_starting_fen', value: truncateFen(data.starting_fen) },
-      { column: 'sa_starting_ply', value: data.starting_ply },
-      { column: 'sa_eco_code', value: data.eco_code ?? '' },
-      { column: 'sa_opening_name', value: data.opening_name ?? '' }
-    ]
-  })
-}
-
-export async function saveAnalysisTree(data: {
-  game_id?: number
-  title: string
-  notes?: string
-  tree_data: object
-}) {
-  return table_write({
-    caller: 'saveAnalysisTree',
-    table: SAVED_TABLE,
-    columnValuePairs: [
-      { column: 'sa_gdid', value: data.game_id ?? 0 },
-      { column: 'sa_save_type', value: 'full_tree' },
-      { column: 'sa_title', value: data.title },
-      { column: 'sa_notes', value: data.notes ?? '' },
-      { column: 'sa_tree_data', value: JSON.stringify(data.tree_data) }
-    ]
-  })
-}
-
-export async function getSavedAnalyses(gdid: number) {
-  return table_fetch({
-    caller: 'getSavedAnalyses',
-    table: SAVED_TABLE,
-    whereColumnValuePairs: [{ column: 'sa_gdid', value: gdid }],
-    orderBy: 'sa_id DESC'
-  })
 }
 
 // -----------------------------------------------------------------------
@@ -279,6 +217,7 @@ import type { Filter } from 'nextjs-shared/structures'
 import { GAMES_ITEMS_PER_PAGE, TERMINATION_CHART_TYPES } from '../constants'
 
 export type GameFilters = {
+  gdid?: number
   opponent?: string
   opponentRatingMin?: number
   opponentRatingMax?: number
@@ -301,6 +240,9 @@ function buildFilters(players: string[], filters: GameFilters): Filter[] {
       ? [{ column: 'gd_player', operator: 'IN', value: lowered }]
       : [{ column: 'gd_player', operator: '=', value: lowered[0] }]
 
+  if (filters.gdid) {
+    result.push({ column: 'gd_gdid', operator: '=', value: filters.gdid })
+  }
   if (filters.opponent) {
     result.push({ column: 'gd_opponent_username', operator: 'LIKE', value: filters.opponent })
   }

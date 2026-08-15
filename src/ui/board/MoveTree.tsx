@@ -57,7 +57,7 @@ function MoveBadge({
     <MyButton
       onClick={onClick}
       data-node-id={node.id}
-      overrideClass={`inline-flex items-center gap-0.5 px-0.5 py-0.5 text-xs font-medium transition-all ${textColor} ${
+      overrideClass={`inline-flex items-center gap-0.5 h-4 md:h-4 px-0.5 text-xs font-medium transition-all ${textColor} ${
         isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
       }`}
     >
@@ -71,11 +71,13 @@ function MoveBadge({
 }
 
 function EvalCell({ node }: { node?: MoveNode }) {
-  if (!node?.evaluation) return <td className='py-0.5 pl-1'></td>
+  if (!node?.evaluation) return <td className='py-px w-20'></td>
   const cp = node.evaluation.cp
+  const depth = node.evaluation.depth
   return (
-    <td className={`py-0.5 pl-1 font-mono text-xxs ${evalColor(cp)}`}>
+    <td className={`py-px w-20 font-mono text-xxs ${evalColor(cp)}`}>
       {formatCp(cp)}
+      <span className='text-gray-400'> ({depth})</span>
     </td>
   )
 }
@@ -126,6 +128,7 @@ function InlineVariation({
             {n.evaluation && (
               <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
                 {formatCp(n.evaluation.cp)}
+                <span className='text-gray-400'> ({n.evaluation.depth})</span>
               </span>
             )}
           </span>
@@ -155,8 +158,8 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
 
     rows.push(
       <tr key={`main-${i}`} className='border-b border-gray-50'>
-        <td className='py-0.5 pr-1 text-gray-400 font-mono text-xs w-8'>{moveNum}.</td>
-        <td className='py-0.5'>
+        <td className='py-px pr-1 text-gray-400 font-mono text-xs w-8'>{moveNum}.</td>
+        <td className='py-px w-20'>
           <MoveBadge
             node={whiteNode}
             isActive={currentNode?.id === whiteNode.id}
@@ -165,7 +168,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
           />
         </td>
         <EvalCell node={whiteNode} />
-        <td className='py-0.5'>
+        <td className='py-px w-20'>
           {blackNode && (
             <MoveBadge
               node={blackNode}
@@ -223,14 +226,14 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
 
   return (
     <div ref={containerRef} className='overflow-y-auto'>
-      <table className='w-full text-xs'>
+      <table className='table-fixed w-[352px] text-xs'>
         <thead>
           <tr className='border-b border-gray-200 text-gray-400'>
             <th className='w-8 pb-1 text-left'>#</th>
-            <th className='pb-1 text-left'>White</th>
-            <th className='pb-1 text-left pl-1'>Eval</th>
-            <th className='pb-1 text-left'>Black</th>
-            <th className='pb-1 text-left pl-1'>Eval</th>
+            <th className='w-20 pb-1 text-left'>White</th>
+            <th className='w-20 pb-1 text-left'>Eval</th>
+            <th className='w-20 pb-1 text-left'>Black</th>
+            <th className='w-20 pb-1 text-left'>Eval</th>
           </tr>
         </thead>
         <tbody>{rows}</tbody>

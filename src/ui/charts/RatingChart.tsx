@@ -280,6 +280,7 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
             .map(([, v]) => v)}
           value={GRAN_LABELS[granularity]}
           onChange={e => setGranularityOverride(GRAN_MAP[e.target.value])}
+          overrideClass='h-6 md:h-6'
         />
       </div>
       <p className='mb-3 text-xxs text-gray-400'>{POINT_DESC[granularity]}</p>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
+import { fetchTotalRows } from 'nextjs-shared/fetchTotalRows'
 import type { Filter } from 'nextjs-shared/structures'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import { MyInput } from 'nextjs-shared/MyInput'
@@ -39,6 +40,7 @@ export default function PipelineLogTable() {
   const [rowsPerPage, setRowsPerPage] = useState(PIPELINE_LOG_ROWS_PER_PAGE)
   const [tabledata, setTabledata] = useState<PipelineLogRow[]>([])
   const [totalPages, setTotalPages] = useState<number>(0)
+  const [totalRows, setTotalRows] = useState<number>(0)
   const [message, setMessage] = useState('')
   const [popup, setPopup] = useState<PipelineLogRow | null>(null)
   const prevFilters = useRef({ step: '', stepName: '', run: '' })
@@ -87,6 +89,13 @@ export default function PipelineLogTable() {
         skipCache: true
       })
       setTotalPages(fetchedTotalPages)
+      const fetchedTotalRows = await fetchTotalRows({
+        caller: functionName,
+        table,
+        filters,
+        skipCache: true
+      })
+      setTotalRows(fetchedTotalRows)
     } catch (error) {
       console.error('Error fetching pipeline log:', error)
     }
@@ -190,6 +199,7 @@ export default function PipelineLogTable() {
               rowsPerPage={rowsPerPage}
               setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
               rowsOptions={PIPELINE_LOG_ROWS_OPTIONS}
+              totalRows={totalRows}
             />
           </div>
         </div>

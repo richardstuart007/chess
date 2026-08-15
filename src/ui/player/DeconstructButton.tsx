@@ -53,6 +53,7 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
             options={['10', '50', '100', '500', '1000', 'All']}
             value={limit}
             onChange={e => setLimit(e.target.value)}
+            overrideClass='h-6 md:h-6'
           />
           <MyButton
             onClick={handlePopulate}

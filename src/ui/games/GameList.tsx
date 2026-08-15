@@ -21,7 +21,7 @@ import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilt
 import {
   GAME_LIST_ROWS_DEFAULT, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX,
   WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
-  WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
+  WIDTH_GAME_NUMBER, WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
 
 interface PlayerOption {
@@ -32,7 +32,6 @@ interface PlayerOption {
 interface GameListProps {
   players: PlayerOption[]
   onSelectGame: (game: ChessComGame, player: string) => void
-  lastAnalyzedGdid?: number
   minDate?: string
 }
 
@@ -49,7 +48,7 @@ function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
-export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minDate }: GameListProps) {
+export default function GameList({ players, onSelectGame, minDate }: GameListProps) {
   const searchParams = useSearchParams()
 
   //
@@ -189,7 +188,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
       const next = { ...prev }
       if (value === '' || value === undefined) {
         delete next[key]
-      } else if (key === 'opponentRatingMin' || key === 'opponentRatingMax') {
+      } else if (key === 'opponentRatingMin' || key === 'opponentRatingMax' || key === 'gdid') {
         (next as any)[key] = parseInt(value, 10) || undefined
       } else {
         (next as any)[key] = value
@@ -327,8 +326,9 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
           <thead>
             <tr className='text-gray-500'>
               <th className='pb-1 pr-2 text-gray-400'>#</th>
-              <th className='pb-1 pr-2'>Date</th>
               <th className='pb-1 pr-2'>Player</th>
+              <th className='pb-1 pr-2'>Date</th>
+              <th className='pb-1 pr-2 text-gray-400'>Game #</th>
               <th className='pb-1 pr-2 text-center'>Color</th>
               <th className='pb-1 pr-2 text-center'>Time</th>
               <th className='pb-1 pr-2'>Opponent</th>
@@ -343,6 +343,12 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
             <tr>
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
+                <FilterPlayerSelect
+                  players={players.map(p => ({ player: p.player, display_name: p.displayName }))}
+                  label=''
+                />
+              </th>
+              <th className='pb-2 pr-2'>
                 <FilterDateInput
                   value={draftDateFrom}
                   onChange={setDraftDateFrom}
@@ -353,9 +359,10 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
                 />
               </th>
               <th className='pb-2 pr-2'>
-                <FilterPlayerSelect
-                  players={players.map(p => ({ player: p.player, display_name: p.displayName }))}
-                  label=''
+                <FilterTextInput
+                  value={draftFilters.gdid != null ? String(draftFilters.gdid) : ''}
+                  onChange={v => updateFilter('gdid', v)}
+                  width={WIDTH_GAME_NUMBER}
                 />
               </th>
               <th className='pb-2 pr-2'>
@@ -443,12 +450,12 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={13} className='py-4 text-center text-xs text-gray-500'>Loading...</td>
+                <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>Loading...</td>
               </tr>
             )}
             {!loading && games.length === 0 && (
               <tr>
-                <td colSpan={13} className='py-4 text-center text-xs text-gray-500'>
+                <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>
                   No games found. Try adjusting your filters or populate games first.
                 </td>
               </tr>
@@ -466,12 +473,13 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
               return (
                 <tr
                   key={row.gd_gdid}
-                  className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50 ${row.gd_gdid === lastAnalyzedGdid ? 'bg-yellow-50 outline outline-1 outline-yellow-300' : ''}`}
+                  className='cursor-pointer border-b border-gray-100 hover:bg-blue-50'
                   onClick={() => handleSelectGame(row)}
                 >
                   <td className='py-1.5 pr-2 text-gray-400 tabular-nums'>{gameNumber}</td>
-                  <td className='py-1.5 pr-2 whitespace-nowrap'>{dateStr}</td>
                   <td className='py-1.5 pr-2'>{row.gd_player}</td>
+                  <td className='py-1.5 pr-2 whitespace-nowrap'>{dateStr}</td>
+                  <td className='py-1.5 pr-2 text-gray-400 tabular-nums'>{row.gd_gdid}</td>
                   <td className='py-1.5 pr-2'>
                     <ColorSwatch color={row.gd_player_color} />
                   </td>
@@ -523,6 +531,7 @@ export default function GameList({ players, onSelectGame, lastAnalyzedGdid, minD
             setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
             rowsOptions={GAME_LIST_ROWS_OPTIONS}
             overrideClass='flex-1'
+            totalRows={totalCount}
           />
         )}
       </div>

@@ -18,6 +18,8 @@ export interface ChessComGame {
     rating: number
     result: string
   }
+  termination?: string | null
+  finalEval?: number | null
 }
 
 export async function fetchRecentGames(
