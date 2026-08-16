@@ -15,7 +15,8 @@ import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
 import { saveGameEvaluations, upgradeGameEval } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
-import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
+import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
+import { MOVE_COUNT_MIN_MOVE, MASTERS_EXPLORER_MIN_RATING } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -171,6 +172,8 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const [positionGames, setPositionGames] = useState<PositionGameHit[]>([])
   const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
   const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
+  const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
+  const [mastersMinRating, setMastersMinRating] = useState(MASTERS_EXPLORER_MIN_RATING)
 
   // Display chess instance
   const displayGame = useRef(new Chess())
@@ -279,6 +282,24 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
 
     return () => { cancelled = true }
   }, [currentNode, tree, player])
+
+  // -----------------------------------------------------------------------
+  // Masters — master-level game stats for whatever position is currently on the
+  // board, from the Lichess Masters Opening Explorer (live fetch, no DB storage).
+  // Loads automatically on every position change, same trigger as Moves From
+  // This Position above.
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    const fen = currentNode?.fen ?? tree?.root.fen
+    if (!fen) { setMastersData(null); return }
+    let cancelled = false
+
+    getMastersExplorer(fen).then(data => {
+      if (!cancelled) setMastersData(data)
+    }).catch(() => { if (!cancelled) setMastersData(null) })
+
+    return () => { cancelled = true }
+  }, [currentNode, tree])
 
   // -----------------------------------------------------------------------
   // Games From This Position — this player's own games that reached whatever
@@ -1250,6 +1271,129 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                   </tbody>
                 </table>
               </div>
+            )}
+          </MyBox>
+
+          {/* Masters — master-level game stats for whatever position is currently on the
+              board, from the Lichess Masters Opening Explorer. Separate panel from
+              "Moves From This Position" (not merged) — showing all fields the API
+              returns; whether to merge later is a follow-up decision. */}
+          <MyBox title={`Masters — ${currentMoveLabel}`}>
+            {!mastersData || mastersData.moves.length === 0 ? (
+              <p className='text-xs text-gray-400'>No master games recorded from this position.</p>
+            ) : (
+              (() => {
+                const total = mastersData.white + mastersData.draws + mastersData.black
+                return (
+                  <div className='space-y-2'>
+                    <p className='text-xxs text-gray-500'>
+                      {total.toLocaleString()} master games
+                      {' · '}White {total > 0 ? Math.round((mastersData.white / total) * 100) : 0}%
+                      {' / '}Draw {total > 0 ? Math.round((mastersData.draws / total) * 100) : 0}%
+                      {' / '}Black {total > 0 ? Math.round((mastersData.black / total) * 100) : 0}%
+                    </p>
+                    <div className='overflow-x-auto'>
+                      <table className='w-full text-xs'>
+                        <thead>
+                          <tr className='text-left text-gray-500 border-b border-gray-200'>
+                            <th className='py-1 pr-2'>Move</th>
+                            <th className='py-1 pr-2 text-right'>Games</th>
+                            <th className='py-1 pr-2 text-right'>White%</th>
+                            <th className='py-1 pr-2 text-right'>Draw%</th>
+                            <th className='py-1 pr-2 text-right'>Black%</th>
+                            <th className='py-1 text-right'>Avg Rating</th>
+                          </tr>
+                        </thead>
+                        <tbody className='divide-y divide-gray-100'>
+                          {mastersData.moves.map(m => {
+                            const games = m.white + m.draws + m.black
+                            return (
+                              <tr key={m.uci}>
+                                <td className='py-1 pr-2 font-mono font-medium'>{m.san}</td>
+                                <td className='py-1 pr-2 text-right tabular-nums'>{games.toLocaleString()}</td>
+                                <td className='py-1 pr-2 text-right tabular-nums text-green-700'>
+                                  {games > 0 ? Math.round((m.white / games) * 100) : 0}%
+                                </td>
+                                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>
+                                  {games > 0 ? Math.round((m.draws / games) * 100) : 0}%
+                                </td>
+                                <td className='py-1 pr-2 text-right tabular-nums text-red-600'>
+                                  {games > 0 ? Math.round((m.black / games) * 100) : 0}%
+                                </td>
+                                <td className='py-1 text-right tabular-nums'>{m.averageRating}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {mastersData.topGames.length > 0 && (() => {
+                      const filteredTopGames = mastersData.topGames.filter(
+                        g => g.white.rating >= mastersMinRating && g.black.rating >= mastersMinRating
+                      )
+                      return (
+                        <div className='space-y-1'>
+                          <div className='flex items-center justify-between'>
+                            <p className='text-xxs text-gray-400'>Top games</p>
+                            <div className='flex items-center gap-1'>
+                              <span className='text-xxs text-gray-500'>Min rating</span>
+                              <MyInput
+                                type='number'
+                                value={mastersMinRating}
+                                onChange={e => setMastersMinRating(e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
+                                overrideClass='w-16 h-6 md:h-6'
+                              />
+                            </div>
+                          </div>
+                          <p className='text-xxs text-gray-400'>
+                            Filters Top Games only — the move table above always covers the full Masters
+                            database (FIDE 2200+), which the API doesn't break down by rating.
+                          </p>
+                          {filteredTopGames.length === 0 ? (
+                            <p className='text-xs text-gray-400'>No Top Games at or above {mastersMinRating}.</p>
+                          ) : (
+                            <div className='overflow-x-auto'>
+                              <table className='w-full text-xs'>
+                                <thead>
+                                  <tr className='text-left text-gray-500 border-b border-gray-200'>
+                                    <th className='py-1 pr-2'>White</th>
+                                    <th className='py-1 pr-2'>Black</th>
+                                    <th className='py-1 pr-2 text-right'>Year</th>
+                                    <th className='py-1 pr-2 text-center'>Result</th>
+                                    <th className='py-1 text-right'>Game</th>
+                                  </tr>
+                                </thead>
+                                <tbody className='divide-y divide-gray-100'>
+                                  {filteredTopGames.map((g, i) => (
+                                    <tr key={i}>
+                                      <td className='py-1 pr-2'>{g.white.name} <span className='text-gray-400'>({g.white.rating})</span></td>
+                                      <td className='py-1 pr-2'>{g.black.name} <span className='text-gray-400'>({g.black.rating})</span></td>
+                                      <td className='py-1 pr-2 text-right tabular-nums'>{g.year}</td>
+                                      <td className='py-1 pr-2 text-center'>
+                                        {g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½'}
+                                      </td>
+                                      <td className='py-1 text-right'>
+                                        <a
+                                          href={`https://lichess.org/${g.id}`}
+                                          target='_blank'
+                                          rel='noopener noreferrer'
+                                          className='text-blue-600 hover:underline'
+                                        >
+                                          view
+                                        </a>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )
+              })()
             )}
           </MyBox>
 

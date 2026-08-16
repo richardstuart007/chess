@@ -133,6 +133,12 @@ export const STOCKFISH_DEEP_ANALYSIS_DEPTH = 24
 export const STOCKFISH_DEEP_ANALYSIS_MULTIPV = 3
 
 //----------------------------------------------------------------------------------
+//  Masters Explorer (Lichess)
+//----------------------------------------------------------------------------------
+export const MASTERS_EXPLORER_MOVES_LIMIT = 12
+export const MASTERS_EXPLORER_MIN_RATING = 2500
+
+//----------------------------------------------------------------------------------
 //  UI Display
 //----------------------------------------------------------------------------------
 export const VALUE_DISPLAY_MAX_LENGTH = 40

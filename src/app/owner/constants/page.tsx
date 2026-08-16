@@ -72,7 +72,9 @@ import {
   WIDTH_QUALITY,
   WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED,
-  WIDTH_SORT_BY
+  WIDTH_SORT_BY,
+  MASTERS_EXPLORER_MOVES_LIMIT,
+  MASTERS_EXPLORER_MIN_RATING
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -192,6 +194,13 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     entries: [
       { name: 'SESSION_STORAGE_PREFIX', value: SESSION_STORAGE_PREFIX, description: "Project sub-prefix for browser sessionStorage keys — starts with nextjs-shared's umbrella 'rs7_' prefix so these keys are picked up automatically by the Owner page's Session Storage tab (OwnerTableSessionStorage).", consumers: ['GameList.tsx: GameList', 'TerminationChart.tsx: TerminationChart', 'graph/page.tsx (module scope)', 'habits/page.tsx (module scope)', 'OpeningScoreChart.tsx: OpeningScoreChart'] }
     ]
+  },
+  {
+    heading: 'Masters Explorer (Lichess)',
+    entries: [
+      { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] },
+      { name: 'MASTERS_EXPLORER_MIN_RATING', value: MASTERS_EXPLORER_MIN_RATING, description: "Default minimum player rating for the Masters panel's Top Games filter (user-overridable in the panel) — approximates grandmaster level, since the Masters database itself is FIDE 2200+, not GM-specific.", consumers: ['ChessBoardView.tsx: ChessBoardView'] }
+    ]
   }
 ]
 
@@ -298,6 +307,12 @@ export default function ConstantsPage() {
       heading: 'Stockfish Binary',
       entries: [
         { name: 'STOCKFISH_PATH', value: process.env.STOCKFISH_PATH, description: 'Filesystem path to the native Stockfish binary used for server-side game/position enrichment.', consumers: ['src/lib/analysis/enrichPositionsStockfish.ts'] }
+      ]
+    },
+    {
+      heading: 'Lichess Masters Opening Explorer',
+      entries: [
+        { name: 'LICHESS_API_TOKEN', value: process.env.LICHESS_API_TOKEN, description: 'Personal Lichess API token (Bearer auth), required since Lichess locked the Opening Explorer behind authentication in March 2026.', consumers: ['lichess.ts: getMastersExplorer'] }
       ]
     }
   ]
