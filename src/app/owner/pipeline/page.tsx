@@ -52,7 +52,7 @@ const JOB_GROUPS: {
       { subStep: 'b', label: 'Backfill tgam ids' },
     ] },
   { step: 4, groupLabel: 'Purge Stale Positions', subJobs: [
-      { subStep: 'a', label: 'Purge teva_evaluations' },
+      { subStep: 'a', label: 'Purge tpose_positions_eval' },
       { subStep: 'b', label: 'Purge tgam_game_positions' },
       { subStep: 'c', label: 'Purge tpos_positions' },
       { subStep: 'd', label: 'Purge tgd_gamesdecon guard' },
@@ -106,8 +106,8 @@ const SQL_STATUS_3B =
 
 const SQL_STATUS_4 =
 `SELECT COUNT(*) AS remaining FROM tpos_positions p
-LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-WHERE e.eva_evaid IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP};`
+LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
+WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP};`
 
 const SQL_STATUS_CP =
 `SELECT COUNT(*) AS pending
@@ -148,9 +148,9 @@ const SQL_STATUS_DEEPEN_POPULAR =
   END AS tier,
   COUNT(*) AS remaining
 FROM tpos_positions p
-JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
+JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
 WHERE p.pos_reached >= 10
-  AND e.eva_depth < CASE
+  AND e.pose_depth < CASE
     WHEN p.pos_reached >= 50 THEN 30
     WHEN p.pos_reached >= 30 THEN 24
     WHEN p.pos_reached >= 10 THEN 22
@@ -797,9 +797,9 @@ export default function PipelinePage() {
                   <MyHelpStep
                     title='4. Purge Stale Positions'
                     input={['tpos_positions — pos_reached <= MIN_REACH_TO_KEEP, all occurrences older than PURGE_REACH_GRACE_DAYS']}
-                    processing='Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions rows whose own before-position is a candidate (full delete) or whose resulting-position is a candidate (just nulls that reference, keeps the row), then tpos_positions itself. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows — resurrection guard so Build Game Positions never reprocesses a purged game. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see .claude/CLAUDE.md.'
+                    processing='Deletes low-value positions once they age past the grace period without repeating: tpose_positions_eval, then tgam_game_positions rows whose own before-position is a candidate (full delete) or whose resulting-position is a candidate (just nulls that reference, keeps the row), then tpos_positions itself. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows — resurrection guard so Build Game Positions never reprocesses a purged game. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see .claude/CLAUDE.md.'
                     output={[
-                      'teva_evaluations / tgam_game_positions / tpos_positions — rows removed',
+                      'tpose_positions_eval / tgam_game_positions / tpos_positions — rows removed',
                       'tgd_gamesdecon.gd_positions_purged — set true on emptied games',
                     ]}
                     consumers={[
@@ -833,9 +833,9 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='5. Evaluate Positions'
-                    input={['tpos_positions — unique FEN positions not yet in teva_evaluations, pos_reached > MIN_REACH_TO_KEEP']}
+                    input={['tpos_positions — unique FEN positions not yet in tpose_positions_eval, pos_reached > MIN_REACH_TO_KEEP']}
                     processing="Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (they're purge candidates, so evaluating them risks wasted work). Normalises the centipawn score to white's perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions across all history get evaluated first regardless of when they occurred. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-positions). Uses the native Stockfish binary on the server (faster than browser WASM, no tab required)."
-                    output={['teva_evaluations — one row per position: centipawn score (white perspective), best move (UCI notation), search depth']}
+                    output={['tpose_positions_eval — one row per position: centipawn score (white perspective), best move (UCI notation), search depth']}
                     consumers={[
                       'Habits / Quiz pages — use CP scores and best moves for drill data',
                     ]}
@@ -868,7 +868,7 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='6. Update CP Change'
-                    input={['tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a teva_evaluations row']}
+                    input={['tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a tpose_positions_eval row']}
                     processing="Computes gam_cp_change (centipawn loss from the tracked player's perspective) for each move once both its before and after positions have been evaluated. Scoped to gam_cp_change IS NULL — never re-touches already-computed rows. Decoupled from Evaluate Positions so it has its own trigger and status; also runs unattended via its own scheduled cron (/api/analysis/update-cp-change)."
                     output={['tgam_game_positions.gam_cp_change — per-move centipawn loss, computed']}
                     consumers={[
@@ -971,11 +971,11 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='9. Deepen Popular Positions'
-                    input={['tpos_positions/teva_evaluations — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current eva_depth']}
+                    input={['tpos_positions/tpose_positions_eval — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current pose_depth']}
                     processing="Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: reach >= 50 -> depth 30, >= 30 -> depth 24, >= 10 -> depth 22. Each qualifying position is re-evaluated at its own tier's depth (not one uniform depth for the whole batch), then merged via upgradePositionEvaluation — the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions)."
-                    output={['teva_evaluations — eva_cp/eva_best_move/eva_depth upgraded for qualifying positions; tgam_game_positions.gam_cp_change recomputed for affected rows']}
+                    output={['tpose_positions_eval — pose_cp/pose_best_move/pose_depth upgraded for qualifying positions; tgam_game_positions.gam_cp_change recomputed for affected rows']}
                     consumers={[
-                      'Every teva_evaluations reader benefits — Moves From This Position, Position Detail, Habits eval',
+                      'Every tpose_positions_eval reader benefits — Moves From This Position, Position Detail, Habits eval',
                     ]}
                   />
                 </td>

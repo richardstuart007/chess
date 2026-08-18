@@ -53,9 +53,9 @@ const STEPS = [
       'tpos_positions — positions with pos_reached <= MIN_REACH_TO_KEEP whose occurrences are all older than PURGE_REACH_GRACE_DAYS',
     ],
     processing:
-      'Deletes low-value positions once they age past the grace period without repeating: teva_evaluations, then tgam_game_positions (dual-reference rule — full delete only when the before-position is in scope, else just null the resulting reference), then the tpos_positions rows themselves. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows, so Build Game Positions never mistakes a purged game for an unprocessed one. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see project .claude/CLAUDE.md.',
+      'Deletes low-value positions once they age past the grace period without repeating: tpose_positions_eval, then tgam_game_positions (dual-reference rule — full delete only when the before-position is in scope, else just null the resulting reference), then the tpos_positions rows themselves. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows, so Build Game Positions never mistakes a purged game for an unprocessed one. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see project .claude/CLAUDE.md.',
     output: [
-      'teva_evaluations / tgam_game_positions / tpos_positions — rows removed',
+      'tpose_positions_eval / tgam_game_positions / tpos_positions — rows removed',
       'tgd_gamesdecon.gd_positions_purged — set true on emptied games (resurrection guard)',
     ],
   },
@@ -63,19 +63,19 @@ const STEPS = [
     num: '5',
     title: 'Evaluate Positions',
     input: [
-      'tpos_positions — unique FEN positions not yet in teva_evaluations, pos_reached > MIN_REACH_TO_KEEP',
+      'tpos_positions — unique FEN positions not yet in tpose_positions_eval, pos_reached > MIN_REACH_TO_KEEP',
     ],
     processing:
       'Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (purge candidates — evaluating them risks wasted work). Normalises the centipawn score to white\'s perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions get evaluated first regardless of when they occurred. Run in batches; repeat until processed = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-positions).',
     output: [
-      'teva_evaluations — one row per position: centipawn score (white perspective), best move (UCI), search depth',
+      'tpose_positions_eval — one row per position: centipawn score (white perspective), best move (UCI), search depth',
     ],
   },
   {
     num: '6',
     title: 'Update CP Change',
     input: [
-      'tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a teva_evaluations row',
+      'tgam_game_positions — gam_cp_change still NULL, whose before/after positions both now have a tpose_positions_eval row',
     ],
     processing:
       "Computes gam_cp_change (centipawn loss from the tracked player's perspective) for each move once both its before and after positions have been evaluated. Scoped to gam_cp_change IS NULL — never re-touches already-computed rows. Decoupled from Evaluate Positions (own trigger, own status). Also runs unattended via its own scheduled cron (/api/analysis/update-cp-change).",
@@ -102,7 +102,7 @@ const STEPS = [
       'tgd_gamesdecon — games whose gd_final_eval is still NULL, latest games (gd_gdid DESC) first',
     ],
     processing:
-      "Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE. Phase 1: an exact-FEN lookup against the already-evaluated position tree (tpos_positions/teva_evaluations) reuses that eval for free when the game ended within the tracked move range — common for quick checkmates/resignations. Phase 2: whatever's left gets a fresh Stockfish evaluation, normalized to white's perspective, spread across GAME_ENDINGS_CONCURRENCY concurrent engine instances when running the native binary (real parallelism); the WASM path stays single-instance since lite-single has no worker-thread offload. Independent of tpos_positions/tgam_game_positions as a write target: reads and writes tgd_gamesdecon directly. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings).",
+      "Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE. Phase 1: an exact-FEN lookup against the already-evaluated position tree (tpos_positions/tpose_positions_eval) reuses that eval for free when the game ended within the tracked move range — common for quick checkmates/resignations. Phase 2: whatever's left gets a fresh Stockfish evaluation, normalized to white's perspective, spread across GAME_ENDINGS_CONCURRENCY concurrent engine instances when running the native binary (real parallelism); the WASM path stays single-instance since lite-single has no worker-thread offload. Independent of tpos_positions/tgam_game_positions as a write target: reads and writes tgd_gamesdecon directly. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings).",
     output: [
       "tgd_gamesdecon.gd_final_eval — Stockfish evaluation (white perspective) of each game's actual final position",
     ],
@@ -111,12 +111,12 @@ const STEPS = [
     num: '9',
     title: 'Deepen Popular Positions',
     input: [
-      'tpos_positions/teva_evaluations — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current eva_depth',
+      'tpos_positions/tpose_positions_eval — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current pose_depth',
     ],
     processing:
       "Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: pos_reached >= 50 -> depth 30, >= 30 -> depth 24, >= 10 -> depth 22. Each qualifying position is re-evaluated at its own tier's depth — not one uniform depth for the whole batch, since different rows can qualify for different tiers — then merged via upgradePositionEvaluation, the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions).",
     output: [
-      'teva_evaluations — eva_cp/eva_best_move/eva_depth upgraded for qualifying positions',
+      'tpose_positions_eval — pose_cp/pose_best_move/pose_depth upgraded for qualifying positions',
       'tgam_game_positions.gam_cp_change — recomputed for rows touching an upgraded position',
     ],
   },
@@ -128,7 +128,7 @@ const ROW_COUNT_SQL =
   UNION ALL SELECT 2, 'tgd_gamesdecon',         COUNT(*) FROM tgd_gamesdecon
   UNION ALL SELECT 3, 'tpos_positions',         COUNT(*) FROM tpos_positions
   UNION ALL SELECT 4, 'tgam_game_positions',    COUNT(*) FROM tgam_game_positions
-  UNION ALL SELECT 5, 'teva_evaluations',       COUNT(*) FROM teva_evaluations
+  UNION ALL SELECT 5, 'tpose_positions_eval',       COUNT(*) FROM tpose_positions_eval
   UNION ALL SELECT 6, 'thab_habits',            COUNT(*) FROM thab_habits
 ) t ORDER BY ord;`
 

@@ -319,7 +319,7 @@ function TgamGamePositionsSection() {
         <li>
           <em>CP-change backfill (<Code>bulkUpdateCpLoss</Code>)</em> — separate pipeline stage,
           own cron step. Fills <Code>gam_cp_change</Code> once both the before and after position
-          have a <Code>teva_evaluations</Code> row.
+          have a <Code>tpose_positions_eval</Code> row.
         </li>
       </ol>
 
@@ -336,7 +336,7 @@ function TgamGamePositionsSection() {
         <Code>chessdb.ts</Code> — <Code>getMovesForPosition</Code>/
         <Code>getMoveSummaryForPosition</Code> query <Code>tgam_game_positions</Code> directly and
         live for per-move win/loss/CP breakdowns (<Code>mov_wins</Code>, <Code>mov_losses</Code>,{' '}
-        <Code>eva_cp</Code> — the resulting position&apos;s own Stockfish eval, looked up
+        <Code>pose_cp</Code> — the resulting position&apos;s own Stockfish eval, looked up
         directly via <Code>gam_resulting_pos_id</Code>, not averaged). Used by the Position Detail
         page&apos;s &quot;Your Moves&quot; tab and the Analyze page&apos;s &quot;Moves From This
         Position&quot; panel — not the Habits page itself, which reads the separate materialized{' '}
@@ -512,7 +512,7 @@ function PurgeSection() {
           candidate&apos;s eligibility depends on which other candidates are in the same batch)
         </li>
         <li>
-          Delete - <Code>teva_evaluations</Code> → <Code>tgam_game_positions</Code> full-deleted
+          Delete - <Code>tpose_positions_eval</Code> → <Code>tgam_game_positions</Code> full-deleted
           where <Code>gam_pos_id</Code> is a candidate → <Code>tgam_game_positions.gam_resulting_pos_id</Code>{' '}
           nulled out (row kept) where only that side is a candidate → stamp{' '}
           <Code>tgd_gamesdecon.gd_positions_purged</Code> on emptied games → <Code>tpos_positions</Code>
@@ -521,7 +521,7 @@ function PurgeSection() {
 
       <h4 className={H4}>Output</h4>
       <p className={P}>
-        Rows removed from <Code>teva_evaluations</Code>, <Code>tgam_game_positions</Code>,{' '}
+        Rows removed from <Code>tpose_positions_eval</Code>, <Code>tgam_game_positions</Code>,{' '}
         <Code>tpos_positions</Code>. <Code>tgam_game_positions.gam_resulting_pos_id</Code> nulled
         out (row kept) on rows whose before-position wasn&apos;t a candidate.{' '}
         <Code>tgd_gamesdecon.gd_positions_purged</Code> set true on any game left with zero{' '}
@@ -574,9 +574,9 @@ function PurgeSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TevaEvaluationsSection
+//  PoseEvaluationsSection
 //----------------------------------------------------------------------------------------------
-function TevaEvaluationsSection() {
+function PoseEvaluationsSection() {
   return (
     <div>
       <h4 className={H4}>Purpose</h4>
@@ -604,7 +604,7 @@ function TevaEvaluationsSection() {
 
       <h4 className={H4}>Output</h4>
       <p className={P}>
-        <Code>teva_evaluations</Code> — one row per position (<Code>eva_pos_id</Code> unique,
+        <Code>tpose_positions_eval</Code> — one row per position (<Code>pose_pos_id</Code> unique,
         upserted so re-runs are safe): centipawn score, best move (UCI). No search depth is
         actually stored, despite what the <Code>/owner/pipeline</Code> help text says.
       </p>
@@ -663,7 +663,7 @@ function BulkUpdateCpLossSection() {
       </p>
 
       <h4 className={H4}>Input</h4>
-      <p className={P}><Code>teva_evaluations</Code></p>
+      <p className={P}><Code>tpose_positions_eval</Code></p>
 
       <h4 className={H4}>Processing</h4>
       <p className={P}>
@@ -685,7 +685,7 @@ function BulkUpdateCpLossSection() {
       <ul className={UL}>
         <li>
           Only fires once both <Code>gam_pos_id</Code> and <Code>gam_resulting_pos_id</Code> have
-          a <Code>teva_evaluations</Code> row — a move whose after-position never gets evaluated
+          a <Code>tpose_positions_eval</Code> row — a move whose after-position never gets evaluated
           (e.g. reach too low) keeps <Code>gam_cp_change</Code> permanently <Code>NULL</Code>.
         </li>
         <li>
@@ -761,7 +761,7 @@ function ThabHabitsSection() {
         <Code>thab_habits</Code> directly. The Bad/Good quality filter (default Bad) reads{' '}
         <Code>hab_move_cp</Code>&apos;s sign; default sort is <Code>ABS(hab_move_cp) DESC</Code>{' '}
         (&quot;Biggest impact first&quot;). The displayed &quot;Eval&quot; column comes from a
-        join through <Code>hab_resulting_pos_id</Code> → <Code>teva_evaluations.eva_cp</Code> —
+        join through <Code>hab_resulting_pos_id</Code> → <Code>tpose_positions_eval.pose_cp</Code> —
         never <Code>hab_move_cp</Code> itself.
       </p>
 
@@ -820,9 +820,9 @@ function EvaluateGameEndingsSection() {
         <li>Replay - chess.js replays each game&apos;s full <Code>gd_pgn</Code> to its true final position (no move cap)</li>
         <li>
           Reuse (Phase 1) - one batched exact-FEN lookup against{' '}
-          <Code>tpos_positions</Code>/<Code>teva_evaluations</Code> for the whole run; if a
+          <Code>tpos_positions</Code>/<Code>tpose_positions_eval</Code> for the whole run; if a
           game&apos;s final position is already tracked/evaluated (common for games ending within
-          the first <Code>MAX_ANALYSIS_MOVE</Code> moves), its <Code>eva_cp</Code> is copied
+          the first <Code>MAX_ANALYSIS_MOVE</Code> moves), its <Code>pose_cp</Code> is copied
           directly via one batched multi-row <Code>UPDATE</Code> — no Stockfish call
         </li>
         <li>
@@ -886,9 +886,9 @@ function DeepenPopularPositionsSection() {
 
       <h4 className={H4}>Input</h4>
       <p className={P}>
-        <Code>tpos_positions</Code> joined to <Code>teva_evaluations</Code> — positions already
+        <Code>tpos_positions</Code> joined to <Code>tpose_positions_eval</Code> — positions already
         evaluated whose <Code>pos_reached</Code> qualifies for a deeper{' '}
-        <Code>POPULAR_POSITION_DEPTH_TIERS</Code> tier than their current <Code>eva_depth</Code>.
+        <Code>POPULAR_POSITION_DEPTH_TIERS</Code> tier than their current <Code>pose_depth</Code>.
       </p>
 
       <h4 className={H4}>Processing</h4>
@@ -907,7 +907,7 @@ function DeepenPopularPositionsSection() {
         <li>
           Backlog query assigns each candidate row its own qualifying tier&apos;s{' '}
           <Code>target_depth</Code> via a <Code>CASE</Code> expression, filtering to only rows
-          where <Code>eva_depth &lt; target_depth</Code>
+          where <Code>pose_depth &lt; target_depth</Code>
         </li>
         <li>
           Each qualifying position is re-evaluated with Stockfish at <em>its own</em>{' '}
@@ -923,15 +923,15 @@ function DeepenPopularPositionsSection() {
 
       <h4 className={H4}>Output</h4>
       <p className={P}>
-        <Code>teva_evaluations</Code> — <Code>eva_cp</Code>/<Code>eva_best_move</Code>/
-        <Code>eva_depth</Code> upgraded for qualifying positions;{' '}
+        <Code>tpose_positions_eval</Code> — <Code>pose_cp</Code>/<Code>pose_best_move</Code>/
+        <Code>pose_depth</Code> upgraded for qualifying positions;{' '}
         <Code>tgam_game_positions.gam_cp_change</Code> recomputed for rows touching an upgraded
         position (via <Code>upgradePositionEvaluation</Code>&apos;s existing cascade).
       </p>
 
       <h4 className={H4}>Consumers</h4>
       <p className={P}>
-        Every reader of <Code>teva_evaluations</Code> benefits automatically once a position is
+        Every reader of <Code>tpose_positions_eval</Code> benefits automatically once a position is
         upgraded — Moves From This Position, the Analyze page&apos;s Position Detail view, and the
         Habits eval column (joined live via <Code>hab_resulting_pos_id</Code>).
       </p>
@@ -963,7 +963,7 @@ export const SECTIONS: DataflowSection[] = [
   { id: 'tgam_game_positions',      label: 'tgam_game_positions',      content: <TgamGamePositionsSection /> },
   { id: 'tpos_positions',           label: 'tpos_positions',           content: <TposPositionsSection /> },
   { id: 'purge',                    label: 'Purge',                    content: <PurgeSection /> },
-  { id: 'teva_evaluations',         label: 'teva_evaluations',         content: <TevaEvaluationsSection /> },
+  { id: 'tpose_positions_eval',         label: 'tpose_positions_eval',         content: <PoseEvaluationsSection /> },
   { id: 'bulk-update-cp-loss',      label: 'bulkUpdateCpLoss',         content: <BulkUpdateCpLossSection /> },
   { id: 'thab_habits',              label: 'thab_habits',              content: <ThabHabitsSection /> },
   { id: 'evaluate-game-endings',    label: 'Evaluate Game Endings',    content: <EvaluateGameEndingsSection /> },

@@ -35,6 +35,7 @@ import {
   STOCKFISH_BESTLINE_LENGTH,
   STOCKFISH_DEEP_ANALYSIS_DEPTH,
   STOCKFISH_DEEP_ANALYSIS_MULTIPV,
+  STOCKFISH_DEPTH_INPUT_MAX,
   VALUE_DISPLAY_MAX_LENGTH,
   HABITS_BOARD_SIZE_PX,
   POSITION_BOARD_SIZE_PX,
@@ -73,8 +74,7 @@ import {
   WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED,
   WIDTH_SORT_BY,
-  MASTERS_EXPLORER_MOVES_LIMIT,
-  MASTERS_EXPLORER_MIN_RATING
+  MASTERS_EXPLORER_MOVES_LIMIT
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -170,15 +170,16 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Stockfish Analysis',
     entries: [
-      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, and the Owner Pipeline UI\'s initial Depth field value.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET', 'owner/pipeline/page.tsx: PipelinePage'] },
-      { name: 'STOCKFISH_REANALYZE_DEFAULT_DEPTH', value: STOCKFISH_REANALYZE_DEFAULT_DEPTH, description: "Initial value of /analyze's Game Analysis \"Depth\" dropdown — must match one of that dropdown's own option values (20/22/24/26/28/30/40), unlike STOCKFISH_DEPTH (16) which isn't one of them.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'analyze/page.tsx: AnalyzeContent'] },
+      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, the Owner Pipeline UI\'s initial Depth field value, and the minimum value /analyze\'s two Depth number inputs will accept (never let a manual analysis go shallower than what the automated pipeline already guarantees for every position).', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET', 'owner/pipeline/page.tsx: PipelinePage', 'DepthInput.tsx: DepthInput'] },
+      { name: 'STOCKFISH_REANALYZE_DEFAULT_DEPTH', value: STOCKFISH_REANALYZE_DEFAULT_DEPTH, description: "Initial value of /analyze's Game Analysis \"Depth\" number input, unlike STOCKFISH_DEPTH (16) which is a different default entirely.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'analyze/page.tsx: AnalyzeContent'] },
       { name: 'STOCKFISH_BLUNDER_CP', value: STOCKFISH_BLUNDER_CP, description: 'CP-loss threshold above which a move is classified a blunder.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_MISTAKE_CP', value: STOCKFISH_MISTAKE_CP, description: 'CP-loss threshold above which a move is classified a mistake.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_INACCURACY_CP', value: STOCKFISH_INACCURACY_CP, description: 'CP-loss threshold above which a move is classified an inaccuracy.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_HASH', value: STOCKFISH_HASH, description: 'Stockfish engine hash table size (MB).', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_BESTLINE_LENGTH', value: STOCKFISH_BESTLINE_LENGTH, description: "Max number of moves shown in the engine's best-line suggestion.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_DEEP_ANALYSIS_DEPTH', value: STOCKFISH_DEEP_ANALYSIS_DEPTH, description: 'Search depth used for deep analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
-      { name: 'STOCKFISH_DEEP_ANALYSIS_MULTIPV', value: STOCKFISH_DEEP_ANALYSIS_MULTIPV, description: 'Number of candidate lines (MultiPV) shown in deep analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] }
+      { name: 'STOCKFISH_DEEP_ANALYSIS_MULTIPV', value: STOCKFISH_DEEP_ANALYSIS_MULTIPV, description: 'Number of candidate lines (MultiPV) shown in deep analysis mode.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
+      { name: 'STOCKFISH_DEPTH_INPUT_MAX', value: STOCKFISH_DEPTH_INPUT_MAX, description: "Maximum value accepted by /analyze's Depth number inputs (Game Analysis and Stockfish panels) — typed values above this clamp down to it.", consumers: ['DepthInput.tsx: DepthInput'] }
     ]
   },
   {
@@ -198,8 +199,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Masters Explorer (Lichess)',
     entries: [
-      { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] },
-      { name: 'MASTERS_EXPLORER_MIN_RATING', value: MASTERS_EXPLORER_MIN_RATING, description: "Default minimum player rating for the Masters panel's Top Games filter (user-overridable in the panel) — approximates grandmaster level, since the Masters database itself is FIDE 2200+, not GM-specific.", consumers: ['ChessBoardView.tsx: ChessBoardView'] }
+      { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] }
     ]
   }
 ]
@@ -230,11 +230,12 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'owner/pipeline/page.tsx (module scope)': 'Client component module for the Owner Pipeline page — imports pipeline actions/status functions and defines job-group/SQL display constants used by PipelinePage.',
   'deconstruct.ts (module scope)': 'Server actions module that deconstructs raw chess.com games into tgd_gamesdecon and upserts ECO code/opening-name references.',
   'ChessBoardView.tsx: ChessBoardView': 'Interactive game analysis board — move tree, Stockfish batch/position analysis, and position-history panels for one game.',
+  'DepthInput.tsx: DepthInput': "Shared Depth number input for /analyze's Game Analysis and Stockfish panels — types freely, clamps to min/max only on blur.",
   'purgePositions.ts: purgeStaleReachOnePositions': 'Deletes stale low-reach positions (and dependent rows) once every occurrence is past the grace period.',
   'pipelineStatus.ts: refreshPurgeStatus': 'Counts positions currently eligible for purgeStaleReachOnePositions, mirroring its own eligibility criteria.',
-  'enrichPositionsStockfish.ts: countRemainingPositions': 'Counts tpos_positions rows above the reach floor that still lack a teva_evaluations row.',
+  'enrichPositionsStockfish.ts: countRemainingPositions': 'Counts tpos_positions rows above the reach floor that still lack a tpose_positions_eval row.',
   'enrichPositionsStockfish.ts: getResultingFensToEvaluate': 'Fetches resulting positions from tgam_game_positions still missing a Stockfish evaluation.',
-  'enrichPositionsStockfish.ts: enrichPositionsStockfish': 'Batch-evaluates unevaluated positions with Stockfish and writes centipawn scores/best moves into teva_evaluations.',
+  'enrichPositionsStockfish.ts: enrichPositionsStockfish': 'Batch-evaluates unevaluated positions with Stockfish and writes centipawn scores/best moves into tpose_positions_eval.',
   'pipelineStatus.ts: refreshStep4': 'Counts evaluated positions and remaining unevaluated positions above the reach floor for the Evaluate Positions step.',
   'pipelineStatus.ts: refreshCpChangeStatus': 'Counts tgam_game_positions rows still pending a computed centipawn-change value.',
   'chessdb.ts: getGamesForPosition': "Lists a player's games that reached a given position by a given move, with result-mismatch flags.",

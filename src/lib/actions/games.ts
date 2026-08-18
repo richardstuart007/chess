@@ -6,10 +6,10 @@ import { table_count } from 'nextjs-shared/table_count'
 import { table_delete } from 'nextjs-shared/table_delete'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
+import { Chess } from 'chess.js'
 import { classifyMove } from '@/src/lib/stockfish'
 import { truncateFen } from '@/src/lib/fen'
-
-const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -'
+import { getPositionEvaluationsBulk } from '@/src/lib/analysis/chessdb'
 
 export type GameEvalRow = {
   san: string
@@ -98,91 +98,152 @@ export async function insertRawGame(data: {
 }
 
 //----------------------------------------------------------------------------------
-//  saveGameEvaluations — write per-move Stockfish evals from /analyze to tgev_game_evals
+//  saveGameEvaluations — write per-move Stockfish evals from /analyze to tgev_game_evals.
+//  evaluations can have gaps (undefined) for plies with no real data — no row is written
+//  for those (matches "not actually analyzed"), rather than inserting a placeholder.
+//  Full delete-then-reinsert of this game's row set, batched into a single multi-row
+//  INSERT rather than one INSERT per ply — measured at ~1.9s for a ~20-ply range with
+//  the old one-row-at-a-time loop, entirely DB round-trip overhead unrelated to
+//  Stockfish (which may not have run at all if everything was already cached).
 //----------------------------------------------------------------------------------
-export async function saveGameEvaluations(gdid: number, evaluations: GameEvalRow[]): Promise<void> {
+export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
   await table_delete({
     caller: 'saveGameEvaluations_delete',
     table: 'tgev_game_evals',
     whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
     skipCache: true
   })
-  for (let i = 0; i < evaluations.length; i++) {
-    const e = evaluations[i]
-    await table_write({
-      caller: 'saveGameEvaluations_insert',
-      table: 'tgev_game_evals',
-      columnValuePairs: [
-        { column: 'gev_gdid', value: gdid },
-        { column: 'gev_ply', value: i },
-        { column: 'gev_san', value: e.san },
-        { column: 'gev_fen_after', value: truncateFen(e.fen) },
-        { column: 'gev_cp', value: e.cp },
-        { column: 'gev_cp_change', value: e.cpChange },
-        { column: 'gev_best_move', value: e.bestMove },
-        { column: 'gev_best_move_san', value: e.bestMoveSan },
-        { column: 'gev_best_line', value: JSON.stringify(e.bestLineSans) },
-        { column: 'gev_depth', value: e.depth }
-      ],
-      skipCache: true
-    })
-  }
+
+  const rows = evaluations
+    .map((e, ply) => ({ e, ply }))
+    .filter((r): r is { e: GameEvalRow; ply: number } => r.e != null)
+  if (rows.length === 0) return
+
+  const values = rows.map((_, idx) => {
+    const b = idx * 10
+    return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`
+  }).join(',')
+  const params = rows.flatMap(({ e, ply }) => [
+    gdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth
+  ])
+
+  await table_query({
+    caller: 'saveGameEvaluations_insert',
+    table: 'tgev_game_evals',
+    query: `
+      INSERT INTO tgev_game_evals
+        (gev_gdid, gev_ply, gev_san, gev_fen_after, gev_cp, gev_cp_change, gev_best_move, gev_best_move_san, gev_best_line, gev_depth)
+      VALUES ${values}
+    `,
+    params,
+    isupdate: true
+  })
 }
 
 //----------------------------------------------------------------------------------
-//  getGameEvals — fetch stored per-move evals from tgev_game_evals
+//  getGameEvals — per-ply evals for display, preferring tpose_positions_eval (the app's
+//  single source of truth for "the evaluation of a position") over tgev_game_evals'
+//  own stored value wherever pose has an equal-or-deeper record, falling back to
+//  gev's own value otherwise. Driven by the game's own FEN sequence (derived from its
+//  PGN), not by tgev row count — a game that's never had "Analyze Game" run on it has
+//  zero tgev rows, but a position it shares with an already-analyzed game (moves
+//  MIN_ANALYSIS_MOVE..MAX_ANALYSIS_MOVE, pose's normal build range) can still have
+//  real pose data, which would otherwise never surface. Resolved per ply, independently
+//  — a gap at one ply (e.g. moves 1..MIN_ANALYSIS_MOVE-1, deliberately never cached in
+//  pose) does NOT truncate the rest of the array the way it used to; only that one ply
+//  comes back undefined, so moves after a gap still show whatever's actually known.
+//  Reads only — never creates a tpose_positions_eval or tgev_game_evals row. Only cp/depth
+//  (and the derived cpChange/cpLoss/classification) are ever taken from pose —
+//  gev_best_move/gev_best_move_san/gev_best_line describe the recommendation from the
+//  position BEFORE this ply, not a property of this ply's own resulting position, so
+//  they always come from gev (blank if no tgev row exists for that ply).
 //----------------------------------------------------------------------------------
-export async function getGameEvals(gdid: number): Promise<GameEvalRow[]> {
-  const rows = await table_fetch({
+export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefined)[]> {
+  const gameRows = await table_fetch({
+    caller: 'getGameEvals_pgn',
+    table: DECON_TABLE,
+    whereColumnValuePairs: [{ column: 'gd_gdid', value: gdid }],
+    columns: ['gd_pgn'],
+    skipCache: true
+  })
+  const pgn = gameRows[0]?.gd_pgn as string | undefined
+  if (!pgn) return []
+
+  const g = new Chess()
+  try {
+    g.loadPgn(pgn)
+  } catch {
+    return []
+  }
+  const sanMoves = g.history()
+  if (sanMoves.length === 0) return []
+
+  const g2 = new Chess()
+  const fens = [g2.fen()]
+  for (const san of sanMoves) {
+    g2.move(san)
+    fens.push(g2.fen())
+  }
+
+  const tgevRows = await table_fetch({
     caller: 'getGameEvals',
     table: 'tgev_game_evals',
     whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
     orderBy: 'gev_ply',
-    columns: ['gev_san', 'gev_fen_after', 'gev_cp', 'gev_cp_change', 'gev_best_move', 'gev_best_move_san', 'gev_best_line', 'gev_depth'],
+    columns: ['gev_ply', 'gev_cp', 'gev_best_move', 'gev_best_move_san', 'gev_best_line', 'gev_depth'],
     skipCache: true
   })
-  return rows.map((r: any, i: number) => {
-    const cp = r.gev_cp ?? 0
-    const cpChange = r.gev_cp_change ?? 0
+  const tgevByPly = new Map<number, any>()
+  for (const r of tgevRows) tgevByPly.set(Number(r.gev_ply), r)
+
+  const poseEvals = await getPositionEvaluationsBulk(fens)
+
+  const result: (GameEvalRow | undefined)[] = []
+  // Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
+  // only meaningful relative to the immediately preceding ply, so a gap resets this
+  // rather than letting a stale cp leak across it.
+  let cpBefore = 0
+  let havePrevCp = false
+
+  for (let i = 0; i < sanMoves.length; i++) {
+    const tgevRow = tgevByPly.get(i)
+    const poseEval = poseEvals[truncateFen(fens[i + 1])]
+
+    if (!tgevRow && !poseEval) {
+      result.push(undefined)
+      havePrevCp = false
+      continue
+    }
+
+    const gevCp = tgevRow?.gev_cp ?? 0
+    const gevDepth = tgevRow?.gev_depth ?? 0
+    const usePose = poseEval != null && poseEval.depth >= gevDepth
+    const cp = usePose ? poseEval.cp : gevCp
+    const depth = usePose ? poseEval.depth : gevDepth
+
+    const isWhiteMove = i % 2 === 0
+    const cpChange = havePrevCp ? (isWhiteMove ? cp - cpBefore : cpBefore - cp) : 0
     const cpLoss = Math.max(0, -cpChange)
-    return {
-      san:           r.gev_san,
-      fen:           r.gev_fen_after,
-      fenBefore:     i === 0 ? STARTING_FEN : rows[i - 1].gev_fen_after,
+
+    result.push({
+      san:           sanMoves[i],
+      fen:           fens[i + 1],
+      fenBefore:     fens[i],
       cp,
-      cpBefore:      i === 0 ? 0 : (rows[i - 1].gev_cp ?? 0),
-      bestMove:      r.gev_best_move    ?? '',
-      bestMoveSan:   r.gev_best_move_san ?? '',
-      bestLineSans:  Array.isArray(r.gev_best_line) ? r.gev_best_line : [],
+      cpBefore:      havePrevCp ? cpBefore : cp,
+      bestMove:      tgevRow?.gev_best_move     ?? '',
+      bestMoveSan:   tgevRow?.gev_best_move_san ?? '',
+      bestLineSans:  Array.isArray(tgevRow?.gev_best_line) ? tgevRow.gev_best_line : [],
       cpLoss,
       cpChange,
       classification: classifyMove(cpLoss),
-      depth:         r.gev_depth ?? 0
-    }
-  })
-}
+      depth
+    })
+    cpBefore = cp
+    havePrevCp = true
+  }
 
-//----------------------------------------------------------------------------------
-//  upgradeGameEval — merge a deeper evaluation into one existing tgev_game_evals
-//  ply, only if the new depth exceeds what's stored. Scoped to gev_cp/gev_depth
-//  only — gev_best_move describes the engine's recommendation from the position
-//  before this move, unrelated to a resulting-position evaluation. Mirrors
-//  upgradePositionEvaluation's guard/pattern for teva_evaluations.
-//----------------------------------------------------------------------------------
-export async function upgradeGameEval(gdid: number, ply: number, cp: number, depth: number, cpChange: number): Promise<boolean> {
-  const updated = await table_query({
-    caller: 'upgradeGameEval_update',
-    table: 'tgev_game_evals',
-    query: `
-      UPDATE tgev_game_evals
-      SET gev_cp = $1, gev_depth = $2, gev_cp_change = $5
-      WHERE gev_gdid = $3 AND gev_ply = $4 AND gev_depth < $2
-      RETURNING gev_gdid
-    `,
-    params: [cp, depth, gdid, ply, cpChange],
-    isupdate: true
-  })
-  return updated.length > 0
+  return result
 }
 
 // -----------------------------------------------------------------------

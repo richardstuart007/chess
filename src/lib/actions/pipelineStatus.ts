@@ -40,11 +40,11 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
         (SELECT COUNT(*) FROM tpos_positions)                                        AS positions,
         (SELECT COUNT(*) FROM tgam_game_positions WHERE gam_pos_id IS NULL)          AS positions_unresolved,
         (SELECT COUNT(*) FROM tgam_game_positions)                                   AS game_positions,
-        (SELECT COUNT(*) FROM teva_evaluations)                                       AS evaluated,
+        (SELECT COUNT(*) FROM tpose_positions_eval)                                    AS evaluated,
         (SELECT COUNT(*) FROM tpos_positions p
-         LEFT JOIN teva_evaluations e
-           ON e.eva_pos_id = p.pos_id
-         WHERE e.eva_evaid IS NULL)                                                     AS evaluations_remaining
+         LEFT JOIN tpose_positions_eval e
+           ON e.pose_pos_id = p.pos_id
+         WHERE e.pose_pos_id IS NULL)                                                   AS evaluations_remaining
     `,
     params: [],
     skipCache: true
@@ -124,10 +124,10 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
   const rows = await table_query({
     caller: 'refreshStep4', params: [], skipCache: true,
     query: `SELECT
-      (SELECT COUNT(*) FROM teva_evaluations)                                          AS evaluated,
+      (SELECT COUNT(*) FROM tpose_positions_eval)                                      AS evaluated,
       (SELECT COUNT(*) FROM tpos_positions p
-       LEFT JOIN teva_evaluations e ON e.eva_pos_id = p.pos_id
-       WHERE e.eva_evaid IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})                 AS remaining`
+       LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
+       WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})               AS remaining`
   })
   const r = rows[0] ?? {}
   const result = {

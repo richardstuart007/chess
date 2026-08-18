@@ -61,11 +61,11 @@ export default function PositionDetail({
   const orientation  = position.pos_color === 'b' ? 'black' : 'white'
   const playerName   = games[0]?.player ?? null
   const playerColor  = position.pos_color === 'b' ? 'Black' : 'White'
-  const positionCp   = posEval?.eva_cp ?? null
+  const positionCp   = posEval?.pose_cp ?? null
 
   // Convert best move UCI → SAN
   const chess = new Chess(position.pos_fen)
-  const bm = posEval?.eva_best_move ?? null
+  const bm = posEval?.pose_best_move ?? null
   const tryMove = bm
     ? chess.move({ from: bm.slice(0, 2), to: bm.slice(2, 4), promotion: bm[4] ?? undefined })
     : null
@@ -209,8 +209,8 @@ export default function PositionDetail({
                           </span>
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{wp}%</td>
-                        <td className={`py-1.5 text-right tabular-nums font-mono ${m.eva_cp != null && m.eva_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {m.eva_cp != null ? formatCp(m.eva_cp) : '—'}
+                        <td className={`py-1.5 text-right tabular-nums font-mono ${m.pose_cp != null && m.pose_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                          {m.pose_cp != null ? formatCp(m.pose_cp) : '—'}
                         </td>
                       </tr>
                     )

@@ -9,14 +9,15 @@ import { MyButton } from 'nextjs-shared/MyButton'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MySelect from 'nextjs-shared/MySelect'
 import { MyInput } from 'nextjs-shared/MyInput'
+import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import BackButton from '@/src/ui/BackButton'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
-import { StockfishEngine, MoveEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
-import { saveGameEvaluations, upgradeGameEval } from '@/src/lib/actions/games'
+import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
+import { saveGameEvaluations } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
-import { MOVE_COUNT_MIN_MOVE, MASTERS_EXPLORER_MIN_RATING } from '@/src/lib/constants'
+import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -35,6 +36,7 @@ import {
 } from '@/src/lib/analysisTree'
 import AlternativeLines from './AlternativeLines'
 import MoveTree from './MoveTree'
+import DepthInput from './DepthInput'
 
 interface ChessBoardViewProps {
   game: ChessComGame
@@ -64,17 +66,6 @@ function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): 
   const moveNum = Math.floor((currentPly - 1) / 2) + 1
   const isWhite = (currentPly - 1) % 2 === 0
   return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
-}
-
-//----------------------------------------------------------------------------------
-//  getNextMoveLabel — "8. Nbd2" / "8...Nbd2" for a move about to be played FROM the
-//  position currently on the board (the opposite direction from getCurrentMoveLabel,
-//  which labels the move that led here)
-//----------------------------------------------------------------------------------
-function getNextMoveLabel(currentPly: number, san: string): string {
-  const moveNum = Math.floor(currentPly / 2) + 1
-  const isWhite = currentPly % 2 === 0
-  return `${moveNum}${isWhite ? '.' : '...'} ${san}`
 }
 
 //----------------------------------------------------------------------------------
@@ -108,57 +99,6 @@ function formatGameDate(endTime: number): string {
   return `${dd}/${mm}/${yy}`
 }
 
-//----------------------------------------------------------------------------------
-//  buildSavedAnalysisFromMoveSummary — reconstructs a Position Analysis result from
-//  already-saved teva_evaluations data (via the Moves From This Position rows already
-//  loaded for this position), so a position doesn't reset to a bare "Analyze Position"
-//  button every time it's revisited. Returns null (caller falls back to the plain
-//  button) unless every displayed line is already at/above targetDepth.
-//----------------------------------------------------------------------------------
-function buildSavedAnalysisFromMoveSummary(
-  rows: MoveRow[],
-  fen: string,
-  playedSan: string,
-  numLines: number,
-  targetDepth: number
-): InfiniteAnalysisUpdate | null {
-  const evaluated = rows.filter((r): r is MoveRow & { eva_cp: number; eva_depth: number } =>
-    r.eva_cp != null && r.eva_depth != null
-  )
-  if (evaluated.length === 0) return null
-
-  const isWhiteToMove = fen.split(' ')[1] !== 'b'
-  const sorted = [...evaluated].sort((a, b) => isWhiteToMove ? b.eva_cp - a.eva_cp : a.eva_cp - b.eva_cp)
-
-  let display: typeof sorted
-  const playedIdx = playedSan ? sorted.findIndex(r => r.move_played === playedSan) : -1
-  if (playedIdx >= 0) {
-    const played = sorted[playedIdx]
-    const others = sorted.filter((_, i) => i !== playedIdx).slice(0, numLines - 1)
-    display = isWhiteToMove
-      ? [...others, played].sort((a, b) => b.eva_cp - a.eva_cp)
-      : [...others, played].sort((a, b) => a.eva_cp - b.eva_cp)
-  } else {
-    display = sorted.slice(0, numLines)
-  }
-  if (display.length === 0) return null
-
-  const minDepth = Math.min(...display.map(r => r.eva_depth))
-  if (minDepth < targetDepth) return null
-
-  const lines: MultiPvResult[] = display.map((r, i) => ({
-    rank: i + 1,
-    cp: r.eva_cp,
-    bestMoveUci: r.move_uci ?? '',
-    bestMoveSan: r.move_played,
-    lineSans: [r.move_played],
-    lineUci: r.move_uci ? [r.move_uci] : []
-  }))
-  lines.forEach(l => { (l as any)._isActualMove = l.bestMoveSan === playedSan })
-
-  return { depth: minDepth, lines, nodes: 0, nps: 0, timeMs: 0 }
-}
-
 export default function ChessBoardView({ game, gdid, player, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange }: ChessBoardViewProps) {
   const router = useRouter()
   const playerColor = getPlayerResult(game, player).color
@@ -173,13 +113,16 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
   const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
   const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
-  const [mastersMinRating, setMastersMinRating] = useState(MASTERS_EXPLORER_MIN_RATING)
+  const [selectedMastersMove, setSelectedMastersMove] = useState<string | null>(null)
 
   // Display chess instance
   const displayGame = useRef(new Chess())
 
   // Analysis state
-  const [evaluations, setEvaluations] = useState<MoveEvaluation[]>([])
+  // Can have gaps (undefined) — tpose_positions_eval deliberately doesn't cache every move
+  // (e.g. moves before MIN_ANALYSIS_MOVE), so getGameEvals now resolves per-ply instead
+  // of truncating the whole array at the first unknown position
+  const [plyEvals, setPlyEvals] = useState<(PlyEvaluation | undefined)[]>([])
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; move?: string }>({ current: 0, total: 0 })
   const [analysisError, setAnalysisError] = useState('')
@@ -219,19 +162,19 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     const newTree = buildTree(history, fens, [])
 
     const totalFullMoves = Math.max(1, Math.ceil(newTree.mainLine.length / 2))
-    const storedEvals = (game as any)._evaluations as MoveEvaluation[] | null
-    if (storedEvals && storedEvals.length > 0) {
-      for (let i = 0; i < Math.min(storedEvals.length, newTree.mainLine.length); i++) {
-        newTree.mainLine[i].evaluation = storedEvals[i]
+    const storedPlyEvals = (game as any)._plyEvals as PlyEvaluation[] | null
+    if (storedPlyEvals && storedPlyEvals.length > 0) {
+      for (let i = 0; i < Math.min(storedPlyEvals.length, newTree.mainLine.length); i++) {
+        newTree.mainLine[i].evaluation = storedPlyEvals[i]
       }
-      setEvaluations(storedEvals)
+      setPlyEvals(storedPlyEvals)
     } else {
-      setEvaluations([])
+      setPlyEvals([])
     }
 
     setTree(newTree)
     setCurrentNode(null)
-    setFromMove(storedEvals && storedEvals.length > 0 ? Math.min(5, totalFullMoves) : 1)
+    setFromMove(storedPlyEvals && storedPlyEvals.length > 0 ? Math.min(5, totalFullMoves) : 1)
     setToMove(totalFullMoves)
     displayGame.current = new Chess()
     setBoardKey(k => k + 1)
@@ -286,11 +229,11 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // -----------------------------------------------------------------------
   // Masters — master-level game stats for whatever position is currently on the
   // board, from the Lichess Masters Opening Explorer (live fetch, no DB storage).
-  // Loads automatically on every position change, same trigger as Moves From
-  // This Position above.
+  // Only fetches once a position has actually been clicked on (currentNode set) —
+  // stays empty for the tree root on initial page load.
   // -----------------------------------------------------------------------
   useEffect(() => {
-    const fen = currentNode?.fen ?? tree?.root.fen
+    const fen = currentNode?.fen
     if (!fen) { setMastersData(null); return }
     let cancelled = false
 
@@ -302,21 +245,22 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   }, [currentNode, tree])
 
   // -----------------------------------------------------------------------
-  // Games From This Position — this player's own games that reached whatever
-  // position is currently on the board by playing the selected move. Loads
-  // only once a move row is selected (see moveSummary + selectedPositionMove).
+  // Games Played — this player's own games that reached whatever position is
+  // currently on the board, any move. Filtered down to the selected move
+  // client-side when a "Moves Played" row is highlighted (see moveSummary +
+  // selectedPositionMove).
   // -----------------------------------------------------------------------
   useEffect(() => {
     const fen = currentNode?.fen ?? tree?.root.fen
-    if (!fen || !selectedPositionMove) { setPositionGames([]); return }
+    if (!fen) { setPositionGames([]); return }
     let cancelled = false
 
-    getGamesForPosition(fen, player, selectedPositionMove).then(games => {
+    getGamesForPosition(fen, player).then(games => {
       if (!cancelled) setPositionGames(games)
     }).catch(() => { if (!cancelled) setPositionGames([]) })
 
     return () => { cancelled = true }
-  }, [selectedPositionMove, currentNode, tree, player])
+  }, [currentNode, tree, player])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -390,28 +334,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   }, [currentNode])
 
   // -----------------------------------------------------------------------
-  // Pre-populate Position Analysis from saved data once moveSummary has loaded
-  // for the position now on the board. Guarded on deepAnalyzing/deepAnalysisData
-  // both still being unset so this never clobbers a live run (or its result) the
-  // user already started — once either is set, this effect stays a no-op until
-  // the next position change resets them.
-  // -----------------------------------------------------------------------
-  useEffect(() => {
-    if (deepAnalyzing || deepAnalysisData) return
-    const fen = getCurrentPositionFen()
-    if (!fen) return
-    const playedSan = currentNode?.children[0]?.san ?? ''
-    const numLines = deepAnalysisMultiPv ?? STOCKFISH_DEFAULTS.deepAnalysisMultiPv
-    const targetDepth = deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth
-    const saved = buildSavedAnalysisFromMoveSummary(moveSummary, fen, playedSan, numLines, targetDepth)
-    if (saved) setDeepAnalysisData(saved)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moveSummary])
-
-  // -----------------------------------------------------------------------
-  // Run full-game Stockfish analysis. On re-analysis (evaluations already
+  // Run full-game Stockfish analysis. On re-analysis (plyEvals already
   // exist), only the selected From/To move range is (re-)analyzed — existing
-  // evaluations outside that range are preserved, both in state and in the DB.
+  // plyEvals outside that range are preserved, both in state and in the DB.
   // -----------------------------------------------------------------------
   async function runAnalysis() {
     if (!tree) return
@@ -419,15 +344,21 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     setAnalysisError('')
     setAnalysisResultMessage('')
 
+    // Temporary diagnostic timing — remove once the "Re-analyse" slowness is found.
+    const tStart = performance.now()
+
     try {
+      // Construction only, no init() call here — analyzeGame() initializes lazily,
+      // only if it turns out some position in the range actually needs a fresh
+      // Stockfish evaluation, so a fully-cached re-analysis never pays engine startup
+      // cost at all.
       let engine = engineRef.current
       if (!engine) {
         engine = new StockfishEngine()
         engineRef.current = engine
-        await engine.init()
       }
 
-      const isReanalyze = evaluations.length > 0
+      const isReanalyze = plyEvals.length > 0
       const totalFullMoves = Math.max(1, Math.ceil(tree.mainLine.length / 2))
       const rangeFromMove = isReanalyze ? fromMove : 1
       const rangeToMove = isReanalyze ? toMove : totalFullMoves
@@ -441,30 +372,54 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
       const sans = sliceNodes.map(n => n.san)
 
       const depth = stockfishDepth ?? STOCKFISH_DEFAULTS.reanalyzeDepth
-      const cachedEvals = await getPositionEvaluationsBulk(fens)
-      const { evaluations: results, finalPosition } = await engine.analyzeGame(fens, sans, (progress) => {
-        setAnalysisProgress(progress)
-      }, depth, cachedEvals)
+      const poseEvals = await getPositionEvaluationsBulk(fens)
+      console.log(`[runAnalysis] poseEvals fetch: ${(performance.now() - tStart).toFixed(0)}ms`)
 
-      // Skip overwriting any ply whose existing depth is already >= this run's
-      // depth — mirrors teva_evaluations' own guard, so re-analyzing at a
-      // shallower depth never downgrades a ply saved deeper previously
-      const merged = [...evaluations]
+      // Skip overwriting any ply whose existing depth is already >= this run's depth —
+      // mirrors tpose_positions_eval' own guard, so re-analyzing at a shallower depth never
+      // downgrades a ply saved deeper previously. Updated live, ply by ply, as each
+      // result comes back from the engine — not just once at the very end — so
+      // "Moves Played"/"Games Played" and the move list reflect each position's fresh
+      // evaluation as soon as it's computed, not only after the whole range finishes.
+      const mergedPlyEvals = [...plyEvals]
       let updatedPlies = 0
       let skippedPlies = 0
-      for (let i = 0; i < results.length; i++) {
-        const idx = sliceStart + i
-        const existing = merged[idx]
-        if (existing && existing.depth >= results[i].depth) {
-          skippedPlies++
-          continue
+      const tAnalyzeStart = performance.now()
+
+      const { finalPosition } = await engine.analyzeGame(
+        fens, sans,
+        (progress) => setAnalysisProgress(progress),
+        depth,
+        poseEvals,
+        (plyEval, i) => {
+          console.log(`[runAnalysis] ply ${i} (${plyEval.san}) evaluated at ${(performance.now() - tAnalyzeStart).toFixed(0)}ms into analyzeGame`)
+          const idx = sliceStart + i
+          const existing = mergedPlyEvals[idx]
+          if (existing && existing.depth >= plyEval.depth) {
+            skippedPlies++
+            return
+          }
+          mergedPlyEvals[idx] = plyEval
+          tree.mainLine[idx].evaluation = plyEval
+          updatedPlies++
+          setPlyEvals([...mergedPlyEvals])
+          setTree({ ...tree })
+          // Fire-and-forget — don't block the engine's own progress on DB round-trips.
+          // upgradePositionEvaluation's own cascade (see chessdb.ts) propagates this into
+          // every game's tgev_game_evals row for that same position, not just this one.
+          const tUpgradeStart = performance.now()
+          upgradePositionEvaluation({ fen: plyEval.fenBefore, cp: plyEval.cpBefore, bestMove: plyEval.bestMove, depth: plyEval.depth, createIfMissing: true })
+            .then(() => {
+              console.log(`[runAnalysis] ply ${i} upgradePositionEvaluation: ${(performance.now() - tUpgradeStart).toFixed(0)}ms`)
+              return refreshPositionPanels()
+            })
+            .catch(() => {
+              // Non-critical — a failed merge doesn't block the rest
+            })
         }
-        merged[idx] = results[i]
-        tree.mainLine[idx].evaluation = results[i]
-        updatedPlies++
-      }
-      setEvaluations(merged)
-      setTree({ ...tree })
+      )
+      console.log(`[runAnalysis] analyzeGame total: ${(performance.now() - tAnalyzeStart).toFixed(0)}ms (${updatedPlies} updated, ${skippedPlies} skipped)`)
+
       setAnalysisResultMessage(
         skippedPlies > 0
           ? `Updated ${updatedPlies} plies, kept ${skippedPlies} at deeper depth`
@@ -477,34 +432,39 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
         setFromMove(Math.min(5, totalFullMoves))
       }
 
-      // Save the full merged evaluations to DB — saveGameEvaluations deletes
+      // Save the full merged plyEvals to DB — saveGameEvaluations deletes
       // and re-inserts by array position, so a partial array would wipe out
-      // the evaluations for every move outside the re-analyzed range
+      // the plyEvals for every move outside the re-analyzed range
       if (gdid) {
+        const tSaveStart = performance.now()
         try {
-          await saveGameEvaluations(gdid, merged)
+          await saveGameEvaluations(gdid, mergedPlyEvals)
         } catch {
           // Non-critical — DB save failure doesn't block UI
         }
-      }
-
-      // Merge each move's "before" position into teva_evaluations if this depth is
-      // deeper than what's already stored there — non-critical, silently caught per move
-      for (const r of results) {
-        try {
-          await upgradePositionEvaluation({ fen: r.fenBefore, cp: r.cpBefore, bestMove: r.bestMove, depth })
-        } catch {
-          // Non-critical — a failed merge doesn't block the rest
-        }
+        console.log(`[runAnalysis] saveGameEvaluations: ${(performance.now() - tSaveStart).toFixed(0)}ms`)
       }
 
       // The range's final resulting position is never any ply's "before" position
-      // (nothing after it in this run), so it needs its own explicit upgrade call
-      try {
-        await upgradePositionEvaluation({ fen: finalPosition.fen, cp: finalPosition.cp, bestMove: finalPosition.bestMove, depth })
-      } catch {
-        // Non-critical
+      // (nothing after it in this run), so it needs its own explicit upgrade call —
+      // everything else was already upgraded live, ply by ply, above. Skipped entirely
+      // when already cached at/above this run's depth (same check the per-ply loop
+      // already does with poseEvals) — avoids a DB round trip that upgradePositionEvaluation's
+      // own depth-guard would just reject anyway. Refreshes "Moves Played"/"Games Played"
+      // so a freshly-analyzed evaluation shows up immediately, matching what
+      // persistAnalysisLines already does for "Analyze Position".
+      const finalPoseEval = poseEvals[truncateFen(finalPosition.fen)]
+      if (!finalPoseEval || finalPoseEval.depth < depth) {
+        const tFinalStart = performance.now()
+        try {
+          await upgradePositionEvaluation({ fen: finalPosition.fen, cp: finalPosition.cp, bestMove: finalPosition.bestMove, depth, createIfMissing: true })
+          await refreshPositionPanels()
+        } catch {
+          // Non-critical
+        }
+        console.log(`[runAnalysis] final-position upgrade + refresh: ${(performance.now() - tFinalStart).toFixed(0)}ms`)
       }
+      console.log(`[runAnalysis] TOTAL: ${(performance.now() - tStart).toFixed(0)}ms`)
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
@@ -536,11 +496,10 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     // Captured now, not read fresh in onComplete — onComplete fires asynchronously
     // after the engine's bestmove arrives, by which point the user may have
     // already navigated to a different position (currentPly would then refer
-    // to the wrong ply)
-    const analyzedPly = currentPly
-    // Same reasoning as analyzedPly above — moveSummary may belong to a different
-    // position by the time onComplete fires
-    const analyzedMoveSummary = moveSummary
+    // to the wrong ply). currentPly is a 1-indexed count of moves played
+    // (getPath(currentNode).length) — plyEvals[]/sanMoves are 0-indexed, so
+    // subtract 1 to get the actual ply of the position being analyzed.
+    const analyzedPly = currentPly - 1
 
     const numLines = deepAnalysisMultiPv ?? STOCKFISH_DEFAULTS.deepAnalysisMultiPv
     const maxDepth = deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth
@@ -574,32 +533,18 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
 
       unique.sort((a, b) => isWhiteToMove ? b.cp - a.cp : a.cp - b.cp)
 
-      let display: typeof unique
-      if (playedSan) {
-        const playedIdx = unique.findIndex(r => r.bestMoveSan === playedSan)
-        if (playedIdx >= 0) {
-          // Played move found — keep top (N-1) others + played move = N total
-          const played = unique[playedIdx]
-          const others = unique.filter((_, i) => i !== playedIdx).slice(0, numLines - 1)
-          display = isWhiteToMove
-            ? [...others, played].sort((a, b) => b.cp - a.cp)
-            : [...others, played].sort((a, b) => a.cp - b.cp)
-        } else {
-          // Played move not in top N+1 — show top N engine lines only
-          display = unique.slice(0, numLines)
-        }
-        display.forEach((r, i) => {
-          r.rank = i + 1
-          ;(r as any)._isActualMove = r.bestMoveSan === playedSan
-        })
-      } else {
-        display = unique.slice(0, numLines)
-        display.forEach((r, i) => { r.rank = i + 1 })
-      }
+      // Always the top N objectively-best lines — the played move is already shown in
+      // "Moves Played"/the move list, so it's never force-included here, just tagged
+      // (_isActualMove) if it naturally happens to land in the top N.
+      const display = unique.slice(0, numLines)
+      display.forEach((r, i) => {
+        r.rank = i + 1
+        ;(r as any)._isActualMove = playedSan ? r.bestMoveSan === playedSan : false
+      })
 
       setDeepAnalysisData({ ...update, lines: display })
 
-      // Track the currently displayed lines for the automatic teva/tgev push on completion
+      // Track the currently displayed lines for the automatic pose/gev push on completion
       latestAnalysisLinesRef.current = { lines: display, depth: update.depth }
     }
 
@@ -613,10 +558,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     setDeepAnalyzing(true)
     setDeepAnalysisData(null)
     latestAnalysisLinesRef.current = null
-    // Request one extra line so the played move has a chance of being included
     engine.startInfiniteAnalysis(
       fen,
-      numLines + 1,
+      numLines,
       maxDepth,
       processUpdate,
       async () => {
@@ -624,62 +568,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
         const latest = latestAnalysisLinesRef.current
         if (latest) {
           await persistAnalysisLines(fen, analyzedPly, latest.lines, latest.depth)
-          const coveredSans = new Set(latest.lines.map(l => l.bestMoveSan))
-          await deepenUncoveredMoves(fen, analyzedMoveSummary, coveredSans, latest.depth)
         }
       }
     )
-  }
-
-  // -----------------------------------------------------------------------
-  // Auto-deepen "Moves From This Position" candidates not already covered by
-  // the just-completed multi-pv search — historically-played moves the engine
-  // didn't rank in its own top N never otherwise get re-evaluated past the
-  // background pipeline's shallow default depth. Each gets a single-line
-  // direct evaluate() at the just-analyzed depth, saved via the same
-  // depth-guarded upgrade persistAnalysisLines already uses, so a move already
-  // at/above that depth is left untouched.
-  // -----------------------------------------------------------------------
-  async function deepenUncoveredMoves(fen: string, rows: MoveRow[], coveredSans: Set<string>, targetDepth: number) {
-    const uncovered = rows.filter(r =>
-      !coveredSans.has(r.move_played) && (r.eva_depth == null || r.eva_depth < targetDepth)
-    )
-    if (uncovered.length === 0) return
-
-    let engine = engineRef.current
-    if (!engine) {
-      engine = new StockfishEngine()
-      engineRef.current = engine
-      await engine.init()
-    }
-
-    for (const row of uncovered) {
-      try {
-        const g = new Chess(fen)
-        if (row.move_uci) {
-          const from = row.move_uci.slice(0, 2)
-          const to = row.move_uci.slice(2, 4)
-          const promotion = row.move_uci.length > 4 ? row.move_uci[4] : undefined
-          g.move({ from, to, promotion })
-        } else {
-          g.move(row.move_played)
-        }
-        const resultingFen = g.fen()
-        const result = await engine.evaluate(resultingFen, targetDepth)
-        const isBlackToMoveAtResult = resultingFen.split(' ')[1] === 'b'
-        const whiteCp = isBlackToMoveAtResult ? -result.cp : result.cp
-        await upgradePositionEvaluation({
-          fen: resultingFen,
-          cp: whiteCp,
-          bestMove: result.bestMove || null,
-          depth: targetDepth
-        })
-      } catch {
-        // best-effort — one bad candidate move shouldn't abort the rest
-      }
-    }
-
-    await refreshPositionPanels()
   }
 
   function stopDeepAnalysis() {
@@ -690,7 +581,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // -----------------------------------------------------------------------
   // Re-fetch Moves From This Position / Games panel for whatever's currently
   // displayed — the moveSummary/positionGames effects only re-run when the
-  // board position changes, so any button that upgrades teva_evaluations
+  // board position changes, so any button that upgrades tpose_positions_eval
   // without changing currentNode/tree needs to call this explicitly.
   // -----------------------------------------------------------------------
   async function refreshPositionPanels() {
@@ -702,32 +593,43 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     } catch {
       // Non-critical — panel just keeps its previous data
     }
-    if (selectedPositionMove) {
-      try {
-        const games = await getGamesForPosition(fen, player, selectedPositionMove)
-        setPositionGames(games)
-      } catch {
-        // Non-critical
-      }
+    try {
+      const games = await getGamesForPosition(fen, player)
+      setPositionGames(games)
+    } catch {
+      // Non-critical
     }
   }
 
   // -----------------------------------------------------------------------
   // Persist Analysis — runs automatically whenever a Position Analysis run
   // completes (target depth reached, or stopped early — either way the engine
-  // has sent its final bestmove). Pushes every displayed Engine Line's
-  // evaluation into teva_evaluations for its resulting position, reusing
-  // upgradePositionEvaluation's existing depth-guard and cp_change cascade.
-  // The line matching the actually-played move also gets pushed into
-  // tgev_game_evals for that one ply, so the Move Tree display stays in sync.
-  // fen/ply are the position/ply that was actually analyzed, captured at the
-  // start of that run — not read fresh here, since the user may have already
-  // navigated elsewhere by the time this fires.
+  // has sent its final bestmove). Pushes every displayed Engine Line's evaluation
+  // into tpose_positions_eval for its resulting position (one ply deeper than fen) via
+  // upgradePositionEvaluation. Crucially, also writes the analyzed position's OWN
+  // evaluation: eval(fen) is, by definition, the score of its best line — playing
+  // the objectively-best move doesn't change a position's evaluation, it realizes
+  // it — so the rank-1 line's score belongs on fen itself too, not just on the
+  // position one ply deeper that playing it leads to. Without this, repeatedly
+  // re-analyzing a position could never update that position's own move-list value,
+  // at any depth (confirmed live). upgradePositionEvaluation's own cascade (see
+  // chessdb.ts) already propagates every write into tgev_game_evals for every game
+  // that reached that position, so no separate direct tgev write happens here.
+  // fen/ply are the position/ply that was actually analyzed, captured at the start
+  // of that run — not read fresh here, since the user may have already navigated
+  // elsewhere by the time this fires.
   // -----------------------------------------------------------------------
   async function persistAnalysisLines(fen: string, ply: number, lines: MultiPvResult[], depth: number) {
     if (lines.length === 0) return
 
     setSaveAnalysisMessage('')
+
+    // The one candidate line (if any) that matches what this game actually played next —
+    // only this one may durably persist into tgev_game_evals, since tgev is a record of
+    // the game's real history, not a place to store hypothetical alternatives. Every other
+    // candidate stays tpose-only, same as before.
+    const playedNode = gdid && tree ? tree.mainLine[ply + 1] : undefined
+    const playedLine = playedNode ? lines.find(l => l.bestMoveSan === playedNode.san) : undefined
 
     const results = await Promise.all(lines.map(async line => {
       try {
@@ -741,48 +643,63 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
           fen: resultingFen,
           cp: line.cp,
           bestMove: line.lineUci[1] ?? null,
-          depth
+          depth,
+          createIfMissing: true,
+          gameContext: gdid && playedNode && line === playedLine
+            ? { gdid, ply: ply + 1, san: playedNode.san }
+            : undefined
         })
       } catch {
         return false
       }
     }))
 
-    const updated = results.filter(Boolean).length
-    setSaveAnalysisMessage(`Updated ${updated} of ${lines.length} positions`)
+    const topLine = lines.find(l => l.rank === 1)
+    // fen is exactly this game's own position at `ply` (that's what was analyzed), so the
+    // own-position write-back always knows its (gdid, ply) unambiguously — no "was this
+    // actually played" check needed here, unlike the candidate-line loop above.
+    const ownUpdated = topLine
+      ? await upgradePositionEvaluation({
+          fen,
+          cp: topLine.cp,
+          bestMove: topLine.bestMoveUci || null,
+          depth,
+          createIfMissing: true,
+          force: true,
+          gameContext: gdid && tree?.mainLine[ply]
+            ? { gdid, ply, san: tree.mainLine[ply].san }
+            : undefined
+        }).catch(() => false)
+      : false
 
-    // The played line's resulting position is exactly tree.mainLine[ply] —
-    // the same ply tracked in tgev_game_evals. Push it there too, if it exists
-    // and this depth is actually deeper than what's saved.
-    const playedLine = lines.find(l => (l as any)._isActualMove === true)
-    const existingPlyEval = evaluations[ply]
-    if (playedLine && gdid && existingPlyEval) {
-      try {
-        const isWhiteMove = ply % 2 === 0
-        const cpChange = isWhiteMove
-          ? playedLine.cp - existingPlyEval.cpBefore
-          : existingPlyEval.cpBefore - playedLine.cp
-        const cpLoss = Math.max(0, -cpChange)
-        const upgraded = await upgradeGameEval(gdid, ply, playedLine.cp, depth, cpChange)
-        if (upgraded) {
-          const updatedPlyEval: MoveEvaluation = {
-            ...existingPlyEval,
-            cp: playedLine.cp,
-            cpChange,
-            cpLoss,
-            classification: classifyMove(cpLoss),
-            depth
-          }
-          const merged = [...evaluations]
-          merged[ply] = updatedPlyEval
-          setEvaluations(merged)
-          if (tree) {
-            tree.mainLine[ply].evaluation = updatedPlyEval
-            setTree({ ...tree })
-          }
-        }
-      } catch {
-        // Non-critical
+    const updated = results.filter(Boolean).length + (ownUpdated ? 1 : 0)
+    setSaveAnalysisMessage(`Updated ${updated} of ${lines.length + 1} positions`)
+
+    // fen is exactly tree.mainLine[ply]'s own resulting position — mirror the ownUpdated
+    // write above into local React state for immediate UI feedback, once we know both
+    // that it actually happened and that it was deeper than what this ply already had
+    // (upgradePositionEvaluation's own depth-guard is what ownUpdated reflects).
+    const existingPlyEval = plyEvals[ply]
+    if (topLine && ownUpdated && existingPlyEval && existingPlyEval.depth < depth) {
+      const isWhiteMove = ply % 2 === 0
+      const cpChange = isWhiteMove
+        ? topLine.cp - existingPlyEval.cpBefore
+        : existingPlyEval.cpBefore - topLine.cp
+      const cpLoss = Math.max(0, -cpChange)
+      const updatedPlyEval: PlyEvaluation = {
+        ...existingPlyEval,
+        cp: topLine.cp,
+        cpChange,
+        cpLoss,
+        classification: classifyMove(cpLoss),
+        depth
+      }
+      const mergedPlyEvals = [...plyEvals]
+      mergedPlyEvals[ply] = updatedPlyEval
+      setPlyEvals(mergedPlyEvals)
+      if (tree) {
+        tree.mainLine[ply].evaluation = updatedPlyEval
+        setTree({ ...tree })
       }
     }
 
@@ -938,10 +855,12 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const evalCp = currentEval?.cp ?? 0
   const evalPercent = Math.max(2, Math.min(98, 50 + evalCp / 8))
 
-  // Summary counts
-  const blunders = evaluations.filter(e => e.classification === 'blunder').length
-  const mistakes = evaluations.filter(e => e.classification === 'mistake').length
-  const inaccuracies = evaluations.filter(e => e.classification === 'inaccuracy').length
+  // Summary counts — plyEvals can now have gaps (e.g. moves before
+  // MIN_ANALYSIS_MOVE, which pose deliberately never caches), so every entry must be
+  // null/undefined-checked before reading its fields
+  const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
+  const mistakes = plyEvals.filter(e => e?.classification === 'mistake').length
+  const inaccuracies = plyEvals.filter(e => e?.classification === 'inaccuracy').length
 
   // Full move numbers for the re-analyze range selectors
   const totalFullMoves = tree ? Math.max(1, Math.ceil(tree.mainLine.length / 2)) : 1
@@ -950,10 +869,12 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // user see, before re-analyzing, whether the selected depth would actually
   // improve on what's already saved
   const existingDepthRange = (() => {
-    if (evaluations.length === 0) return null
+    if (plyEvals.length === 0) return null
     const rangeSliceStart = (Math.min(fromMove, totalFullMoves) - 1) * 2
-    const rangeSliceEnd = Math.min(Math.min(toMove, totalFullMoves) * 2, evaluations.length)
-    const depths = evaluations.slice(rangeSliceStart, rangeSliceEnd).map(e => e.depth)
+    const rangeSliceEnd = Math.min(Math.min(toMove, totalFullMoves) * 2, plyEvals.length)
+    const depths = plyEvals.slice(rangeSliceStart, rangeSliceEnd)
+      .filter((e): e is PlyEvaluation => e != null)
+      .map(e => e.depth)
     if (depths.length === 0) return null
     const minDepth = Math.min(...depths)
     const maxDepth = Math.max(...depths)
@@ -979,9 +900,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
         <span className='ml-1 text-gray-400'>{game.time_class}</span>
       </div>
 
-      <div className='grid grid-cols-1 gap-6 xl:grid-cols-[440px_440px_440px] xl:items-start'>
+      <div className='grid grid-cols-1 gap-6 xl:grid-cols-[480px_480px_600px] xl:items-start'>
         {/* Column 1: Board */}
-        <div className='space-y-1 w-[440px]'>
+        <div className='space-y-1 w-[480px]'>
           {/* Top player */}
           <div className='flex items-center justify-between rounded bg-gray-600 px-3 py-1.5 text-xs text-white'>
             <span className='font-bold'>
@@ -1000,7 +921,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                 key={boardKey}
                 options={{
                   position: displayGame.current.fen(),
-                  boardStyle: { width: '440px', height: '440px' },
+                  boardStyle: { width: '480px', height: '480px' },
                   allowDragging: true,
                   onPieceDrop: ({ sourceSquare, targetSquare }) =>
                     targetSquare ? handlePieceDrop(sourceSquare, targetSquare) : false,
@@ -1046,30 +967,13 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
               </MyButton>
             </div>
           )}
-        </div>
 
-        {/* Column 2: Moves */}
-        <div className='w-[440px] rounded-lg bg-pink-50 p-2 xl:h-[780px] overflow-y-auto'>
-          {tree && (
-            <div className='h-full'>
-              <MoveTree
-                tree={tree}
-                currentNode={currentNode}
-                onSelectNode={handleSelectNode}
-                moveCounts={moveCounts}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Column 3: Analysis */}
-        <div className='w-[440px] rounded-lg bg-yellow-50 p-2 space-y-2'>
           {/* Game Analysis: whole-game batch analysis */}
           <MyBox title='Game Analysis'>
             <div className='space-y-2'>
               {/* Summary */}
               <div className='flex items-center justify-between'>
-                {evaluations.length > 0 ? (
+                {plyEvals.length > 0 ? (
                   <div className='flex gap-2 text-xs'>
                     <span className='rounded bg-red-500 px-2 py-0.5 text-white'>{blunders} blunders</span>
                     <span className='rounded bg-orange-500 px-2 py-0.5 text-white'>{mistakes} mistakes</span>
@@ -1082,18 +986,15 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
 
               {/* Settings */}
               <div className='flex items-center gap-4 border-t border-gray-200 pt-2'>
-                <MySelect
-                  label='Depth'
-                  options={['20', '22', '24', '26', '28', '30', '40']}
-                  value={String(stockfishDepth ?? STOCKFISH_DEFAULTS.reanalyzeDepth)}
-                  onChange={e => onStockfishDepthChange?.(parseInt(e.target.value, 10))}
-                  overrideClass='w-20 h-6 md:h-6'
+                <DepthInput
+                  value={stockfishDepth ?? STOCKFISH_DEFAULTS.reanalyzeDepth}
+                  onChange={depth => onStockfishDepthChange?.(depth)}
                 />
                 {existingDepthRange && (
                   <span className='text-xxs text-gray-500'>Saved at depth: {existingDepthRange}</span>
                 )}
               </div>
-              {evaluations.length > 0 && (
+              {plyEvals.length > 0 && (
                 <div className='flex items-center gap-4'>
                   <div className='flex items-center gap-2'>
                     <span className='font-bold text-xs whitespace-nowrap'>From move</span>
@@ -1132,7 +1033,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
               )}
               {!analyzing && (
                 <MyButton onClick={runAnalysis} overrideClass='w-full'>
-                  {evaluations.length > 0 ? 'Re-analyse' : 'Analyze Game'}
+                  {plyEvals.length > 0 ? 'Re-analyse' : 'Analyze Game'}
                 </MyButton>
               )}
               {analysisResultMessage && (
@@ -1167,57 +1068,63 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
               )}
             </div>
           </MyBox>
+        </div>
 
-          {/* Position Analysis: current-position analysis, live/capped depth */}
-          <MyBox title={`Position Analysis — ${currentMoveLabel}`}>
+        {/* Column 2: Moves */}
+        <div className='w-[480px] rounded-lg bg-pink-50 p-2'>
+          {tree && (
+            <div className='h-full'>
+              <MoveTree
+                tree={tree}
+                currentNode={currentNode}
+                onSelectNode={handleSelectNode}
+                moveCounts={moveCounts}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Column 3: Analysis */}
+        <div className='w-[600px] rounded-lg bg-yellow-50 p-2 space-y-2'>
+          {/* Shared heading for the 5 position-specific panels below (Stockfish, Moves
+              Played, Games Played, Master Moves, Master games) — "Game Analysis" (whole-game,
+              not position-specific) now lives in Column 1, below the board. */}
+          <p className='text-sm font-bold text-gray-700'>Position Analysis {currentMoveLabel}</p>
+
+          {/* Stockfish: current-position analysis, live/capped depth */}
+          <MyBox title='Stockfish' collapsible>
             <div className='space-y-2'>
               <div className='flex items-center gap-4'>
-                <MySelect
-                  label='Depth'
-                  options={['20', '22', '24', '26', '28', '30', '40']}
-                  value={String(deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth)}
-                  onChange={e => onDeepAnalysisDepthChange?.(parseInt(e.target.value, 10))}
-                  overrideClass='w-20 h-6 md:h-6'
+                <DepthInput
+                  value={deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth}
+                  onChange={depth => onDeepAnalysisDepthChange?.(depth)}
                 />
                 <MySelect
                   label='Lines'
-                  options={['3', '4', '5']}
+                  options={['1', '2', '3', '4', '5']}
                   value={String(deepAnalysisMultiPv ?? STOCKFISH_DEFAULTS.deepAnalysisMultiPv)}
                   onChange={e => onDeepAnalysisMultiPvChange?.(parseInt(e.target.value, 10))}
                   overrideClass='w-20 h-6 md:h-6'
                 />
               </div>
-              {!deepAnalyzing && !deepAnalysisData ? (
+              {deepAnalyzing ? (
+                <MyButton onClick={stopDeepAnalysis} overrideClass='w-full bg-red-500 hover:bg-red-600'>
+                  Stop
+                </MyButton>
+              ) : (
                 <MyButton onClick={startDeepAnalysis} overrideClass='w-full bg-purple-600 hover:bg-purple-700'>
                   Analyze Position
                 </MyButton>
-              ) : (
+              )}
+              {deepAnalysisData && (
                 <div className='space-y-1'>
-                  <div className='flex items-center justify-between'>
-                    <span className='text-xs font-bold text-purple-700'>
-                      Depth: {deepAnalysisData?.depth ?? 0}
-                    </span>
-                    {deepAnalyzing ? (
-                      <MyButton onClick={stopDeepAnalysis} overrideClass='text-xxs bg-red-500 hover:bg-red-600'>
-                        Stop
-                      </MyButton>
-                    ) : (
-                      <MyButton onClick={startDeepAnalysis} overrideClass='text-xxs bg-purple-600 hover:bg-purple-700'>
-                        Resume
-                      </MyButton>
-                    )}
+                  <div className='text-xxs text-gray-500'>
+                    {(deepAnalysisData.nodes / 1000000).toFixed(1)}M nodes
+                    {' · '}
+                    {(deepAnalysisData.nps / 1000).toFixed(0)}k nps
+                    {' · '}
+                    {(deepAnalysisData.timeMs / 1000).toFixed(1)}s
                   </div>
-                  {deepAnalysisData && deepAnalysisData.timeMs > 0 ? (
-                    <div className='text-xxs text-gray-500'>
-                      {(deepAnalysisData.nodes / 1000000).toFixed(1)}M nodes
-                      {' · '}
-                      {(deepAnalysisData.nps / 1000).toFixed(0)}k nps
-                      {' · '}
-                      {(deepAnalysisData.timeMs / 1000).toFixed(1)}s
-                    </div>
-                  ) : deepAnalysisData && (
-                    <div className='text-xxs text-gray-500'>From saved analysis</div>
-                  )}
                   {saveAnalysisMessage && (
                     <div className='text-xxs text-green-600 font-bold'>{saveAnalysisMessage}</div>
                   )}
@@ -1233,9 +1140,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
             </div>
           </MyBox>
 
-          {/* Moves From This Position: one row per move played from the current board
-              position, across all tracked players — click a row to reveal its games below */}
-          <MyBox title={`Moves From This Position — ${currentMoveLabel}`}>
+          {/* Moves Played: one row per move this player played from the current board
+              position — click a row to highlight it and filter Games Played below */}
+          <MyBox title='Moves Played' collapsible>
             {moveSummary.length === 0 ? (
               <p className='text-xs text-gray-400'>No games reached this position.</p>
             ) : (
@@ -1262,8 +1169,8 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                           <td className='py-1 pr-2 font-mono font-medium'>{m.move_played}</td>
                           <td className='py-1 pr-2 text-right tabular-nums'>{m.mov_times}</td>
                           <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{wp}%</td>
-                          <td className={`py-1 text-right tabular-nums font-mono ${m.eva_cp != null && m.eva_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                            {m.eva_cp != null ? formatCp(m.eva_cp) : '—'}
+                          <td className={`py-1 text-right tabular-nums font-mono ${m.pose_cp != null && m.pose_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                            {m.pose_cp != null ? formatCp(m.pose_cp) : '—'}
                           </td>
                         </tr>
                       )
@@ -1274,11 +1181,81 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
             )}
           </MyBox>
 
-          {/* Masters — master-level game stats for whatever position is currently on the
+          {/* Games Played: every one of this player's games that reached this position,
+              filtered client-side to the "Moves Played" row's move when one is selected —
+              click a row to switch the board to that game */}
+          {positionGames.length > 0 && (() => {
+            const filteredGames = selectedPositionMove
+              ? positionGames.filter(g => g.move_played === selectedPositionMove)
+              : positionGames
+            return (
+              <MyBox title='Games Played' collapsible>
+                <div className='flex gap-2 text-xxs mb-1'>
+                  <span className='rounded bg-pink-100 px-2 py-0.5 text-gray-700'>Winning position, lost/drawn</span>
+                  <span className='rounded bg-yellow-50 px-2 py-0.5 text-gray-700'>Losing position, won</span>
+                </div>
+                {filteredGames.length === 0 ? (
+                  <p className='text-xs text-gray-400'>No games match the selected move.</p>
+                ) : (
+                  <div className='overflow-x-auto'>
+                    <table className='w-full text-xs'>
+                      <thead>
+                        <tr className='text-left text-gray-500 border-b border-gray-200'>
+                          <th className='py-1 pr-2'>Date</th>
+                          <th className='py-1 pr-2 text-right'>Game</th>
+                          <th className='py-1 pr-2 text-right'>Opp Rating</th>
+                          <th className='py-1 pr-2'>Termination</th>
+                          <th className='py-1 pr-2 text-right'>Final Eval</th>
+                          <th className='py-1 text-center'>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody className='divide-y divide-gray-100'>
+                        {filteredGames.map((g, i) => {
+                          const rowBg =
+                            g.resultMismatch === 'lostWinning' ? 'bg-pink-100 hover:bg-pink-200'
+                            : g.resultMismatch === 'wonLosing'  ? 'bg-yellow-50 hover:bg-yellow-100'
+                            : 'hover:bg-gray-50'
+                          const isCurrentGame = g.gdid != null && g.gdid === gdid
+                          return (
+                            <tr
+                              key={i}
+                              className={`${rowBg} ${isCurrentGame ? 'border-l-4 border-blue-500' : ''} ${g.gdid != null ? 'cursor-pointer' : ''}`}
+                              onClick={() => {
+                                if (g.gdid == null) return
+                                // Deliberately no pushBackTarget here — switching games while
+                                // already on /analyze should keep BackButton pointing at the same
+                                // original parent, not nest one level deeper per game clicked
+                                router.push(`/analyze?game=${g.gdid}&player=${g.player}`)
+                              }}
+                            >
+                              <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>
+                              <td className='py-1 pr-2 text-right text-gray-500'>{g.gdid ?? '—'}</td>
+                              <td className='py-1 pr-2 text-right tabular-nums'>{g.opponentRating ?? '—'}</td>
+                              <td className='py-1 pr-2 text-gray-500'>{g.termination ?? '—'}</td>
+                              <td className={`py-1 pr-2 text-right tabular-nums font-mono ${g.finalEval != null && g.finalEval < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                                {g.finalEval != null ? formatCp(g.finalEval) : '—'}
+                              </td>
+                              <td className='py-1 text-center'>
+                                {g.playerResult === 'win' ? 'W' : g.playerResult === 'loss' ? 'L' : g.playerResult === 'draw' ? 'D' : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </MyBox>
+            )
+          })()}
+
+          {/* Master Moves — master-level game stats for whatever position is currently on the
               board, from the Lichess Masters Opening Explorer. Separate panel from
-              "Moves From This Position" (not merged) — showing all fields the API
-              returns; whether to merge later is a follow-up decision. */}
-          <MyBox title={`Masters — ${currentMoveLabel}`}>
+              "Moves Played" (not merged) — showing all fields the API
+              returns; whether to merge later is a follow-up decision. Hidden entirely until a
+              position has been clicked on (currentNode set). */}
+          {currentNode && (
+          <MyBox title='Master Moves' collapsible>
             {!mastersData || mastersData.moves.length === 0 ? (
               <p className='text-xs text-gray-400'>No master games recorded from this position.</p>
             ) : (
@@ -1307,8 +1284,13 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                         <tbody className='divide-y divide-gray-100'>
                           {mastersData.moves.map(m => {
                             const games = m.white + m.draws + m.black
+                            const isSelected = selectedMastersMove === m.uci
                             return (
-                              <tr key={m.uci}>
+                              <tr
+                                key={m.uci}
+                                className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                onClick={() => setSelectedMastersMove(isSelected ? null : m.uci)}
+                              >
                                 <td className='py-1 pr-2 font-mono font-medium'>{m.san}</td>
                                 <td className='py-1 pr-2 text-right tabular-nums'>{games.toLocaleString()}</td>
                                 <td className='py-1 pr-2 text-right tabular-nums text-green-700'>
@@ -1327,140 +1309,76 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                         </tbody>
                       </table>
                     </div>
-                    {mastersData.topGames.length > 0 && (() => {
-                      const filteredTopGames = mastersData.topGames.filter(
-                        g => g.white.rating >= mastersMinRating && g.black.rating >= mastersMinRating
-                      )
-                      return (
-                        <div className='space-y-1'>
-                          <div className='flex items-center justify-between'>
-                            <p className='text-xxs text-gray-400'>Top games</p>
-                            <div className='flex items-center gap-1'>
-                              <span className='text-xxs text-gray-500'>Min rating</span>
-                              <MyInput
-                                type='number'
-                                value={mastersMinRating}
-                                onChange={e => setMastersMinRating(e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
-                                overrideClass='w-16 h-6 md:h-6'
-                              />
-                            </div>
-                          </div>
-                          <p className='text-xxs text-gray-400'>
-                            Filters Top Games only — the move table above always covers the full Masters
-                            database (FIDE 2200+), which the API doesn't break down by rating.
-                          </p>
-                          {filteredTopGames.length === 0 ? (
-                            <p className='text-xs text-gray-400'>No Top Games at or above {mastersMinRating}.</p>
-                          ) : (
-                            <div className='overflow-x-auto'>
-                              <table className='w-full text-xs'>
-                                <thead>
-                                  <tr className='text-left text-gray-500 border-b border-gray-200'>
-                                    <th className='py-1 pr-2'>White</th>
-                                    <th className='py-1 pr-2'>Black</th>
-                                    <th className='py-1 pr-2 text-right'>Year</th>
-                                    <th className='py-1 pr-2 text-center'>Result</th>
-                                    <th className='py-1 text-right'>Game</th>
-                                  </tr>
-                                </thead>
-                                <tbody className='divide-y divide-gray-100'>
-                                  {filteredTopGames.map((g, i) => (
-                                    <tr key={i}>
-                                      <td className='py-1 pr-2'>{g.white.name} <span className='text-gray-400'>({g.white.rating})</span></td>
-                                      <td className='py-1 pr-2'>{g.black.name} <span className='text-gray-400'>({g.black.rating})</span></td>
-                                      <td className='py-1 pr-2 text-right tabular-nums'>{g.year}</td>
-                                      <td className='py-1 pr-2 text-center'>
-                                        {g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½'}
-                                      </td>
-                                      <td className='py-1 text-right'>
-                                        <a
-                                          href={`https://lichess.org/${g.id}`}
-                                          target='_blank'
-                                          rel='noopener noreferrer'
-                                          className='text-blue-600 hover:underline'
-                                        >
-                                          view
-                                        </a>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })()}
                   </div>
                 )
               })()
             )}
           </MyBox>
-
-          {/* Games — <move>: individual games that played the clicked move, fetched
-              scoped to that move — click a row to switch the board to that game */}
-          {selectedPositionMove && (
-            <MyBox title={`Games — ${getNextMoveLabel(currentPly, selectedPositionMove)}`}>
-              {(() => {
-                const filteredGames = positionGames
-                if (filteredGames.length === 0) {
-                  return <p className='text-xs text-gray-400'>No other games reached this position.</p>
-                }
-                return (
-                  <div className='overflow-x-auto'>
-                    <table className='w-full text-xs'>
-                      <thead>
-                        <tr className='text-left text-gray-500 border-b border-gray-200'>
-                          <th className='py-1 pr-2'>Date</th>
-                          <th className='py-1 pr-2 text-right'>Game</th>
-                          <th className='py-1 pr-2 text-right'>Opp Rating</th>
-                          <th className='py-1 pr-2'>Termination</th>
-                          <th className='py-1 pr-2 text-right'>Final Eval</th>
-                          <th className='py-1 text-center'>Result</th>
-                        </tr>
-                      </thead>
-                      <tbody className='divide-y divide-gray-100'>
-                        {filteredGames.map((g, i) => {
-                          const rowBg =
-                            g.resultMismatch === 'lostWinning' ? 'bg-pink-100 hover:bg-pink-200'
-                            : g.resultMismatch === 'wonLosing'  ? 'bg-yellow-50 hover:bg-yellow-100'
-                            : 'hover:bg-gray-50'
-                          const isCurrentGame = g.gdid != null && g.gdid === gdid
-                          return (
-                            <tr
-                              key={i}
-                              className={`${rowBg} ${g.gdid != null ? 'cursor-pointer' : ''}`}
-                              onClick={() => {
-                                if (g.gdid == null) return
-                                // Deliberately no pushBackTarget here — switching games while
-                                // already on /analyze should keep BackButton pointing at the same
-                                // original parent, not nest one level deeper per game clicked
-                                router.push(`/analyze?game=${g.gdid}&player=${g.player}`)
-                              }}
-                            >
-                              <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>
-                              <td className='py-1 pr-2 text-right text-gray-500'>
-                                {g.gdid ?? '—'}
-                                {isCurrentGame && <span className='ml-1 text-blue-600 font-bold'>(current)</span>}
-                              </td>
-                              <td className='py-1 pr-2 text-right tabular-nums'>{g.opponentRating ?? '—'}</td>
-                              <td className='py-1 pr-2 text-gray-500'>{g.termination ?? '—'}</td>
-                              <td className={`py-1 pr-2 text-right tabular-nums font-mono ${g.finalEval != null && g.finalEval < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                                {g.finalEval != null ? formatCp(g.finalEval) : '—'}
-                              </td>
-                              <td className='py-1 text-center'>
-                                {g.playerResult === 'win' ? 'W' : g.playerResult === 'loss' ? 'L' : g.playerResult === 'draw' ? 'D' : '—'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              })()}
-            </MyBox>
           )}
+
+          {/* Master games — master games list scoped to the current position (and, if a row in
+              the Master Moves table above is selected, to that specific move). Separate panel
+              from Master Moves (not nested) so it can carry its own title/heading. Hidden entirely
+              until a position has been clicked on (currentNode set). */}
+          {currentNode && mastersData && mastersData.topGames.length > 0 && (() => {
+            const filteredTopGames = mastersData.topGames.filter(
+              g => !selectedMastersMove || g.uci === selectedMastersMove
+            )
+            return (
+              <MyBox title='Master games' collapsible>
+                <div className='space-y-1'>
+                  <div className='flex justify-end'>
+                    <MyHelpField text="Live results from Lichess's Masters Explorer for this position — Lichess selects which games qualify as 'top', not this app; the count and selection aren't configurable here." />
+                  </div>
+                  {filteredTopGames.length === 0 ? (
+                    <p className='text-xs text-gray-400'>No games match the selected move.</p>
+                  ) : (
+                    <div className='overflow-x-auto'>
+                      <table className='w-full text-xs'>
+                        <thead>
+                          <tr className='text-left text-gray-500 border-b border-gray-200'>
+                            <th className='py-1 pr-2'>Move</th>
+                            <th className='py-1 pr-2'>White</th>
+                            <th className='py-1 pr-2'>Black</th>
+                            <th className='py-1 pr-2 text-right'>Year</th>
+                            <th className='py-1 pr-2 text-center'>Result</th>
+                            <th className='py-1 text-right'>Game</th>
+                          </tr>
+                        </thead>
+                        <tbody className='divide-y divide-gray-100'>
+                          {filteredTopGames.map((g, i) => {
+                            const moveSan = mastersData.moves.find(m => m.uci === g.uci)?.san ?? g.uci
+                            return (
+                              <tr key={i}>
+                                <td className='py-1 pr-2 font-mono font-medium'>{moveSan}</td>
+                                <td className='py-1 pr-2'>{g.white.name} <span className='text-gray-400'>({g.white.rating})</span></td>
+                                <td className='py-1 pr-2'>{g.black.name} <span className='text-gray-400'>({g.black.rating})</span></td>
+                                <td className='py-1 pr-2 text-right tabular-nums'>{g.year}</td>
+                                <td className='py-1 pr-2 text-center'>
+                                  {g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½'}
+                                </td>
+                                <td className='py-1 text-right'>
+                                  <a
+                                    href={`https://lichess.org/${g.id}`}
+                                    target='_blank'
+                                    rel='noopener noreferrer'
+                                    className='text-blue-600 hover:underline'
+                                  >
+                                    view
+                                  </a>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </MyBox>
+            )
+          })()}
+
         </div>
       </div>
     </div>

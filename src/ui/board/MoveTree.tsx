@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { AnalysisTree, MoveNode } from '@/src/lib/analysisTree'
-import { MoveEvaluation } from '@/src/lib/stockfish'
+import { PlyEvaluation } from '@/src/lib/stockfish'
 import { formatCp } from '@/src/lib/formatCp'
 
 interface MoveTreeProps {
@@ -20,7 +20,7 @@ const CLASSIFICATION_TEXT_COLORS: Record<string, string> = {
   good: 'text-blue-600'
 }
 
-function annotationSymbol(ev?: MoveEvaluation): string {
+function annotationSymbol(ev?: PlyEvaluation): string {
   if (!ev) return ''
   if (ev.classification === 'blunder') return '??'
   if (ev.classification === 'mistake') return '?'
@@ -71,11 +71,11 @@ function MoveBadge({
 }
 
 function EvalCell({ node }: { node?: MoveNode }) {
-  if (!node?.evaluation) return <td className='py-px w-20'></td>
+  if (!node?.evaluation) return <td className='py-px w-24'></td>
   const cp = node.evaluation.cp
   const depth = node.evaluation.depth
   return (
-    <td className={`py-px w-20 font-mono text-xxs ${evalColor(cp)}`}>
+    <td className={`py-px w-24 font-mono text-xxs ${evalColor(cp)}`}>
       {formatCp(cp)}
       <span className='text-gray-400'> ({depth})</span>
     </td>
@@ -159,7 +159,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
     rows.push(
       <tr key={`main-${i}`} className='border-b border-gray-50'>
         <td className='py-px pr-1 text-gray-400 font-mono text-xs w-8'>{moveNum}.</td>
-        <td className='py-px w-20'>
+        <td className='py-px w-24'>
           <MoveBadge
             node={whiteNode}
             isActive={currentNode?.id === whiteNode.id}
@@ -168,7 +168,7 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
           />
         </td>
         <EvalCell node={whiteNode} />
-        <td className='py-px w-20'>
+        <td className='py-px w-24'>
           {blackNode && (
             <MoveBadge
               node={blackNode}
@@ -226,14 +226,14 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
 
   return (
     <div ref={containerRef} className='overflow-y-auto'>
-      <table className='table-fixed w-[352px] text-xs'>
+      <table className='table-fixed w-[416px] mx-auto text-xs'>
         <thead>
           <tr className='border-b border-gray-200 text-gray-400'>
             <th className='w-8 pb-1 text-left'>#</th>
-            <th className='w-20 pb-1 text-left'>White</th>
-            <th className='w-20 pb-1 text-left'>Eval</th>
-            <th className='w-20 pb-1 text-left'>Black</th>
-            <th className='w-20 pb-1 text-left'>Eval</th>
+            <th className='w-24 pb-1 text-left'>White</th>
+            <th className='w-24 pb-1 text-left'>Eval</th>
+            <th className='w-24 pb-1 text-left'>Black</th>
+            <th className='w-24 pb-1 text-left'>Eval</th>
           </tr>
         </thead>
         <tbody>{rows}</tbody>

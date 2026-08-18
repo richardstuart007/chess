@@ -350,6 +350,20 @@ CREATE INDEX idx_tpos_move_num ON public.tpos_positions USING btree (pos_move_nu
 CREATE INDEX idx_tpos_reached ON public.tpos_positions USING btree (pos_reached DESC);
 
 --
+-- Name: tpose_positions_eval; Type: TABLE;
+--
+
+CREATE TABLE public.tpose_positions_eval (
+    pose_pos_id integer NOT NULL,
+    pose_cp integer,
+    pose_depth smallint,
+    pose_best_move text
+);
+
+ALTER TABLE ONLY public.tpose_positions_eval
+    ADD CONSTRAINT tpose_positions_eval_pkey PRIMARY KEY (pose_pos_id);
+
+--
 -- Name: tpur_workfile; Type: TABLE;
 --
 

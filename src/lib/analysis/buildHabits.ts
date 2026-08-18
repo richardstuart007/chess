@@ -64,12 +64,17 @@ function chunkRows<T>(rows: T[], maxRows: number): T[][] {
 //  lookup joins against the already-grouped aggregate (not the raw per-occurrence rows),
 //  so it runs once per final habit row, not once per underlying game occurrence.
 //----------------------------------------------------------------------------------
-export async function buildHabits(level: number = 1, forceNewRun?: boolean): Promise<{ built: number }> {
-  await logStart('buildHabits', 'buildHabitsRoute', 'aggregating move habits', level)
-  const t0 = Date.now()
+//----------------------------------------------------------------------------------
+//  fetchHabitAggregates — the aggregate query behind buildHabits' full rebuild. Habits
+//  are deliberately never refreshed live from an interactive analysis click — only this
+//  nightly unscoped rebuild updates thab_habits, per user decision — so this has no
+//  position-scoped variant to keep in sync with.
+//----------------------------------------------------------------------------------
+async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
+  const params: number[] = [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR]
 
   const selectRes = await table_query({
-    caller: 'buildHabits_select',
+    caller: 'fetchHabitAggregates_select',
     query: `
       WITH agg AS (
         SELECT
@@ -106,12 +111,12 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
         LIMIT 1
       ) latest_game ON true
     `,
-    params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR],
+    params,
     table: 'thab_habits',
-    level, isupdate: false, severity: 'D', skipCache: true
+    level: 1, isupdate: false, severity: 'D', skipCache: true
   })
 
-  const aggregates: HabitAggregate[] = selectRes.map((r: any) => ({
+  return selectRes.map((r: any) => ({
     player:         r.player,
     posId:          Number(r.pos_id),
     moveSan:        r.move_san,
@@ -126,7 +131,13 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
     ecoCode:        r.eco_code ?? null,
     lastOccurred:   r.last_occurred != null ? Number(r.last_occurred) : null
   }))
+}
 
+//----------------------------------------------------------------------------------
+//  upsertHabitAggregates — chunked upsert into thab_habits, shared by buildHabits and
+//  refreshHabitsForPosition
+//----------------------------------------------------------------------------------
+async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number): Promise<number> {
   let built = 0
   for (const chunk of chunkRows(aggregates, POSITION_INSERT_CHUNK_SIZE)) {
     const values = chunk.map((_, i) => {
@@ -139,7 +150,7 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
       a.openingName, a.ecoCode, a.lastOccurred
     ])
     const upsertRes = await table_query({
-      caller: 'buildHabits_upsert',
+      caller: 'upsertHabitAggregates_upsert',
       query: `
         INSERT INTO thab_habits
           (hab_player, hab_pos_id, hab_move_san, hab_move_uci, hab_move_num, hab_move_times, hab_move_wins, hab_move_losses, hab_move_cp, hab_resulting_pos_id, hab_opening_name, hab_eco_code, hab_last_occurred)
@@ -163,8 +174,16 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
     })
     built += upsertRes.length
   }
-
   cache_clearTable('thab_habits', 'buildHabits')
+  return built
+}
+
+export async function buildHabits(level: number = 1, forceNewRun?: boolean): Promise<{ built: number }> {
+  await logStart('buildHabits', 'buildHabitsRoute', 'aggregating move habits', level)
+  const t0 = Date.now()
+
+  const aggregates = await fetchHabitAggregates()
+  const built = await upsertHabitAggregates(aggregates, level)
 
   const durationMs = Date.now() - t0
 

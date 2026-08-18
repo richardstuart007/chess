@@ -131,12 +131,12 @@ export const STOCKFISH_HASH = 128
 export const STOCKFISH_BESTLINE_LENGTH = 5
 export const STOCKFISH_DEEP_ANALYSIS_DEPTH = 24
 export const STOCKFISH_DEEP_ANALYSIS_MULTIPV = 3
+export const STOCKFISH_DEPTH_INPUT_MAX = 40
 
 //----------------------------------------------------------------------------------
 //  Masters Explorer (Lichess)
 //----------------------------------------------------------------------------------
 export const MASTERS_EXPLORER_MOVES_LIMIT = 12
-export const MASTERS_EXPLORER_MIN_RATING = 2500
 
 //----------------------------------------------------------------------------------
 //  UI Display

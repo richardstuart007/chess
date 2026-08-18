@@ -69,10 +69,10 @@ function AnalyzeContent() {
           finalEval:   row.gd_final_eval
         }
 
-        const storedEvals = await getGameEvals(row.gd_gdid)
+        const storedPlyEvals = await getGameEvals(row.gd_gdid)
         setGame({
           ...raw,
-          _evaluations: storedEvals.length > 0 ? storedEvals : null
+          _plyEvals: storedPlyEvals.length > 0 ? storedPlyEvals : null
         } as ChessComGame)
         setGdid(row.gd_gdid)
       } catch (err) {

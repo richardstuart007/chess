@@ -5,12 +5,12 @@ import { table_query } from 'nextjs-shared/table_query'
 import { table_truncate } from 'nextjs-shared/table_truncate'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
-import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP } from '../constants'
+import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP, MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  purgeStaleReachOnePositions — EXPLICIT EXCEPTION to the "no destructive SQL in
 //  automation" rule, user-approved (see chess project .claude/CLAUDE.md). Deletes
-//  tpos_positions/tgam_game_positions/teva_evaluations rows for positions reached by
+//  tpos_positions/tgam_game_positions/tpose_positions_eval rows for positions reached by
 //  MIN_REACH_TO_KEEP games or fewer, once every one of those occurrences is at least
 //  PURGE_REACH_GRACE_DAYS old. Sets tgd_gamesdecon.gd_positions_purged on any game left
 //  with zero tgam_game_positions rows, so buildPositionTree never mistakes a purged
@@ -37,6 +37,14 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   // across two different indexed columns) is outside the grace period. NOT EXISTS
   // rather than a single date check so this stays correct if MIN_REACH_TO_KEEP is ever
   // raised further (multiple occurrences, all must be old).
+  //
+  // pos_move_num range exemption: a position created by upgradePositionEvaluation's
+  // write-back path (createIfMissing) for a tpose_positions_eval cache outside the normal
+  // MIN_ANALYSIS_MOVE..MAX_ANALYSIS_MOVE build range has zero tgam_game_positions
+  // occurrences, so the grace-period NOT EXISTS checks below trivially pass and it would
+  // otherwise qualify for purge almost immediately — undoing the write-back on the very
+  // next run. Those positions were never part of the reach-tracked habit system to begin
+  // with, so this reach-based rule shouldn't apply to them at all.
   const insertRes = await table_query({
     caller: 'purgeStaleReachOnePositions_seed',
     query: `
@@ -44,6 +52,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
       SELECT p.pos_id, p.pos_fen, p.pos_reached
       FROM tpos_positions p
       WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
+        AND p.pos_move_num BETWEEN ${MIN_ANALYSIS_MOVE} AND ${MAX_ANALYSIS_MOVE}
         AND NOT EXISTS (
           SELECT 1
           FROM tgam_game_positions g
@@ -69,7 +78,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
 
   if (!purgedCount) {
     const durationMs = Date.now() - t0
-    await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge teva_evaluations', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'teva_evaluations', outputRecs: 0, durationMs, forceNewRun })
+    await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs, forceNewRun })
     await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgam_game_positions', outputRecs: 0, durationMs, forceNewRun: false })
     await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpos_positions', outputRecs: 0, durationMs, forceNewRun: false })
     await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs, forceNewRun: false })
@@ -80,9 +89,9 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   // 1. Delete evaluations for the candidate set
   const evalsRes = await table_query({
     caller: 'purgeStaleReachOnePositions_evals',
-    query: `DELETE FROM teva_evaluations WHERE eva_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING eva_evaid`,
+    query: `DELETE FROM tpose_positions_eval WHERE pose_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING pose_pos_id`,
     params: [],
-    table: 'teva_evaluations',
+    table: 'tpose_positions_eval',
     level, isupdate: true, severity: 'D'
   })
 
@@ -144,7 +153,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   })
 
   const durationMs = Date.now() - t0
-  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge teva_evaluations', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'teva_evaluations', outputRecs: evalsRes.length, durationMs, forceNewRun })
+  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpose_positions_eval', outputRecs: evalsRes.length, durationMs, forceNewRun })
   await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.length + tgamNullRes.length, durationMs, forceNewRun: false })
   await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.length, durationMs, forceNewRun: false })
   await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.length, durationMs, forceNewRun: false })

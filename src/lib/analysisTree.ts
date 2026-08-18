@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js'
-import { MoveEvaluation } from './stockfish'
+import { PlyEvaluation } from './stockfish'
 
 // --------------------------------------------------------------------------
 //  Types
@@ -14,7 +14,7 @@ export interface MoveNode {
   fenBefore: string
   parent: MoveNode | null
   children: MoveNode[]
-  evaluation?: MoveEvaluation
+  evaluation?: PlyEvaluation
   isMainLine: boolean
 }
 
@@ -39,7 +39,7 @@ export interface MultiPvResult {
 export function buildTree(
   history: { san: string; from: string; to: string }[],
   fens: string[],
-  evaluations: MoveEvaluation[]
+  plyEvals: PlyEvaluation[]
 ): AnalysisTree {
   // Sentinel root (position before move 1)
   const root: MoveNode = {
@@ -67,7 +67,7 @@ export function buildTree(
       fenBefore: fens[i],
       parent: prev,
       children: [],
-      evaluation: evaluations[i],
+      evaluation: plyEvals[i],
       isMainLine: true
     }
     prev.children.push(node)
