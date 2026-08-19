@@ -131,3 +131,13 @@ two-reference-pair problem shape.
   further (storage mechanism, whether nextjs-shared already has a pattern for this, etc.). See
   the `tpl_players` section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the
   full write-up.
+
+- **Preset/known-player selection for the "Chess.com Games" panel's Player 1/2 filters**
+  (identified 2026-08-19, not to be done now) — the panel's `p1`/`p2` filters (see
+  `docs/plans/PLAN_display-fen-analysis-panel.md` / its archived copy) are plain free-text
+  inputs. Idea for later: let the user pick from a curated list of well-known players (e.g. Magnus Carlsen,
+  Alireza Firouzja) instead of typing a name, to more easily search for games between specific
+  strong players from the current position/opening. Not designed further — would need the actual
+  player-name list confirmed with the user (per the "never hardcode a list without confirmation"
+  rule) and a decision on dropdown vs. free-text-with-
+  autocomplete.

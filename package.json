@@ -1,6 +1,6 @@
 {
   "name": "chess",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "private": true,
   "scripts": {
     "build": "next build",
@@ -23,6 +23,7 @@
     "@heroicons/react": "2.2.0",
     "@neondatabase/serverless": "1.1.0",
     "@xyflow/react": "^12.11.2",
+    "cheerio": "^1.2.0",
     "chess.js": "1.4.0",
     "dotenv": "17.4.2",
     "next": "16.2.9",

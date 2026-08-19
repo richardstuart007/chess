@@ -74,7 +74,8 @@ import {
   WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED,
   WIDTH_SORT_BY,
-  MASTERS_EXPLORER_MOVES_LIMIT
+  MASTERS_EXPLORER_MOVES_LIMIT,
+  CHESSCOM_SEARCH_MIN_RATING
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -200,6 +201,12 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     heading: 'Masters Explorer (Lichess)',
     entries: [
       { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] }
+    ]
+  },
+  {
+    heading: 'Chess.com Games Search',
+    entries: [
+      { name: 'CHESSCOM_SEARCH_MIN_RATING', value: CHESSCOM_SEARCH_MIN_RATING, description: 'Default minimum-rating filter for the "Chess.com Games" panel\'s search — user-editable in the panel.', consumers: ['ChessBoardView.tsx: ChessBoardView'] }
     ]
   }
 ]

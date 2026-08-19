@@ -10,6 +10,7 @@ import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MySelect from 'nextjs-shared/MySelect'
 import { MyInput } from 'nextjs-shared/MyInput'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
+import { MyToggle } from 'nextjs-shared/MyToggle'
 import BackButton from '@/src/ui/BackButton'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
@@ -17,7 +18,8 @@ import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpd
 import { saveGameEvaluations } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
-import { MOVE_COUNT_MIN_MOVE } from '@/src/lib/constants'
+import { searchChessComGames, ChessComSearchGame, ChessComSearchFilters } from '@/src/lib/actions/chesscomSearch'
+import { MOVE_COUNT_MIN_MOVE, CHESSCOM_SEARCH_MIN_RATING } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -55,6 +57,31 @@ const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
   mistake: 'rgba(249, 115, 22, 0.6)',
   inaccuracy: 'rgba(234, 179, 8, 0.5)'
 }
+
+//
+//  Chess.com's own /games/search filter values — see ChessComSearchFilters/searchChessComGames
+//  in chesscomSearch.ts for where these are consumed and the full provenance comment.
+//
+const CHESSCOM_YEAR_COMPARISON_OPTIONS = [
+  { value: '1', label: '=' },
+  { value: '2', label: '≥' },
+  { value: '3', label: '≤' }
+]
+const CHESSCOM_RESULT_OPTIONS = [
+  { value: '0', label: 'Any' },
+  { value: '1', label: 'White wins' },
+  { value: '2', label: 'Black wins' },
+  { value: '5', label: 'Draw' },
+  { value: '6', label: 'Not a draw' }
+]
+const CHESSCOM_SORT_OPTIONS = [
+  { value: '', label: 'Most recent' },
+  { value: '8', label: 'Oldest' },
+  { value: '3', label: 'Rating (White)' },
+  { value: '4', label: 'Rating (Black)' },
+  { value: '9', label: 'Most moves' },
+  { value: '10', label: 'Fewest moves' }
+]
 
 //----------------------------------------------------------------------------------
 //  getCurrentMoveLabel — "16.Ng6" / "16...Ng6" for whatever position is currently on
@@ -138,6 +165,21 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const [deepAnalysisData, setDeepAnalysisData] = useState<InfiniteAnalysisUpdate | null>(null)
   const latestAnalysisLinesRef = useRef<{ lines: MultiPvResult[]; depth: number } | null>(null)
   const [saveAnalysisMessage, setSaveAnalysisMessage] = useState('')
+  const [fenCopied, setFenCopied] = useState(false)
+
+  // Chess.com Games — live search results for the current position, fetched on demand
+  const [chesscomGames, setChesscomGames] = useState<ChessComSearchGame[] | null>(null)
+  const [chesscomLoading, setChesscomLoading] = useState(false)
+
+  // Chess.com Games search filters — param names match chess.com's own search URL
+  const [p1, setP1] = useState('')
+  const [p2, setP2] = useState('')
+  const [fixedcolors, setFixedcolors] = useState(false)
+  const [mr, setMr] = useState<number | ''>(CHESSCOM_SEARCH_MIN_RATING)
+  const [year, setYear] = useState('')
+  const [lsty, setLsty] = useState(CHESSCOM_YEAR_COMPARISON_OPTIONS[0].value)
+  const [lstresult, setLstresult] = useState(CHESSCOM_RESULT_OPTIONS[0].value)
+  const [sort, setSort] = useState(CHESSCOM_SORT_OPTIONS[0].value)
 
   // Force re-render on board changes (displayGame is a ref)
   const [boardKey, setBoardKey] = useState(0)
@@ -483,6 +525,33 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // -----------------------------------------------------------------------
   function getCurrentPositionFen(): string | undefined {
     return currentNode?.fen ?? tree?.root.fen
+  }
+
+  // -----------------------------------------------------------------------
+  // Copy the current position's FEN to the clipboard (e.g. to paste into
+  // chess.com's own analysis board) — brief "Copied" feedback on the button.
+  // -----------------------------------------------------------------------
+  async function copyFenToClipboard() {
+    const fen = getCurrentPositionFen()
+    if (!fen) return
+    await navigator.clipboard.writeText(fen)
+    setFenCopied(true)
+    setTimeout(() => setFenCopied(false), 1500)
+  }
+
+  // -----------------------------------------------------------------------
+  // Search chess.com's own games database for the current position. Phase 1: no filters,
+  // just the exact-position match (see buildChessComSearchUrl's equivalent logic inside
+  // searchChessComGames — opening/openingId left blank, only fen applied).
+  // -----------------------------------------------------------------------
+  async function searchChessCom() {
+    const fen = getCurrentPositionFen()
+    if (!fen) return
+    const filters: ChessComSearchFilters = { p1, p2, fixedcolors, mr, year, lsty, lstresult, sort }
+    setChesscomLoading(true)
+    const games = await searchChessComGames(fen, filters)
+    setChesscomGames(games)
+    setChesscomLoading(false)
   }
 
   // -----------------------------------------------------------------------
@@ -1094,6 +1163,12 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
           {/* Stockfish: current-position analysis, live/capped depth */}
           <MyBox title='Stockfish' collapsible>
             <div className='space-y-2'>
+              <div className='flex items-center gap-2'>
+                <span className='text-xxs font-mono text-gray-500 truncate'>{getCurrentPositionFen()}</span>
+                <MyButton onClick={copyFenToClipboard} overrideClass='h-5 px-2 text-xxs whitespace-nowrap'>
+                  {fenCopied ? 'Copied' : 'Copy FEN'}
+                </MyButton>
+              </div>
               <div className='flex items-center gap-4'>
                 <DepthInput
                   value={deepAnalysisDepth ?? STOCKFISH_DEFAULTS.deepAnalysisDepth}
@@ -1255,7 +1330,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
               returns; whether to merge later is a follow-up decision. Hidden entirely until a
               position has been clicked on (currentNode set). */}
           {currentNode && (
-          <MyBox title='Master Moves' collapsible>
+          <MyBox title='Master Moves (Lichess)' collapsible>
             {!mastersData || mastersData.moves.length === 0 ? (
               <p className='text-xs text-gray-400'>No master games recorded from this position.</p>
             ) : (
@@ -1325,7 +1400,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
               g => !selectedMastersMove || g.uci === selectedMastersMove
             )
             return (
-              <MyBox title='Master games' collapsible>
+              <MyBox title='Master Games (Lichess)' collapsible>
                 <div className='space-y-1'>
                   <div className='flex justify-end'>
                     <MyHelpField text="Live results from Lichess's Masters Explorer for this position — Lichess selects which games qualify as 'top', not this app; the count and selection aren't configurable here." />
@@ -1373,6 +1448,116 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                         </tbody>
                       </table>
                     </div>
+                  )}
+                </div>
+              </MyBox>
+            )
+          })()}
+
+          {/* Chess.com Games — chess.com's own games database, searched live for the exact
+              current position (fen) plus the filters below. Unlike Master Games (Lichess)
+              (auto-loaded per position), this is fetched on click — it's a live scrape of an
+              external site, not an API call, so it isn't triggered automatically on every move. */}
+          {(() => {
+            const fen = getCurrentPositionFen()
+            return (
+              <MyBox title='Chess.com Games' collapsible>
+                <div className='space-y-2'>
+                  <MyButton
+                    onClick={searchChessCom}
+                    disabled={!fen || chesscomLoading}
+                    overrideClass='w-full bg-green-600 hover:bg-green-700'
+                  >
+                    {chesscomLoading ? 'Searching…' : 'Search chess.com'}
+                  </MyButton>
+                  <div className='flex flex-wrap items-center gap-3'>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-bold text-xs whitespace-nowrap'>Player 1</span>
+                      <MyInput value={p1} onChange={e => setP1(e.target.value)} overrideClass='w-32 h-6 md:h-6' />
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-bold text-xs whitespace-nowrap'>Player 2</span>
+                      <MyInput value={p2} onChange={e => setP2(e.target.value)} overrideClass='w-32 h-6 md:h-6' />
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-bold text-xs whitespace-nowrap'>Fixed colors (P1 = White)</span>
+                      <MyToggle inputName='chesscom-fixedcolors' inputValue={fixedcolors} onChange={e => setFixedcolors(e.target.checked)} />
+                    </div>
+                  </div>
+                  <div className='flex flex-wrap items-center gap-3'>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-bold text-xs whitespace-nowrap'>Min rating</span>
+                      <MyInput
+                        type='number'
+                        value={mr}
+                        onChange={e => setMr(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                        overrideClass='w-20 h-6 md:h-6'
+                      />
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <span className='font-bold text-xs whitespace-nowrap'>Year</span>
+                      <MySelect value={lsty} onChange={e => setLsty(e.target.value)} overrideClass='w-14 h-6 md:h-6'>
+                        {CHESSCOM_YEAR_COMPARISON_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </MySelect>
+                      <MyInput
+                        type='number'
+                        value={year}
+                        onChange={e => setYear(e.target.value)}
+                        placeholder='e.g. 2024'
+                        overrideClass='w-20 h-6 md:h-6'
+                      />
+                    </div>
+                    <MySelect label='Result' value={lstresult} onChange={e => setLstresult(e.target.value)} overrideClass='w-28 h-6 md:h-6'>
+                      {CHESSCOM_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </MySelect>
+                    <MySelect label='Sort' value={sort} onChange={e => setSort(e.target.value)} overrideClass='w-32 h-6 md:h-6'>
+                      {CHESSCOM_SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </MySelect>
+                  </div>
+                  {chesscomGames && (
+                    chesscomGames.length === 0 ? (
+                      <p className='text-xs text-gray-400'>No games found on chess.com for this position.</p>
+                    ) : (
+                      <div className='overflow-x-auto'>
+                        <table className='w-full text-xs'>
+                          <thead>
+                            <tr className='text-left text-gray-500 border-b border-gray-200'>
+                              <th className='py-1 pr-2'>White</th>
+                              <th className='py-1 pr-2'>Black</th>
+                              <th className='py-1 pr-2 text-center'>Result</th>
+                              <th className='py-1 pr-2 text-right'>Moves</th>
+                              <th className='py-1 pr-2 text-right'>Year</th>
+                              <th className='py-1 text-right'>Game</th>
+                            </tr>
+                          </thead>
+                          <tbody className='divide-y divide-gray-100'>
+                            {chesscomGames.map(g => (
+                              <tr key={g.gameId}>
+                                <td className='py-1 pr-2'>
+                                  {g.whiteUsername} {g.whiteRating != null && <span className='text-gray-400'>({g.whiteRating})</span>}
+                                </td>
+                                <td className='py-1 pr-2'>
+                                  {g.blackUsername} {g.blackRating != null && <span className='text-gray-400'>({g.blackRating})</span>}
+                                </td>
+                                <td className='py-1 pr-2 text-center'>{g.result}</td>
+                                <td className='py-1 pr-2 text-right tabular-nums'>{g.moves ?? '—'}</td>
+                                <td className='py-1 pr-2 text-right tabular-nums'>{g.year ?? '—'}</td>
+                                <td className='py-1 text-right'>
+                                  <a
+                                    href={g.viewUrl}
+                                    target='_blank'
+                                    rel='noopener noreferrer'
+                                    className='text-blue-600 hover:underline'
+                                  >
+                                    view
+                                  </a>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
                   )}
                 </div>
               </MyBox>
