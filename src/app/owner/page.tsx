@@ -8,7 +8,8 @@ import OwnerTableSessionStorage from 'nextjs-shared/OwnerTableSessionStorage'
 
 const TOOLS = [
   { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
-  { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' }
+  { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
+  { href: '/owner/masterplayers', label: 'Master Players', description: 'Harvest chess.com master-game player names by Year/Player into tmst_master_players, and flag names as priority for the Analyze page\'s "Search known masters" loop.', step: '♟' }
 ]
 
 function ToolsPanel() {

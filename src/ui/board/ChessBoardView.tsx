@@ -11,15 +11,17 @@ import MySelect from 'nextjs-shared/MySelect'
 import { MyInput } from 'nextjs-shared/MyInput'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { MyToggle } from 'nextjs-shared/MyToggle'
+import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import BackButton from '@/src/ui/BackButton'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
 import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
 import { saveGameEvaluations } from '@/src/lib/actions/games'
-import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, getGamesForPosition, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
+import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, fetchGamesForPosition, getGamesForPositionCount, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
 import { searchChessComGames, ChessComSearchGame, ChessComSearchFilters } from '@/src/lib/actions/chesscomSearch'
-import { MOVE_COUNT_MIN_MOVE, CHESSCOM_SEARCH_MIN_RATING } from '@/src/lib/constants'
+import { getMasterPlayerNames, upsertMasterPlayerNames, getPriorityMasterNames } from '@/src/lib/actions/masterPlayers'
+import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS, MASTER_HARVEST_DELAY_MS } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -137,6 +139,9 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const [currentNode, setCurrentNode] = useState<MoveNode | null>(null)
   const [moveCounts, setMoveCounts] = useState<Record<string, number>>({})
   const [positionGames, setPositionGames] = useState<PositionGameHit[]>([])
+  const [positionGamesTotalRows, setPositionGamesTotalRows] = useState(0)
+  const [positionGamesPage, setPositionGamesPage] = useState(1)
+  const [positionGamesRowsPerPage, setPositionGamesRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT)
   const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
   const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
   const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
@@ -170,12 +175,24 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // Chess.com Games — live search results for the current position, fetched on demand
   const [chesscomGames, setChesscomGames] = useState<ChessComSearchGame[] | null>(null)
   const [chesscomLoading, setChesscomLoading] = useState(false)
+  //
+  //  Temporary debug aid — the exact URL last queried, shown in the panel so the search
+  //  filters can be diagnosed. Remove once the Chess.com Games filter bug is resolved.
+  //
+  const [chesscomSearchUrl, setChesscomSearchUrl] = useState<string | null>(null)
+  //
+  //  Master player names seen so far across Chess.com Games searches — backs the Player 1/2
+  //  MySelect dropdowns. Loaded once on mount, then grown locally (in addition to the DB
+  //  upsert) as new names appear in search results, so they're selectable immediately
+  //  without a re-fetch.
+  //
+  const [masterPlayerNames, setMasterPlayerNames] = useState<string[]>([])
 
   // Chess.com Games search filters — param names match chess.com's own search URL
   const [p1, setP1] = useState('')
   const [p2, setP2] = useState('')
   const [fixedcolors, setFixedcolors] = useState(false)
-  const [mr, setMr] = useState<number | ''>(CHESSCOM_SEARCH_MIN_RATING)
+  const [mr, setMr] = useState<number | ''>('')
   const [year, setYear] = useState('')
   const [lsty, setLsty] = useState(CHESSCOM_YEAR_COMPARISON_OPTIONS[0].value)
   const [lstresult, setLstresult] = useState(CHESSCOM_RESULT_OPTIONS[0].value)
@@ -221,6 +238,13 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     displayGame.current = new Chess()
     setBoardKey(k => k + 1)
   }, [game])
+
+  // -----------------------------------------------------------------------
+  // Load master player names (for the Chess.com Games Player 1/2 datalist) once on mount
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    getMasterPlayerNames().then(setMasterPlayerNames).catch(() => setMasterPlayerNames([]))
+  }, [])
 
   // -----------------------------------------------------------------------
   // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE
@@ -287,22 +311,45 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   }, [currentNode, tree])
 
   // -----------------------------------------------------------------------
-  // Games Played — this player's own games that reached whatever position is
-  // currently on the board, any move. Filtered down to the selected move
-  // client-side when a "Moves Played" row is highlighted (see moveSummary +
-  // selectedPositionMove).
+  // Games Played — one page of this player's own games that reached whatever position is
+  // currently on the board, any move. Narrowed server-side to the selected move when a
+  // "Moves Played" row is highlighted (see moveSummary + selectedPositionMove) — the reset
+  // effect below returns to page 1 whenever the position/player/move identity changes.
   // -----------------------------------------------------------------------
   useEffect(() => {
     const fen = currentNode?.fen ?? tree?.root.fen
-    if (!fen) { setPositionGames([]); return }
+    if (!fen) { setPositionGames([]); setPositionGamesTotalRows(0); return }
     let cancelled = false
 
-    getGamesForPosition(fen, player).then(games => {
-      if (!cancelled) setPositionGames(games)
-    }).catch(() => { if (!cancelled) setPositionGames([]) })
+    Promise.all([
+      fetchGamesForPosition(fen, player, positionGamesPage, positionGamesRowsPerPage, selectedPositionMove ?? undefined),
+      getGamesForPositionCount(fen, player, selectedPositionMove ?? undefined)
+    ]).then(([games, totalRows]) => {
+      if (!cancelled) { setPositionGames(games); setPositionGamesTotalRows(totalRows) }
+    }).catch(() => { if (!cancelled) { setPositionGames([]); setPositionGamesTotalRows(0) } })
 
     return () => { cancelled = true }
-  }, [currentNode, tree, player])
+  }, [currentNode, tree, player, positionGamesPage, positionGamesRowsPerPage, selectedPositionMove])
+
+  // -----------------------------------------------------------------------
+  // Reset Games Played back to page 1 whenever the position/player/move being viewed
+  // actually changes — same guard pattern as GameList's own filtersResetKeyRef, so
+  // paging state from a previous position never carries over as a stale offset.
+  // Also zeroes positionGamesTotalRows so the pagination footer never renders off a
+  // stale pre-change total during the gap before the new count fetch resolves — left
+  // un-reset, the "next page" arrow could briefly show enabled for a page count that
+  // no longer applies to the new filtered set.
+  // -----------------------------------------------------------------------
+  const positionGamesResetKeyRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const fen = currentNode?.fen ?? tree?.root.fen
+    const key = JSON.stringify({ fen, player, selectedPositionMove })
+    if (positionGamesResetKeyRef.current !== undefined && positionGamesResetKeyRef.current !== key) {
+      setPositionGamesPage(1)
+      setPositionGamesTotalRows(0)
+    }
+    positionGamesResetKeyRef.current = key
+  }, [currentNode, tree, player, selectedPositionMove])
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -549,8 +596,70 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     if (!fen) return
     const filters: ChessComSearchFilters = { p1, p2, fixedcolors, mr, year, lsty, lstresult, sort }
     setChesscomLoading(true)
-    const games = await searchChessComGames(fen, filters)
+    const { games, url } = await searchChessComGames(fen, filters)
     setChesscomGames(games)
+    setChesscomSearchUrl(url)
+    setChesscomLoading(false)
+
+    const sightings = games.flatMap(g => [
+      { name: g.whiteUsername, grade: g.whiteRating },
+      { name: g.blackUsername, grade: g.blackRating }
+    ])
+    if (sightings.length > 0) {
+      try {
+        const addedNames = await upsertMasterPlayerNames(sightings)
+        if (addedNames.length > 0) {
+          setMasterPlayerNames(prev => [...new Set([...prev, ...addedNames])].sort())
+        }
+      } catch {
+        // Non-critical — upsertMasterPlayerNames already logs individual failures
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Search known masters — loops sequentially through every mst_priority = true
+  // name (MASTER_HARVEST_DELAY_MS apart, same reasoning as the /owner/masterplayers
+  // harvest tool) searching the current position for each, aggregating every page's
+  // results into one combined list. Always available, not conditional on the normal
+  // search's result count.
+  // -----------------------------------------------------------------------
+  async function searchKnownMasters() {
+    const fen = getCurrentPositionFen()
+    if (!fen) return
+    const names = await getPriorityMasterNames()
+    if (names.length === 0) return
+
+    setChesscomLoading(true)
+    const aggregatedGames: ChessComSearchGame[] = []
+    let lastUrl = ''
+
+    for (let i = 0; i < names.length; i++) {
+      const filters: ChessComSearchFilters = { p1: names[i], p2: '', fixedcolors, mr, year, lsty, lstresult, sort }
+      const { games, url } = await searchChessComGames(fen, filters)
+      lastUrl = url
+      aggregatedGames.push(...games)
+
+      const sightings = games.flatMap(g => [
+        { name: g.whiteUsername, grade: g.whiteRating },
+        { name: g.blackUsername, grade: g.blackRating }
+      ])
+      if (sightings.length > 0) {
+        try {
+          const addedNames = await upsertMasterPlayerNames(sightings)
+          if (addedNames.length > 0) {
+            setMasterPlayerNames(prev => [...new Set([...prev, ...addedNames])].sort())
+          }
+        } catch {
+          // Non-critical — upsertMasterPlayerNames already logs individual failures
+        }
+      }
+
+      if (i < names.length - 1) await new Promise(resolve => setTimeout(resolve, MASTER_HARVEST_DELAY_MS))
+    }
+
+    setChesscomGames(aggregatedGames)
+    setChesscomSearchUrl(lastUrl)
     setChesscomLoading(false)
   }
 
@@ -663,8 +772,12 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
       // Non-critical — panel just keeps its previous data
     }
     try {
-      const games = await getGamesForPosition(fen, player)
+      const [games, totalRows] = await Promise.all([
+        fetchGamesForPosition(fen, player, positionGamesPage, positionGamesRowsPerPage, selectedPositionMove ?? undefined),
+        getGamesForPositionCount(fen, player, selectedPositionMove ?? undefined)
+      ])
       setPositionGames(games)
+      setPositionGamesTotalRows(totalRows)
     } catch {
       // Non-critical
     }
@@ -1256,20 +1369,20 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
             )}
           </MyBox>
 
-          {/* Games Played: every one of this player's games that reached this position,
-              filtered client-side to the "Moves Played" row's move when one is selected —
-              click a row to switch the board to that game */}
-          {positionGames.length > 0 && (() => {
-            const filteredGames = selectedPositionMove
-              ? positionGames.filter(g => g.move_played === selectedPositionMove)
-              : positionGames
+          {/* Games Played: this player's games that reached this position, server-paginated
+              and narrowed server-side to the "Moves Played" row's move when one is selected —
+              click a row to switch the board to that game. Gated on moveSummary (the
+              unfiltered "did any game ever reach this position" signal) rather than
+              positionGames itself, since positionGames now reflects the move filter. */}
+          {moveSummary.length > 0 && (() => {
+            const positionGamesTotalPages = Math.max(1, Math.ceil(positionGamesTotalRows / positionGamesRowsPerPage))
             return (
               <MyBox title='Games Played' collapsible>
                 <div className='flex gap-2 text-xxs mb-1'>
                   <span className='rounded bg-pink-100 px-2 py-0.5 text-gray-700'>Winning position, lost/drawn</span>
-                  <span className='rounded bg-yellow-50 px-2 py-0.5 text-gray-700'>Losing position, won</span>
+                  <span className='rounded bg-green-100 px-2 py-0.5 text-gray-700'>Losing position, won</span>
                 </div>
-                {filteredGames.length === 0 ? (
+                {positionGames.length === 0 ? (
                   <p className='text-xs text-gray-400'>No games match the selected move.</p>
                 ) : (
                   <div className='overflow-x-auto'>
@@ -1285,10 +1398,10 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                         </tr>
                       </thead>
                       <tbody className='divide-y divide-gray-100'>
-                        {filteredGames.map((g, i) => {
+                        {positionGames.map((g, i) => {
                           const rowBg =
                             g.resultMismatch === 'lostWinning' ? 'bg-pink-100 hover:bg-pink-200'
-                            : g.resultMismatch === 'wonLosing'  ? 'bg-yellow-50 hover:bg-yellow-100'
+                            : g.resultMismatch === 'wonLosing'  ? 'bg-green-100 hover:bg-green-200'
                             : 'hover:bg-gray-50'
                           const isCurrentGame = g.gdid != null && g.gdid === gdid
                           return (
@@ -1318,6 +1431,19 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                         })}
                       </tbody>
                     </table>
+                  </div>
+                )}
+                {positionGamesTotalPages > 1 && (
+                  <div className='mt-2'>
+                    <MyPaginationFooter
+                      totalPages={positionGamesTotalPages}
+                      statecurrentPage={positionGamesPage}
+                      setStateCurrentPage={setPositionGamesPage}
+                      rowsPerPage={positionGamesRowsPerPage}
+                      setRowsPerPage={v => { setPositionGamesRowsPerPage(v); setPositionGamesPage(1) }}
+                      rowsOptions={POSITION_GAMES_ROWS_OPTIONS}
+                      totalRows={positionGamesTotalRows}
+                    />
                   </div>
                 )}
               </MyBox>
@@ -1470,14 +1596,41 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                   >
                     {chesscomLoading ? 'Searching…' : 'Search chess.com'}
                   </MyButton>
+                  <MyButton
+                    onClick={searchKnownMasters}
+                    disabled={!fen || chesscomLoading}
+                    overrideClass='w-full bg-purple-600 hover:bg-purple-700'
+                  >
+                    {chesscomLoading ? 'Searching…' : 'Search known masters'}
+                  </MyButton>
+                  {/* Temporary debug aid — remove once the filter bug is diagnosed */}
+                  {chesscomSearchUrl && (
+                    <p className='text-xxs text-gray-500 break-all'>{chesscomSearchUrl}</p>
+                  )}
                   <div className='flex flex-wrap items-center gap-3'>
                     <div className='flex items-center gap-2'>
                       <span className='font-bold text-xs whitespace-nowrap'>Player 1</span>
-                      <MyInput value={p1} onChange={e => setP1(e.target.value)} overrideClass='w-32 h-6 md:h-6' />
+                      <MySelect
+                        value={p1}
+                        onChange={e => setP1(e.target.value)}
+                        options={masterPlayerNames}
+                        searchEnabled
+                        includeBlank
+                        overrideClass='w-48 h-6 md:h-6'
+                        searchClass='w-48 h-6 md:h-6'
+                      />
                     </div>
                     <div className='flex items-center gap-2'>
                       <span className='font-bold text-xs whitespace-nowrap'>Player 2</span>
-                      <MyInput value={p2} onChange={e => setP2(e.target.value)} overrideClass='w-32 h-6 md:h-6' />
+                      <MySelect
+                        value={p2}
+                        onChange={e => setP2(e.target.value)}
+                        options={masterPlayerNames}
+                        searchEnabled
+                        includeBlank
+                        overrideClass='w-48 h-6 md:h-6'
+                        searchClass='w-48 h-6 md:h-6'
+                      />
                     </div>
                     <div className='flex items-center gap-2'>
                       <span className='font-bold text-xs whitespace-nowrap'>Fixed colors (P1 = White)</span>

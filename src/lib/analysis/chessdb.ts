@@ -20,6 +20,9 @@ import { table_count }  from 'nextjs-shared/table_count'
 import { table_check }  from 'nextjs-shared/table_check'
 import { table_query }  from 'nextjs-shared/table_query'
 import { table_update } from 'nextjs-shared/table_update'
+import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
+import { fetchTotalRows } from 'nextjs-shared/fetchTotalRows'
+import type { Filter, JoinParams } from 'nextjs-shared/structures'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { truncateFen }  from '../fen'
 import { RESULT_MISMATCH_CP_THRESHOLD, MIN_ANALYSIS_MOVE } from '../constants'
@@ -143,7 +146,7 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
 //----------------------------------------------------------------------------------
 //  getMoveSummaryForPosition — one row per move played from this exact position,
 //  scoped to the given player. FEN-keyed version of getMovesForPosition's aggregation
-//  query (via tpos_positions.pos_fen, like getGamesForPosition), used by the Analyze
+//  query (via tpos_positions.pos_fen, like fetchGamesForPosition), used by the Analyze
 //  page's "Moves From This Position" panel for any position on the board.
 //  pose_cp is the resulting position's Stockfish eval (deterministic per
 //  position+move), not an average — see getMovesForPosition's comment.
@@ -189,70 +192,86 @@ export interface PositionGameHit {
   resultMismatch: 'lostWinning' | 'wonLosing' | null
 }
 
-//----------------------------------------------------------------------------------
-//  getGamesForPosition — every game the given player reached this exact position in,
-//  optionally narrowed to games where a specific move was played next, keyed by FEN
-//  like getMovePlayCounts. Used by the Analyze page's "Games Played" panel, which can
-//  show any position currently on the board — not just ones with a known pos_id.
-//  Ordered by end time descending (latest first).
-//----------------------------------------------------------------------------------
-export async function getGamesForPosition(fen: string, player: string, move?: string): Promise<PositionGameHit[]> {
-  const params: (string | number)[] = [truncateFen(fen), player.toLowerCase()]
-  let moveFilter = ''
-  if (move) {
-    params.push(move)
-    moveFilter = 'AND gp.gam_move_played = $3'
+//
+//  Shared join/filter shape for fetchGamesForPosition/getGamesForPositionCount — the exact
+//  same Filter[] must drive both, or the reported total and the fetched page disagree.
+//
+const POSITION_GAMES_JOINS: JoinParams[] = [
+  { table: 'tgam_game_positions', on: 'gam_pos_id = pos_id' },
+  { table: 'tgd_gamesdecon', on: 'gd_gdid = gam_gdid' }
+]
+
+function buildPositionGamesFilters(fen: string, player: string, move?: string): Filter[] {
+  const filters: Filter[] = [
+    { column: 'pos_fen', operator: '=', value: truncateFen(fen) },
+    { column: 'gam_move_num', operator: '>', value: 0 },
+    { column: 'gd_player', operator: '=', value: player.toLowerCase() }
+  ]
+  if (move) filters.push({ column: 'gam_move_played', operator: '=', value: move })
+  return filters
+}
+
+function mapPositionGameRow(r: any): PositionGameHit {
+  const playerResult = r.gd_player_result ?? null
+  const finalEval = r.gd_final_eval != null ? Number(r.gd_final_eval) : null
+  const playerEval = finalEval != null
+    ? (r.gd_player_color === 'black' ? -finalEval : finalEval)
+    : null
+  const resultMismatch: 'lostWinning' | 'wonLosing' | null =
+    playerEval == null ? null
+    : (playerResult === 'loss' || playerResult === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
+    : playerResult === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
+    : null
+  return {
+    player:         r.gd_player,
+    move_played:    r.gam_move_played,
+    move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
+    playerResult,
+    gdid:           r.gd_gdid != null ? Number(r.gd_gdid) : null,
+    date:           r.gd_end_time != null ? new Date(Number(r.gd_end_time) * 1000).toISOString().slice(0, 10) : null,
+    opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
+    termination:    r.gd_termination ?? null,
+    finalEval,
+    resultMismatch
   }
+}
 
-  const rows = await table_query({
-    caller: 'getGamesForPosition',
-    query: `
-      SELECT
-        d.gd_player,
-        gp.gam_move_played,
-        gp.gam_move_num,
-        d.gd_player_result,
-        d.gd_gdid,
-        TO_CHAR(TO_TIMESTAMP(d.gd_end_time), 'YYYY-MM-DD') AS game_date,
-        d.gd_opponent_rating,
-        d.gd_termination,
-        d.gd_final_eval,
-        d.gd_player_color
-      FROM tpos_positions p
-      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      WHERE p.pos_fen = $1
-        AND gp.gam_move_num > 0
-        AND d.gd_player = $2
-        ${moveFilter}
-      ORDER BY d.gd_end_time DESC
-    `,
-    params
+//----------------------------------------------------------------------------------
+//  fetchGamesForPosition — one page of the given player's games that reached this exact
+//  position, optionally narrowed (server-side) to games where a specific move was played
+//  next. Used by the Analyze page's "Games Played" panel, which can show any position
+//  currently on the board — not just ones with a known pos_id. Ordered by end time
+//  descending (latest first).
+//----------------------------------------------------------------------------------
+export async function fetchGamesForPosition(
+  fen: string,
+  player: string,
+  page: number,
+  itemsPerPage: number,
+  move?: string
+): Promise<PositionGameHit[]> {
+  const offset = (page - 1) * itemsPerPage
+  const rows = await fetchFiltered({
+    table: 'tpos_positions',
+    joins: POSITION_GAMES_JOINS,
+    filters: buildPositionGamesFilters(fen, player, move),
+    orderBy: 'gd_end_time DESC',
+    limit: itemsPerPage,
+    offset,
+    caller: 'fetchGamesForPosition'
   })
+  return rows.map(mapPositionGameRow)
+}
 
-  return rows.map((r: any) => {
-    const playerResult = r.gd_player_result ?? null
-    const finalEval = r.gd_final_eval != null ? Number(r.gd_final_eval) : null
-    const playerEval = finalEval != null
-      ? (r.gd_player_color === 'black' ? -finalEval : finalEval)
-      : null
-    const resultMismatch: 'lostWinning' | 'wonLosing' | null =
-      playerEval == null ? null
-      : (playerResult === 'loss' || playerResult === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
-      : playerResult === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
-      : null
-    return {
-      player:         r.gd_player,
-      move_played:    r.gam_move_played,
-      move_num:       r.gam_move_num != null ? Number(r.gam_move_num) : null,
-      playerResult,
-      gdid:           r.gd_gdid != null ? Number(r.gd_gdid) : null,
-      date:           r.game_date ?? null,
-      opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
-      termination:    r.gd_termination ?? null,
-      finalEval,
-      resultMismatch
-    }
+//----------------------------------------------------------------------------------
+//  getGamesForPositionCount — total row count for fetchGamesForPosition's same filter set
+//----------------------------------------------------------------------------------
+export async function getGamesForPositionCount(fen: string, player: string, move?: string): Promise<number> {
+  return await fetchTotalRows({
+    table: 'tpos_positions',
+    joins: POSITION_GAMES_JOINS,
+    filters: buildPositionGamesFilters(fen, player, move),
+    caller: 'getGamesForPositionCount'
   })
 }
 
@@ -464,7 +483,7 @@ export async function upgradePositionEvaluation(data: {
       table: 'tgev_game_evals',
       query: `
         INSERT INTO tgev_game_evals (gev_gdid, gev_ply, gev_san, gev_fen_after, gev_cp, gev_depth, gev_cp_change)
-        VALUES ($1, $2, $3, $4, $5, $6,
+        VALUES ($1, $2::smallint, $3, $4, $5, $6,
           CASE WHEN $2 % 2 = 0
             THEN $5 - COALESCE((SELECT gev_cp FROM tgev_game_evals WHERE gev_gdid = $1 AND gev_ply = $2 - 1), 0)
             ELSE COALESCE((SELECT gev_cp FROM tgev_game_evals WHERE gev_gdid = $1 AND gev_ply = $2 - 1), 0) - $5

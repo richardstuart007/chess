@@ -39,8 +39,10 @@ export interface ChessComSearchFilters {
 //  (opening blank) returns real exact-position matches. Chess.com exposes no public API for
 //  this search, so the server-rendered results table is parsed directly with cheerio; returns
 //  [] on any failure (network error, no matching games, or chess.com changing its markup).
+//  page (2+) pages through chess.com's own result pages — live-tested: page 1 is the implicit
+//  default (no `page` param), `&page=N` for N>1 returns genuinely different games.
 //----------------------------------------------------------------------------------
-export async function searchChessComGames(fen: string, filters: ChessComSearchFilters): Promise<ChessComSearchGame[]> {
+export async function searchChessComGames(fen: string, filters: ChessComSearchFilters, page?: number): Promise<{ games: ChessComSearchGame[]; url: string }> {
   const params = new URLSearchParams({
     opening: '',
     openingId: '',
@@ -56,13 +58,14 @@ export async function searchChessComGames(fen: string, filters: ChessComSearchFi
     lstresult: filters.lstresult
   })
   if (filters.fixedcolors) params.set('fixedcolors', '1')
+  if (page && page > 1) params.set('page', String(page))
   const url = `https://www.chess.com/games/search?${params.toString()}`
 
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
     })
-    if (!res.ok) return []
+    if (!res.ok) return { games: [], url }
 
     const html = await res.text()
     const $ = cheerio.load(html)
@@ -97,9 +100,9 @@ export async function searchChessComGames(fen: string, filters: ChessComSearchFi
       })
     })
 
-    return games
+    return { games, url }
   } catch {
-    return []
+    return { games: [], url }
   }
 }
 

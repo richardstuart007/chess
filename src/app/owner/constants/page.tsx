@@ -24,6 +24,11 @@ import {
   PIPELINE_LOG_ROWS_PER_PAGE,
   HABITS_ITEMS_PER_PAGE,
   HABITS_ROWS_OPTIONS,
+  POSITION_GAMES_ROWS_DEFAULT,
+  POSITION_GAMES_ROWS_OPTIONS,
+  MASTER_HARVEST_MAX_PAGES,
+  MASTER_HARVEST_DELAY_MS,
+  MASTER_MIN_GRADE_TO_ADD,
   GAME_ENDINGS_CONCURRENCY,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
@@ -74,8 +79,7 @@ import {
   WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED,
   WIDTH_SORT_BY,
-  MASTERS_EXPLORER_MOVES_LIMIT,
-  CHESSCOM_SEARCH_MIN_RATING
+  MASTERS_EXPLORER_MOVES_LIMIT
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -143,7 +147,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'MIN_REACH_TO_KEEP', value: MIN_REACH_TO_KEEP, description: 'Positions reached by this many games or fewer are candidates for purging (once PURGE_REACH_GRACE_DAYS also passes).', consumers: ['enrichPositionsStockfish.ts: countRemainingPositions, getResultingFensToEvaluate, enrichPositionsStockfish', 'purgePositions.ts: purgeStaleReachOnePositions', 'pipelineStatus.ts: refreshStep4, refreshCpChangeStatus, refreshPurgeStatus', 'owner/pipeline/page.tsx (module scope)'] },
       { name: 'HABITS_MIN_REACH_FLOOR', value: HABITS_MIN_REACH_FLOOR, description: "Loosest reach threshold baked into buildHabits' aggregation HAVING clause, matching the lowest option in the Habits page's Min Reached dropdown.", consumers: ['buildHabits.ts: buildHabits', 'pipelineStatus.ts: refreshHabitsStatus', 'owner/pipeline/page.tsx (module scope)'] },
       { name: 'HABITS_MOVE_CP_CLAMP', value: HABITS_MOVE_CP_CLAMP, description: "Max magnitude buildHabits() will store in hab_move_cp — clamped since mate scores normalize to ±10000, which can exceed thab_habits.hab_move_cp's numeric(6,2) precision.", consumers: ['buildHabits.ts: buildHabits'] },
-      { name: 'RESULT_MISMATCH_CP_THRESHOLD', value: RESULT_MISMATCH_CP_THRESHOLD, description: "How decisive gd_final_eval must be, in either direction, before a game's recorded result is flagged as contradicting its final position.", consumers: ['chessdb.ts: getGamesForPosition'] },
+      { name: 'RESULT_MISMATCH_CP_THRESHOLD', value: RESULT_MISMATCH_CP_THRESHOLD, description: "How decisive gd_final_eval must be, in either direction, before a game's recorded result is flagged as contradicting its final position.", consumers: ['chessdb.ts: fetchGamesForPosition'] },
       { name: 'POPULAR_POSITION_DEPTH_TIERS', value: POPULAR_POSITION_DEPTH_TIERS, description: "The Deepen Popular Positions pipeline step's reach-to-depth table — a position qualifies for the first (highest) tier its pos_reached meets or exceeds.", consumers: ['enrichPositionsStockfish.ts: popularPositionTierSql'] }
     ]
   },
@@ -158,6 +162,11 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'PIPELINE_LOG_ROWS_PER_PAGE', value: PIPELINE_LOG_ROWS_PER_PAGE, description: 'Page size for the /owner/pipelinelog viewer.', consumers: ['PipelineLogTable.tsx: fetchdata'] },
       { name: 'HABITS_ITEMS_PER_PAGE', value: HABITS_ITEMS_PER_PAGE, description: 'Default rows-per-page for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
       { name: 'HABITS_ROWS_OPTIONS', value: HABITS_ROWS_OPTIONS, description: 'Rows-per-page dropdown options for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
+      { name: 'POSITION_GAMES_ROWS_DEFAULT', value: POSITION_GAMES_ROWS_DEFAULT, description: "Default rows-per-page for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
+      { name: 'POSITION_GAMES_ROWS_OPTIONS', value: POSITION_GAMES_ROWS_OPTIONS, description: "Rows-per-page dropdown options for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
+      { name: 'MASTER_HARVEST_MAX_PAGES', value: MASTER_HARVEST_MAX_PAGES, description: "Max chess.com search-result pages a Master Players harvest run pages through before stopping.", consumers: ['owner/masterplayers/page.tsx: MasterPlayersPage'] },
+      { name: 'MASTER_HARVEST_DELAY_MS', value: MASTER_HARVEST_DELAY_MS, description: 'Pause between each page request during a harvest run or the "Search known masters" loop, to stay a reasonable citizen of chess.com.', consumers: ['owner/masterplayers/page.tsx: MasterPlayersPage', 'ChessBoardView.tsx: ChessBoardView'] },
+      { name: 'MASTER_MIN_GRADE_TO_ADD', value: MASTER_MIN_GRADE_TO_ADD, description: 'A player is only ever added to tmst_master_players if a rating strictly greater than this was observed alongside their name.', consumers: ['masterPlayers.ts: upsertMasterPlayerNames'] },
       { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
       { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipeline/page.tsx: PipelinePage'] }
     ]
@@ -202,12 +211,6 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     entries: [
       { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] }
     ]
-  },
-  {
-    heading: 'Chess.com Games Search',
-    entries: [
-      { name: 'CHESSCOM_SEARCH_MIN_RATING', value: CHESSCOM_SEARCH_MIN_RATING, description: 'Default minimum-rating filter for the "Chess.com Games" panel\'s search — user-editable in the panel.', consumers: ['ChessBoardView.tsx: ChessBoardView'] }
-    ]
   }
 ]
 
@@ -245,7 +248,8 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'enrichPositionsStockfish.ts: enrichPositionsStockfish': 'Batch-evaluates unevaluated positions with Stockfish and writes centipawn scores/best moves into tpose_positions_eval.',
   'pipelineStatus.ts: refreshStep4': 'Counts evaluated positions and remaining unevaluated positions above the reach floor for the Evaluate Positions step.',
   'pipelineStatus.ts: refreshCpChangeStatus': 'Counts tgam_game_positions rows still pending a computed centipawn-change value.',
-  'chessdb.ts: getGamesForPosition': "Lists a player's games that reached a given position by a given move, with result-mismatch flags.",
+  'chessdb.ts: fetchGamesForPosition': "Fetches one page of a player's games that reached a given position, optionally narrowed to a given move, with result-mismatch flags.",
+  'chessdb.ts: getGamesForPositionCount': "Total row count for fetchGamesForPosition's same filter set, for pagination.",
   'enrichPositionsStockfish.ts: popularPositionTierSql': 'Builds the shared SQL CASE/threshold for popular-position depth tiers, kept in sync with the constant.',
   'enrichPositionsStockfish.ts: deepenPopularPositions': 'Re-evaluates already-evaluated popular positions at a deeper Stockfish depth per their reach tier.',
   'enrichPositionsStockfish.ts: evaluateGameEndings': "Evaluates each game's true final position with Stockfish (reusing tree evals where possible) into tgd_gamesdecon.gd_final_eval.",

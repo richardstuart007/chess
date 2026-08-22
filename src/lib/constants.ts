@@ -91,6 +91,11 @@ export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const PIPELINE_LOG_ROWS_OPTIONS = [10, 20, 40, 100] as const
 export const HABITS_ITEMS_PER_PAGE = 3
 export const HABITS_ROWS_OPTIONS = [3, 6, 10, 20, 50] as const
+export const POSITION_GAMES_ROWS_DEFAULT = 10
+export const POSITION_GAMES_ROWS_OPTIONS = [10, 15, 20] as const
+export const MASTER_HARVEST_MAX_PAGES = 20
+export const MASTER_HARVEST_DELAY_MS = 500
+export const MASTER_MIN_GRADE_TO_ADD = 2500
 export const GAME_ENDINGS_CONCURRENCY = 4
 export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
   1: '3:00am',  // Game Sync
@@ -137,11 +142,6 @@ export const STOCKFISH_DEPTH_INPUT_MAX = 40
 //  Masters Explorer (Lichess)
 //----------------------------------------------------------------------------------
 export const MASTERS_EXPLORER_MOVES_LIMIT = 12
-
-//----------------------------------------------------------------------------------
-//  Chess.com Games Search
-//----------------------------------------------------------------------------------
-export const CHESSCOM_SEARCH_MIN_RATING = 2600
 
 //----------------------------------------------------------------------------------
 //  UI Display
