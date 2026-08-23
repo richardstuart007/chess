@@ -431,7 +431,7 @@ function TposPositionsSection() {
       <h5 className={H5}>Evaluate Positions</h5>
       <p className={P}>
         <Code>enrichPositionsStockfish.ts</Code> (server batch pipeline) and{' '}
-        <Code>EvalProgress.tsx</Code> (browser-run, also on <Code>/owner/pipeline</Code>) — two
+        <Code>EvalProgress.tsx</Code> (browser-run, also on <Code>/owner/pipelinegames</Code>) — two
         separate paths, both order by <Code>pos_reached DESC</Code>.
       </p>
       <h5 className={H5}>Purge</h5>
@@ -606,7 +606,7 @@ function PoseEvaluationsSection() {
       <p className={P}>
         <Code>tpose_positions_eval</Code> — one row per position (<Code>pose_pos_id</Code> unique,
         upserted so re-runs are safe): centipawn score, best move (UCI). No search depth is
-        actually stored, despite what the <Code>/owner/pipeline</Code> help text says.
+        actually stored, despite what the <Code>/owner/pipelinegames</Code> help text says.
       </p>
 
       <h4 className={H4}>Consumers</h4>
@@ -628,7 +628,7 @@ function PoseEvaluationsSection() {
         <li>
           Two separate places trigger this evaluation logic: the server batch pipeline (
           <Code>enrichPositionsStockfish</Code>) and a browser-run alternative (
-          <Code>EvalProgress.tsx</Code>, also on <Code>/owner/pipeline</Code>) — both write through
+          <Code>EvalProgress.tsx</Code>, also on <Code>/owner/pipelinegames</Code>) — both write through
           the same <Code>saveEvaluation</Code> upsert.
         </li>
         <li>
@@ -658,7 +658,7 @@ function BulkUpdateCpLossSection() {
       <p className={P}>
         Backfill <Code>tgam_game_positions.gam_cp_change</Code> once both sides of a move have an
         evaluation — decoupled from Evaluate Positions, its own pipeline step and trigger (own
-        cron step, own <Code>/owner/pipeline</Code> panel, own{' '}
+        cron step, own <Code>/owner/pipelinegames</Code> panel, own{' '}
         <Code>/api/analysis/update-cp-change</Code> route).
       </p>
 
@@ -853,7 +853,7 @@ function EvaluateGameEndingsSection() {
           Entirely independent of <Code>tpos_positions</Code>/<Code>tgam_game_positions</Code> as a
           pipeline dependency — reads and writes <Code>tgd_gamesdecon</Code> directly. Own cron
           step (<Code>/api/analysis/evaluate-game-endings</Code>), own{' '}
-          <Code>/owner/pipeline</Code> panel (step 8).
+          <Code>/owner/pipelinegames</Code> panel (step 8).
         </li>
         <li>
           Every read here (the reuse lookup, the remaining-count check) must run with{' '}
@@ -943,7 +943,7 @@ function DeepenPopularPositionsSection() {
           write logic, only new logic for <em>which</em> positions qualify and at what depth.
         </li>
         <li>
-          The backlog-count query (<Code>/owner/pipeline</Code> panel, step 9) and the batch&apos;s
+          The backlog-count query (<Code>/owner/pipelinegames</Code> panel, step 9) and the batch&apos;s
           own selection query share the same tier-derived SQL (<Code>popularPositionTierSql()</Code>{' '}
           in <Code>enrichPositionsStockfish.ts</Code>), so they can&apos;t drift out of sync with
           each other or with <Code>POPULAR_POSITION_DEPTH_TIERS</Code>.

@@ -26,9 +26,10 @@ import {
   HABITS_ROWS_OPTIONS,
   POSITION_GAMES_ROWS_DEFAULT,
   POSITION_GAMES_ROWS_OPTIONS,
-  MASTER_HARVEST_MAX_PAGES,
-  MASTER_HARVEST_DELAY_MS,
-  MASTER_MIN_GRADE_TO_ADD,
+  FIDE_TOP_RATING_CUTOFF,
+  FIDE_STANDARD_RATING_LIST_URL,
+  FIDE_XML_CHUNK_SIZE,
+  FIDE_XML_READ_BATCH_CHUNKS,
   GAME_ENDINGS_CONCURRENCY,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
@@ -140,12 +141,12 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Analysis Pipeline Thresholds',
     entries: [
-      { name: 'MIN_ANALYSIS_MOVE', value: MIN_ANALYSIS_MOVE, description: "Positions before this move number are opening theory and are never tracked, displayed, or quizzed anywhere in the app. Single source of truth for every 'skip the opening' check.", consumers: ['HabitsTable.tsx: HabitsTable', 'buildHabits.ts: buildHabits', 'habits/page.tsx: HabitsContent', 'buildPositionTree.ts: buildPositionTree', 'pipelineStatus.ts: refreshHabitsStatus', 'owner/pipeline/page.tsx (module scope)', 'deconstruct.ts (module scope)'] },
+      { name: 'MIN_ANALYSIS_MOVE', value: MIN_ANALYSIS_MOVE, description: "Positions before this move number are opening theory and are never tracked, displayed, or quizzed anywhere in the app. Single source of truth for every 'skip the opening' check.", consumers: ['HabitsTable.tsx: HabitsTable', 'buildHabits.ts: buildHabits', 'habits/page.tsx: HabitsContent', 'buildPositionTree.ts: buildPositionTree', 'pipelineStatus.ts: refreshHabitsStatus', 'owner/pipelinegames/page.tsx (module scope)', 'deconstruct.ts (module scope)'] },
       { name: 'MOVE_COUNT_MIN_MOVE', value: MOVE_COUNT_MIN_MOVE, description: "The Analyze page's ×N move-play-count badge/check only applies from this move number onward. Deliberately separate from MIN_ANALYSIS_MOVE.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
       { name: 'MAX_ANALYSIS_MOVE', value: MAX_ANALYSIS_MOVE, description: "Positions past this move number are almost never revisited (data-verified: 0% of positions past move 18 have been reached more than 3 times). Single source of truth for the 'stop tracking, it won't repeat' ceiling.", consumers: ['buildPositionTree.ts: buildPositionTree'] },
-      { name: 'PURGE_REACH_GRACE_DAYS', value: PURGE_REACH_GRACE_DAYS, description: 'A low-reach position is only eligible for pruning once every one of its occurrences is at least this many days old, so a newly-tried opening is never purged before it gets a fair chance to repeat.', consumers: ['purgePositions.ts: purgeStaleReachOnePositions', 'pipelineStatus.ts: refreshPurgeStatus', 'owner/pipeline/page.tsx (module scope)'] },
-      { name: 'MIN_REACH_TO_KEEP', value: MIN_REACH_TO_KEEP, description: 'Positions reached by this many games or fewer are candidates for purging (once PURGE_REACH_GRACE_DAYS also passes).', consumers: ['enrichPositionsStockfish.ts: countRemainingPositions, getResultingFensToEvaluate, enrichPositionsStockfish', 'purgePositions.ts: purgeStaleReachOnePositions', 'pipelineStatus.ts: refreshStep4, refreshCpChangeStatus, refreshPurgeStatus', 'owner/pipeline/page.tsx (module scope)'] },
-      { name: 'HABITS_MIN_REACH_FLOOR', value: HABITS_MIN_REACH_FLOOR, description: "Loosest reach threshold baked into buildHabits' aggregation HAVING clause, matching the lowest option in the Habits page's Min Reached dropdown.", consumers: ['buildHabits.ts: buildHabits', 'pipelineStatus.ts: refreshHabitsStatus', 'owner/pipeline/page.tsx (module scope)'] },
+      { name: 'PURGE_REACH_GRACE_DAYS', value: PURGE_REACH_GRACE_DAYS, description: 'A low-reach position is only eligible for pruning once every one of its occurrences is at least this many days old, so a newly-tried opening is never purged before it gets a fair chance to repeat.', consumers: ['purgePositions.ts: purgeStaleReachOnePositions', 'pipelineStatus.ts: refreshPurgeStatus', 'owner/pipelinegames/page.tsx (module scope)'] },
+      { name: 'MIN_REACH_TO_KEEP', value: MIN_REACH_TO_KEEP, description: 'Positions reached by this many games or fewer are candidates for purging (once PURGE_REACH_GRACE_DAYS also passes).', consumers: ['enrichPositionsStockfish.ts: countRemainingPositions, getResultingFensToEvaluate, enrichPositionsStockfish', 'purgePositions.ts: purgeStaleReachOnePositions', 'pipelineStatus.ts: refreshStep4, refreshCpChangeStatus, refreshPurgeStatus', 'owner/pipelinegames/page.tsx (module scope)'] },
+      { name: 'HABITS_MIN_REACH_FLOOR', value: HABITS_MIN_REACH_FLOOR, description: "Loosest reach threshold baked into buildHabits' aggregation HAVING clause, matching the lowest option in the Habits page's Min Reached dropdown.", consumers: ['buildHabits.ts: buildHabits', 'pipelineStatus.ts: refreshHabitsStatus', 'owner/pipelinegames/page.tsx (module scope)'] },
       { name: 'HABITS_MOVE_CP_CLAMP', value: HABITS_MOVE_CP_CLAMP, description: "Max magnitude buildHabits() will store in hab_move_cp — clamped since mate scores normalize to ±10000, which can exceed thab_habits.hab_move_cp's numeric(6,2) precision.", consumers: ['buildHabits.ts: buildHabits'] },
       { name: 'RESULT_MISMATCH_CP_THRESHOLD', value: RESULT_MISMATCH_CP_THRESHOLD, description: "How decisive gd_final_eval must be, in either direction, before a game's recorded result is flagged as contradicting its final position.", consumers: ['chessdb.ts: fetchGamesForPosition'] },
       { name: 'POPULAR_POSITION_DEPTH_TIERS', value: POPULAR_POSITION_DEPTH_TIERS, description: "The Deepen Popular Positions pipeline step's reach-to-depth table — a position qualifies for the first (highest) tier its pos_reached meets or exceeds.", consumers: ['enrichPositionsStockfish.ts: popularPositionTierSql'] }
@@ -154,7 +155,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Batch / Pagination / Concurrency',
     entries: [
-      { name: 'DEFAULT_BATCH_SIZE', value: DEFAULT_BATCH_SIZE, description: 'Standing default batch size for per-run limits (Build Game Positions, Evaluate Positions, Evaluate Game Endings) — also the fallback each route uses when no explicit limit query param is supplied, which is what the unattended cron relies on.', consumers: ['enrichPositionsStockfish.ts: deepenPopularPositions, evaluateGameEndings', 'owner/pipeline/page.tsx: PipelinePage', 'api/analysis/build-tree/route.ts: GET', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET'] },
+      { name: 'DEFAULT_BATCH_SIZE', value: DEFAULT_BATCH_SIZE, description: 'Standing default batch size for per-run limits (Build Game Positions, Evaluate Positions, Evaluate Game Endings) — also the fallback each route uses when no explicit limit query param is supplied, which is what the unattended cron relies on.', consumers: ['enrichPositionsStockfish.ts: deepenPopularPositions, evaluateGameEndings', 'owner/pipelinegames/page.tsx: PipelinePage', 'api/analysis/build-tree/route.ts: GET', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET'] },
       { name: 'CRON_DEEPEN_POPULAR_BATCH_SIZE', value: CRON_DEEPEN_POPULAR_BATCH_SIZE, description: "Batch size for the Deepen Popular Positions step, distinct from DEFAULT_BATCH_SIZE since it's a genuinely different value (100 vs 200) — used as the route's fallback default, which is what the unattended cron relies on.", consumers: ['api/analysis/deepen-popular-positions/route.ts: GET'] },
       { name: 'POSITION_INSERT_CHUNK_SIZE', value: POSITION_INSERT_CHUNK_SIZE, description: 'Target rows per bulk INSERT (tgam_game_positions, thab_habits) — keeps query params well under the Postgres per-statement limit.', consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings', 'buildPositionTree.ts: insertGamePositions', 'buildHabits.ts: buildHabits'] },
       { name: 'GAMES_ITEMS_PER_PAGE', value: GAMES_ITEMS_PER_PAGE, description: 'Page size for the games-list server action.', consumers: ['games.ts: fetchFilteredGames, getGamesPageCount'] },
@@ -164,11 +165,17 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'HABITS_ROWS_OPTIONS', value: HABITS_ROWS_OPTIONS, description: 'Rows-per-page dropdown options for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
       { name: 'POSITION_GAMES_ROWS_DEFAULT', value: POSITION_GAMES_ROWS_DEFAULT, description: "Default rows-per-page for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
       { name: 'POSITION_GAMES_ROWS_OPTIONS', value: POSITION_GAMES_ROWS_OPTIONS, description: "Rows-per-page dropdown options for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
-      { name: 'MASTER_HARVEST_MAX_PAGES', value: MASTER_HARVEST_MAX_PAGES, description: "Max chess.com search-result pages a Master Players harvest run pages through before stopping.", consumers: ['owner/masterplayers/page.tsx: MasterPlayersPage'] },
-      { name: 'MASTER_HARVEST_DELAY_MS', value: MASTER_HARVEST_DELAY_MS, description: 'Pause between each page request during a harvest run or the "Search known masters" loop, to stay a reasonable citizen of chess.com.', consumers: ['owner/masterplayers/page.tsx: MasterPlayersPage', 'ChessBoardView.tsx: ChessBoardView'] },
-      { name: 'MASTER_MIN_GRADE_TO_ADD', value: MASTER_MIN_GRADE_TO_ADD, description: 'A player is only ever added to tmst_master_players if a rating strictly greater than this was observed alongside their name.', consumers: ['masterPlayers.ts: upsertMasterPlayerNames'] },
       { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
-      { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipeline/page.tsx: PipelinePage'] }
+      { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] }
+    ]
+  },
+  {
+    heading: 'FIDE Ratings',
+    entries: [
+      { name: 'FIDE_TOP_RATING_CUTOFF', value: FIDE_TOP_RATING_CUTOFF, description: 'Minimum active-player FIDE standard rating for the Populate FIDE Top Players pipeline step to include a player.', consumers: ['fidePipeline.ts: populateFideTopPlayers'] },
+      { name: 'FIDE_STANDARD_RATING_LIST_URL', value: FIDE_STANDARD_RATING_LIST_URL, description: "FIDE's monthly bulk download of the standard rating list (zipped XML) — the data source for the Download FIDE Zip pipeline step.", consumers: ['fideStaging.ts: downloadFideZip'] },
+      { name: 'FIDE_XML_CHUNK_SIZE', value: FIDE_XML_CHUNK_SIZE, description: 'Characters per row when staging the decompressed FIDE XML into tfxm_fide_xml — keeps both the write (Unzip) and read (Parse) side bounded to roughly one chunk in memory, instead of holding the whole ~158MB file at once.', consumers: ['fideStaging.ts: unzipFideZip'] },
+      { name: 'FIDE_XML_READ_BATCH_CHUNKS', value: FIDE_XML_READ_BATCH_CHUNKS, description: 'Number of tfxm_fide_xml chunk-rows read per SELECT during Parse FIDE XML — batches the read instead of one giant query returning every chunk at once.', consumers: ['fideStaging.ts: parseFideXml'] }
     ]
   },
   {
@@ -180,7 +187,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Stockfish Analysis',
     entries: [
-      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, the Owner Pipeline UI\'s initial Depth field value, and the minimum value /analyze\'s two Depth number inputs will accept (never let a manual analysis go shallower than what the automated pipeline already guarantees for every position).', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET', 'owner/pipeline/page.tsx: PipelinePage', 'DepthInput.tsx: DepthInput'] },
+      { name: 'STOCKFISH_DEPTH', value: STOCKFISH_DEPTH, description: 'Default Stockfish search depth for move analysis — also the fallback each route uses when no explicit depth query param is supplied, which is what the unattended cron relies on, the Owner Pipeline UI\'s initial Depth field value, and the minimum value /analyze\'s two Depth number inputs will accept (never let a manual analysis go shallower than what the automated pipeline already guarantees for every position).', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'api/analysis/evaluate-positions/route.ts: GET', 'api/analysis/evaluate-game-endings/route.ts: GET', 'owner/pipelinegames/page.tsx: PipelinePage', 'DepthInput.tsx: DepthInput'] },
       { name: 'STOCKFISH_REANALYZE_DEFAULT_DEPTH', value: STOCKFISH_REANALYZE_DEFAULT_DEPTH, description: "Initial value of /analyze's Game Analysis \"Depth\" number input, unlike STOCKFISH_DEPTH (16) which is a different default entirely.", consumers: ['stockfish.ts: STOCKFISH_DEFAULTS', 'analyze/page.tsx: AnalyzeContent'] },
       { name: 'STOCKFISH_BLUNDER_CP', value: STOCKFISH_BLUNDER_CP, description: 'CP-loss threshold above which a move is classified a blunder.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
       { name: 'STOCKFISH_MISTAKE_CP', value: STOCKFISH_MISTAKE_CP, description: 'CP-loss threshold above which a move is classified a mistake.', consumers: ['stockfish.ts: STOCKFISH_DEFAULTS'] },
@@ -237,7 +244,7 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'habits/page.tsx: HabitsContent': "Habits page content — paginated, filterable table of a player's recurring good/bad moves sourced from thab_habits.",
   'buildPositionTree.ts: buildPositionTree': 'Replays new games with chess.js to record per-move positions into tgam_game_positions, then syncs tpos_positions.',
   'pipelineStatus.ts: refreshHabitsStatus': 'Total/dismissed/remaining row counts for thab_habits, where remaining is genuinely new (player, position, move) combinations.',
-  'owner/pipeline/page.tsx (module scope)': 'Client component module for the Owner Pipeline page — imports pipeline actions/status functions and defines job-group/SQL display constants used by PipelinePage.',
+  'owner/pipelinegames/page.tsx (module scope)': 'Client component module for the Owner Pipeline page — imports pipeline actions/status functions and defines job-group/SQL display constants used by PipelinePage.',
   'deconstruct.ts (module scope)': 'Server actions module that deconstructs raw chess.com games into tgd_gamesdecon and upserts ECO code/opening-name references.',
   'ChessBoardView.tsx: ChessBoardView': 'Interactive game analysis board — move tree, Stockfish batch/position analysis, and position-history panels for one game.',
   'DepthInput.tsx: DepthInput': "Shared Depth number input for /analyze's Game Analysis and Stockfish panels — types freely, clamps to min/max only on blur.",
@@ -253,7 +260,7 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'enrichPositionsStockfish.ts: popularPositionTierSql': 'Builds the shared SQL CASE/threshold for popular-position depth tiers, kept in sync with the constant.',
   'enrichPositionsStockfish.ts: deepenPopularPositions': 'Re-evaluates already-evaluated popular positions at a deeper Stockfish depth per their reach tier.',
   'enrichPositionsStockfish.ts: evaluateGameEndings': "Evaluates each game's true final position with Stockfish (reusing tree evals where possible) into tgd_gamesdecon.gd_final_eval.",
-  'owner/pipeline/page.tsx: PipelinePage': 'Owner Pipeline page — runs and monitors every analysis pipeline step (sync, tree build, purge, evaluate, habits, etc.).',
+  'owner/pipelinegames/page.tsx: PipelinePage': 'Owner Pipeline page — runs and monitors every analysis pipeline step (sync, tree build, purge, evaluate, habits, etc.).',
   'api/analysis/build-tree/route.ts: GET': 'API route that runs buildPositionTree for a batch of games and returns the result as JSON.',
   'api/analysis/evaluate-positions/route.ts: GET': 'API route that runs enrichPositionsStockfish for a batch of positions and returns the result as JSON.',
   'api/analysis/evaluate-game-endings/route.ts: GET': 'API route that runs evaluateGameEndings for a batch of games and returns the result as JSON.',
@@ -283,7 +290,13 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'TimeClassSelect.tsx: TimeClassSelect': 'Reusable gd_time_class select dropdown, wrapped by FilterTimeClassSelect for the global ?timeClass= filter (Games, Graph, Openings, Endings).',
   'ResultSelect.tsx: ResultSelect': 'Reusable gd_player_result single-select dropdown (GameList).',
   'ResultMultiSelect.tsx: ResultMultiSelect': "Reusable gd_player_result multi-select checkbox group (OpeningScoreChart's nested game table).",
-  'TerminationMultiSelect.tsx: TerminationMultiSelect': 'Reusable gd_termination multi-select checkbox group, options overridable per call site (GameList default list, OpeningScoreChart dynamic list).'
+  'TerminationMultiSelect.tsx: TerminationMultiSelect': 'Reusable gd_termination multi-select checkbox group, options overridable per call site (GameList default list, OpeningScoreChart dynamic list).',
+  'fideStaging.ts: downloadFideZip': "Downloads FIDE's zipped standard rating list into tfzp_fide_zip (pipeline step 10).",
+  'fideStaging.ts: unzipFideZip': 'Decompresses the staged zip and writes chunked XML text into tfxm_fide_xml (pipeline step 11).',
+  'fideStaging.ts: parseFideXml': 'Streams tfxm_fide_xml back through a SAX parser into structured rows in tfpl_fide_players (pipeline step 12).',
+  'fidePipeline.ts: populateFideTopPlayers': 'Matches/attaches/inserts tmst_master_players rows from the parsed FIDE top-players snapshot (pipeline step 13).',
+  'fidePipeline.ts: refreshFideRatings': 'Refreshes mst_grade for every FIDE-linked tmst_master_players row from the parsed FIDE snapshot (pipeline step 14).',
+  'masterPlayers.ts: findNextMasterPlayerHandle': "One-player-per-call lookup (highest grade first) of a FIDE-linked player's chess.com handle via chess.com/players/{slug}, matched by embedded FIDE id, not by name."
 }
 
 //----------------------------------------------------------------------------------

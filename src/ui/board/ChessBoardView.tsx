@@ -20,8 +20,8 @@ import { saveGameEvaluations } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCounts, fetchGamesForPosition, getGamesForPositionCount, getMoveSummaryForPosition, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
 import { searchChessComGames, ChessComSearchGame, ChessComSearchFilters } from '@/src/lib/actions/chesscomSearch'
-import { getMasterPlayerNames, upsertMasterPlayerNames, getPriorityMasterNames } from '@/src/lib/actions/masterPlayers'
-import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS, MASTER_HARVEST_DELAY_MS } from '@/src/lib/constants'
+import { getMasterPlayerNames } from '@/src/lib/actions/masterPlayers'
+import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -175,11 +175,6 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   // Chess.com Games — live search results for the current position, fetched on demand
   const [chesscomGames, setChesscomGames] = useState<ChessComSearchGame[] | null>(null)
   const [chesscomLoading, setChesscomLoading] = useState(false)
-  //
-  //  Temporary debug aid — the exact URL last queried, shown in the panel so the search
-  //  filters can be diagnosed. Remove once the Chess.com Games filter bug is resolved.
-  //
-  const [chesscomSearchUrl, setChesscomSearchUrl] = useState<string | null>(null)
   //
   //  Master player names seen so far across Chess.com Games searches — backs the Player 1/2
   //  MySelect dropdowns. Loaded once on mount, then grown locally (in addition to the DB
@@ -596,70 +591,8 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     if (!fen) return
     const filters: ChessComSearchFilters = { p1, p2, fixedcolors, mr, year, lsty, lstresult, sort }
     setChesscomLoading(true)
-    const { games, url } = await searchChessComGames(fen, filters)
+    const { games } = await searchChessComGames(fen, filters)
     setChesscomGames(games)
-    setChesscomSearchUrl(url)
-    setChesscomLoading(false)
-
-    const sightings = games.flatMap(g => [
-      { name: g.whiteUsername, grade: g.whiteRating },
-      { name: g.blackUsername, grade: g.blackRating }
-    ])
-    if (sightings.length > 0) {
-      try {
-        const addedNames = await upsertMasterPlayerNames(sightings)
-        if (addedNames.length > 0) {
-          setMasterPlayerNames(prev => [...new Set([...prev, ...addedNames])].sort())
-        }
-      } catch {
-        // Non-critical — upsertMasterPlayerNames already logs individual failures
-      }
-    }
-  }
-
-  // -----------------------------------------------------------------------
-  // Search known masters — loops sequentially through every mst_priority = true
-  // name (MASTER_HARVEST_DELAY_MS apart, same reasoning as the /owner/masterplayers
-  // harvest tool) searching the current position for each, aggregating every page's
-  // results into one combined list. Always available, not conditional on the normal
-  // search's result count.
-  // -----------------------------------------------------------------------
-  async function searchKnownMasters() {
-    const fen = getCurrentPositionFen()
-    if (!fen) return
-    const names = await getPriorityMasterNames()
-    if (names.length === 0) return
-
-    setChesscomLoading(true)
-    const aggregatedGames: ChessComSearchGame[] = []
-    let lastUrl = ''
-
-    for (let i = 0; i < names.length; i++) {
-      const filters: ChessComSearchFilters = { p1: names[i], p2: '', fixedcolors, mr, year, lsty, lstresult, sort }
-      const { games, url } = await searchChessComGames(fen, filters)
-      lastUrl = url
-      aggregatedGames.push(...games)
-
-      const sightings = games.flatMap(g => [
-        { name: g.whiteUsername, grade: g.whiteRating },
-        { name: g.blackUsername, grade: g.blackRating }
-      ])
-      if (sightings.length > 0) {
-        try {
-          const addedNames = await upsertMasterPlayerNames(sightings)
-          if (addedNames.length > 0) {
-            setMasterPlayerNames(prev => [...new Set([...prev, ...addedNames])].sort())
-          }
-        } catch {
-          // Non-critical — upsertMasterPlayerNames already logs individual failures
-        }
-      }
-
-      if (i < names.length - 1) await new Promise(resolve => setTimeout(resolve, MASTER_HARVEST_DELAY_MS))
-    }
-
-    setChesscomGames(aggregatedGames)
-    setChesscomSearchUrl(lastUrl)
     setChesscomLoading(false)
   }
 
@@ -1596,17 +1529,6 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                   >
                     {chesscomLoading ? 'Searching…' : 'Search chess.com'}
                   </MyButton>
-                  <MyButton
-                    onClick={searchKnownMasters}
-                    disabled={!fen || chesscomLoading}
-                    overrideClass='w-full bg-purple-600 hover:bg-purple-700'
-                  >
-                    {chesscomLoading ? 'Searching…' : 'Search known masters'}
-                  </MyButton>
-                  {/* Temporary debug aid — remove once the filter bug is diagnosed */}
-                  {chesscomSearchUrl && (
-                    <p className='text-xxs text-gray-500 break-all'>{chesscomSearchUrl}</p>
-                  )}
                   <div className='flex flex-wrap items-center gap-3'>
                     <div className='flex items-center gap-2'>
                       <span className='font-bold text-xs whitespace-nowrap'>Player 1</span>

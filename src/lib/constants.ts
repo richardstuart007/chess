@@ -93,9 +93,10 @@ export const HABITS_ITEMS_PER_PAGE = 3
 export const HABITS_ROWS_OPTIONS = [3, 6, 10, 20, 50] as const
 export const POSITION_GAMES_ROWS_DEFAULT = 10
 export const POSITION_GAMES_ROWS_OPTIONS = [10, 15, 20] as const
-export const MASTER_HARVEST_MAX_PAGES = 20
-export const MASTER_HARVEST_DELAY_MS = 500
-export const MASTER_MIN_GRADE_TO_ADD = 2500
+export const FIDE_TOP_RATING_CUTOFF = 2600
+export const FIDE_STANDARD_RATING_LIST_URL = 'https://ratings.fide.com/download/standard_rating_list_xml.zip'
+export const FIDE_XML_CHUNK_SIZE = 2_000_000
+export const FIDE_XML_READ_BATCH_CHUNKS = 5
 export const GAME_ENDINGS_CONCURRENCY = 4
 export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
   1: '3:00am',  // Game Sync

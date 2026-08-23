@@ -7,7 +7,8 @@ import ConstantsPage from './constants/page'
 import OwnerTableSessionStorage from 'nextjs-shared/OwnerTableSessionStorage'
 
 const TOOLS = [
-  { href: '/owner/pipeline', label: 'Pipeline', description: 'Step-by-step control panel for the analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
+  { href: '/owner/pipelinegames', label: 'Pipeline (Games)', description: 'Step-by-step control panel for the chess game analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
+  { href: '/owner/pipelinemasters', label: 'Pipeline (Masters)', description: 'Step-by-step control panel for the FIDE master-players pipeline (download, unzip, parse, populate, refresh) — each stage independently re-runnable.', step: '♛' },
   { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
   { href: '/owner/masterplayers', label: 'Master Players', description: 'Harvest chess.com master-game player names by Year/Player into tmst_master_players, and flag names as priority for the Analyze page\'s "Search known masters" loop.', step: '♟' }
 ]

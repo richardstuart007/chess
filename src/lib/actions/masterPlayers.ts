@@ -1,140 +1,154 @@
 'use server'
 
+import * as cheerio from 'cheerio'
 import { table_fetch } from 'nextjs-shared/table_fetch'
-import { table_upsert } from 'nextjs-shared/table_upsert'
+import { ColumnValuePair } from 'nextjs-shared/structures'
 import { table_update } from 'nextjs-shared/table_update'
 import { write_logging } from 'nextjs-shared/write_logging'
-import { MASTER_MIN_GRADE_TO_ADD } from '../constants'
 
 const MASTER_PLAYERS_TABLE = 'tmst_master_players'
 
-export type MasterPlayerSighting = {
-  name: string
-  grade: number | null
-}
-
 export type MasterPlayerRow = {
-  mstid:    number
-  name:     string
-  grade:    number | null
-  priority: boolean
+  mstid:           number
+  firstName:       string
+  lastName:        string
+  fideid:          number | null
+  grade:           number | null
+  priority:        boolean
+  chesscomHandle:  string | null
 }
 
 //----------------------------------------------------------------------------------
-//  getMasterPlayerNames — every player name seen so far in Chess.com Games panel
-//  search results, for the Player 1/2 select. Grows incrementally (via
-//  upsertMasterPlayerNames) — there is no bulk source, chess.com exposes no export
-//  or API for its master-games database.
+//  combineName — reconstructs the "First Last" display/search string chess.com's own
+//  search expects, from the two stored columns.
+//----------------------------------------------------------------------------------
+function combineName(firstName: string | null, lastName: string): string {
+  return firstName ? `${firstName} ${lastName}` : lastName
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterPlayerNames — every known master player name, for the Player 1/2 select
+//  on the Analyze page's Chess.com Games panel. Populated entirely by the FIDE
+//  pipeline (see /owner/pipelinemasters) — this table no longer grows from live game
+//  search sightings.
 //----------------------------------------------------------------------------------
 export async function getMasterPlayerNames(): Promise<string[]> {
   const rows = await table_fetch({
     caller: 'getMasterPlayerNames',
     table: MASTER_PLAYERS_TABLE,
-    orderBy: 'mst_name',
-    columns: ['mst_name']
+    orderBy: 'mst_last_name, mst_first_name',
+    columns: ['mst_first_name', 'mst_last_name'],
+    skipCache: true
   })
-  return rows.map((r: any) => r.mst_name as string)
-}
-
-//----------------------------------------------------------------------------------
-//  upsertMasterPlayerNames — records player names seen in a Chess.com Games panel
-//  search result page (or a harvest/priority-loop run). A sighting is only ever
-//  written if its grade is strictly greater than MASTER_MIN_GRADE_TO_ADD — weaker
-//  players' games can still display in search results, they just never enter this
-//  table. An already-present player's mst_grade is refreshed on every later
-//  qualifying sighting (no recency tracking — whatever was last scraped), but never
-//  overwritten by a sub-threshold one, since those are filtered out before the upsert
-//  runs at all. Returns the names that actually qualified/were written, so callers
-//  can merge exactly what was persisted into their own local state.
-//----------------------------------------------------------------------------------
-export async function upsertMasterPlayerNames(sightings: MasterPlayerSighting[]): Promise<string[]> {
-  const qualifying = new Map<string, number>()
-  for (const s of sightings) {
-    if (s.name && s.grade != null && s.grade > MASTER_MIN_GRADE_TO_ADD && !qualifying.has(s.name)) {
-      qualifying.set(s.name, s.grade)
-    }
-  }
-
-  for (const [name, grade] of qualifying) {
-    //
-    //  Caught per-name so one name failing doesn't abort every subsequent name in the same
-    //  batch too. table_upsert already logs its own failure, but not which name it was for
-    //  (only the query template, not the params) — logged again here with the actual name.
-    //
-    try {
-      await table_upsert({
-        caller: 'upsertMasterPlayerNames',
-        table: MASTER_PLAYERS_TABLE,
-        columnValuePairs: [
-          { column: 'mst_name', value: name },
-          { column: 'mst_grade', value: grade },
-          { column: 'mst_priority', value: false }
-        ],
-        conflictColumns: ['mst_name'],
-        //
-        //  mst_priority is only ever set by setMasterPlayerPriority (the /owner/masterplayers
-        //  toggle) — it must default to false for a brand-new row (no DB-level DEFAULT exists,
-        //  per this project's no-column-defaults convention) but must never be reset back to
-        //  false here on conflict, or every grade refresh would silently un-flag an
-        //  already-priority-flagged player.
-        //
-        updateColumns: ['mst_grade']
-      })
-    } catch (err) {
-      write_logging({
-        lg_functionname: 'upsertMasterPlayerNames',
-        lg_caller: 'upsertMasterPlayerNames',
-        lg_msg: `Master player name not saved: ${name}: ` + (err as Error).message,
-        lg_severity: 'E'
-      })
-    }
-  }
-
-  return [...qualifying.keys()]
+  return rows.map((r: any) => combineName(r.mst_first_name, r.mst_last_name))
 }
 
 //----------------------------------------------------------------------------------
 //  getMasterPlayers — tmst_master_players rows for the /owner/masterplayers admin
 //  page's priority-flagging list, optionally narrowed by a name filter (substring,
-//  case-insensitive) and sorted by grade descending instead of the default
-//  alphabetical-by-name order.
+//  case-insensitive), by missing-Chess.com-handle only, and sorted by grade descending
+//  instead of the default alphabetical-by-name order.
 //----------------------------------------------------------------------------------
-export async function getMasterPlayers(filterName: string = '', sortByGradeDesc: boolean = false): Promise<MasterPlayerRow[]> {
+export async function getMasterPlayers(filterName: string = '', sortByGradeDesc: boolean = false, onlyMissingHandle: boolean = false): Promise<MasterPlayerRow[]> {
+  const whereColumnValuePairs: ColumnValuePair[] = []
+  if (filterName) {
+    whereColumnValuePairs.push({ column: "LOWER(COALESCE(mst_first_name, '') || ' ' || mst_last_name)", value: `%${filterName.toLowerCase()}%`, operator: 'LIKE' })
+  }
+  if (onlyMissingHandle) {
+    whereColumnValuePairs.push({ column: 'mst_chesscom_handle', operator: 'IS NULL', value: null })
+  }
+
   const rows = await table_fetch({
     caller: 'getMasterPlayers',
     table: MASTER_PLAYERS_TABLE,
-    whereColumnValuePairs: filterName
-      ? [{ column: 'LOWER(mst_name)', value: `%${filterName.toLowerCase()}%`, operator: 'LIKE' }]
-      : undefined,
-    orderBy: sortByGradeDesc ? 'mst_grade DESC NULLS LAST' : 'mst_name',
-    columns: ['mst_mstid', 'mst_name', 'mst_grade', 'mst_priority']
+    whereColumnValuePairs: whereColumnValuePairs.length > 0 ? whereColumnValuePairs : undefined,
+    orderBy: sortByGradeDesc ? 'mst_grade DESC NULLS LAST' : 'mst_last_name, mst_first_name',
+    columns: ['mst_mstid', 'mst_first_name', 'mst_last_name', 'mst_fideid', 'mst_grade', 'mst_priority', 'mst_chesscom_handle'],
+    skipCache: true
   })
   return rows.map((r: any) => ({
     mstid: Number(r.mst_mstid),
-    name: r.mst_name as string,
+    firstName: (r.mst_first_name as string) ?? '',
+    lastName: r.mst_last_name as string,
+    fideid: r.mst_fideid != null ? Number(r.mst_fideid) : null,
     grade: r.mst_grade != null ? Number(r.mst_grade) : null,
-    priority: r.mst_priority as boolean
+    priority: r.mst_priority as boolean,
+    chesscomHandle: (r.mst_chesscom_handle as string) ?? null
   }))
 }
 
 //----------------------------------------------------------------------------------
-//  getPriorityMasterNames — names flagged mst_priority = true, for the "Search known
-//  masters" loop button on the Analyze page's Chess.com Games panel.
+//  findNextMasterPlayerHandle — one player per call (user decision: a long sequential
+//  batch across all 156 triggered intermittent failures on well-known players,
+//  reproducible only at that scale, not on any individual request — most likely
+//  chess.com's own anti-bot throttling. One-at-a-time, user-paced by clicking the
+//  button, sidesteps that entirely). Picks the highest-grade FIDE-linked row still
+//  missing a mst_chesscom_handle, fetches chess.com's own /players/{first-last-slug}
+//  page, and extracts the handle from the element whose data-presence-fide-id matches
+//  this row's mst_fideid (chess.com embeds both attributes on the same element —
+//  matching on the FIDE id we already know to be correct is far more reliable than
+//  trusting the first username-looking string on the page, since a page can mention
+//  other players too). Scoped to mst_priority = true — skips any FIDE-linked row not
+//  flagged as priority. Returns null once no eligible row remains.
 //----------------------------------------------------------------------------------
-export async function getPriorityMasterNames(): Promise<string[]> {
+export async function findNextMasterPlayerHandle(): Promise<{ mstid: number; name: string; handle: string | null } | null> {
   const rows = await table_fetch({
-    caller: 'getPriorityMasterNames',
+    caller: 'findNextMasterPlayerHandle',
     table: MASTER_PLAYERS_TABLE,
-    whereColumnValuePairs: [{ column: 'mst_priority', value: true }],
-    orderBy: 'mst_name',
-    columns: ['mst_name']
+    whereColumnValuePairs: [
+      { column: 'mst_fideid', operator: 'IS NOT NULL', value: null },
+      { column: 'mst_chesscom_handle', operator: 'IS NULL', value: null },
+      { column: 'mst_priority', value: true }
+    ],
+    orderBy: 'mst_grade DESC NULLS LAST',
+    columns: ['mst_mstid', 'mst_first_name', 'mst_last_name', 'mst_fideid'],
+    limit: 1,
+    skipCache: true
   })
-  return rows.map((r: any) => r.mst_name as string)
+  if (rows.length === 0) return null
+
+  const row = rows[0]
+  const firstName = (row.mst_first_name as string) ?? ''
+  const lastName = row.mst_last_name as string
+  const fideid = Number(row.mst_fideid)
+  const mstid = Number(row.mst_mstid)
+  const name = firstName ? `${firstName} ${lastName}` : lastName
+  const slug = `${firstName} ${lastName}`.trim().toLowerCase().replace(/\s+/g, '-')
+
+  let handle: string | null = null
+  try {
+    const res = await fetch(`https://www.chess.com/players/${slug}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    })
+    if (res.ok) {
+      const html = await res.text()
+      const $ = cheerio.load(html)
+      handle = $(`[data-presence-fide-id="${fideid}"]`).attr('data-username') ?? null
+    }
+  } catch (err) {
+    write_logging({
+      lg_functionname: 'findNextMasterPlayerHandle',
+      lg_caller: 'findNextMasterPlayerHandle',
+      lg_msg: `Handle lookup failed for ${name} (fideid ${fideid}): ` + (err as Error).message,
+      lg_severity: 'W'
+    })
+  }
+
+  if (handle) {
+    await table_update({
+      caller: 'findNextMasterPlayerHandle',
+      table: MASTER_PLAYERS_TABLE,
+      columnValuePairs: [{ column: 'mst_chesscom_handle', value: handle }],
+      whereColumnValuePairs: [{ column: 'mst_mstid', value: mstid }]
+    })
+  }
+
+  return { mstid, name, handle }
 }
 
 //----------------------------------------------------------------------------------
-//  setMasterPlayerPriority — flags/unflags one player for the "Search known masters"
-//  loop on the Analyze page's Chess.com Games panel.
+//  setMasterPlayerPriority — flags/unflags one player as priority. Scopes
+//  findNextMasterPlayerHandle to priority-flagged rows only.
 //----------------------------------------------------------------------------------
 export async function setMasterPlayerPriority(mstid: number, priority: boolean): Promise<void> {
   await table_update({
