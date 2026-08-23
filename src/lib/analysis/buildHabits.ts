@@ -113,7 +113,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
     `,
     params,
     table: 'thab_habits',
-    level: 1, isupdate: false, severity: 'D', skipCache: true
+    level: 1, isupdate: false, severity: 'I', skipCache: true
   })
 
   return selectRes.map((r: any) => ({
@@ -170,7 +170,7 @@ async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number
       `,
       params,
       table: 'thab_habits',
-      level, isupdate: true, severity: 'D'
+      level, isupdate: true, severity: 'I'
     })
     built += upsertRes.length
   }

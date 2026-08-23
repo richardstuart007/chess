@@ -183,7 +183,7 @@ async function recomputePosReachedByIds(posIds: number[], level: number): Promis
       table: 'tpos_positions',
       level,
       isupdate: true,
-      severity: 'D'
+      severity: 'I'
     })
   }
 }
@@ -215,7 +215,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     params: [],
     table: 'tgam_game_positions',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const backlogBefore = parseInt(backlogRes[0]?.cnt ?? '0')
@@ -240,7 +240,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     table: 'tpos_positions',
     level,
     isupdate: true,
-    severity: 'D'
+    severity: 'I'
   })
 
   // Step 2 — backfill ids wherever still NULL, capturing which positions were touched
@@ -257,7 +257,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     table: 'tgam_game_positions',
     level,
     isupdate: true,
-    severity: 'D'
+    severity: 'I'
   })
   const resultingRes = await table_query({
     caller: 'syncTposFromTgam_backfillResulting',
@@ -272,7 +272,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     table: 'tgam_game_positions',
     level,
     isupdate: true,
-    severity: 'D'
+    severity: 'I'
   })
 
   const touchedPosIds = [...new Set<number>([
@@ -342,7 +342,7 @@ export async function buildPositionTree(opts: {
     params,
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
 

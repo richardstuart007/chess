@@ -86,7 +86,7 @@ export async function deconstructGames(
     params: [player, ...timeClasses],
     table: RAW_TABLE,
     level: 2,
-    severity: 'D'
+    severity: 'I'
   })
   let processed = 0
   let skipped = 0

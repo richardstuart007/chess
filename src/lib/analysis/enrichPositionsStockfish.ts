@@ -142,7 +142,7 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
         AND p.pos_reached > ${MIN_REACH_TO_KEEP}`,
     params: [],
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   return parseInt(rows[0]?.cnt ?? '0')
@@ -171,7 +171,7 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
     `,
     params,
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const rows = res.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
@@ -213,7 +213,7 @@ export async function bulkUpdateCpLoss(level: number, forceNewRun?: boolean): Pr
     params: [],
     level,
     isupdate: true,
-    severity: 'D'
+    severity: 'I'
   })
   const rowCount = res.length
   await logPipelineStep({ step: 6, subStep: 'a', stepName: 'Update CP Change', inputTable: 'tgam_game_positions', inputRecs: rowCount, outputTable: 'tgam_game_positions', outputRecs: rowCount, durationMs: Date.now() - t0, forceNewRun })
@@ -253,7 +253,7 @@ export async function enrichPositionsStockfish(opts: {
     params: posParams,
     table: 'tpos_positions',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const positions: Array<{ posId: number; fen: string; color: string | null }> =
@@ -372,7 +372,7 @@ export async function deepenPopularPositions(opts: {
     params: [limit],
     table: 'tpos_positions',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const candidates: Array<{ posId: number; fen: string; color: string | null; targetDepth: number }> =
@@ -449,7 +449,7 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
     `,
     params: [],
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   return parseInt(rows[0]?.cnt ?? '0')
@@ -485,7 +485,7 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
     `,
     params: [],
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const r = rows[0] ?? {}
@@ -518,7 +518,7 @@ async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{
     params,
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   return rows.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
@@ -546,7 +546,7 @@ async function findExistingEvals(truncatedFens: string[], level: number): Promis
     params,
     table: 'tpos_positions',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const result: Record<string, number> = {}
@@ -704,7 +704,7 @@ export async function evaluateGameEndings(opts: {
     params: [],
     table: 'tgd_gamesdecon',
     level,
-    severity: 'D',
+    severity: 'I',
     skipCache: true
   })
   const remaining = parseInt(remainingRes[0]?.cnt ?? '0')

@@ -71,7 +71,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     `,
     params: [],
     table: 'tpur_workfile',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   const purgedCount = insertRes.length
@@ -92,7 +92,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     query: `DELETE FROM tpose_positions_eval WHERE pose_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING pose_pos_id`,
     params: [],
     table: 'tpose_positions_eval',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   // 2. Full-delete tgam rows whose own before-position is a candidate.
@@ -101,7 +101,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     query: `DELETE FROM tgam_game_positions WHERE gam_pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING gam_gamid`,
     params: [],
     table: 'tgam_game_positions',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   // 3. Null out the resulting-position reference on any surviving row (its own
@@ -122,7 +122,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     `,
     params: [],
     table: 'tgam_game_positions',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   // 4. Resurrection guard — stamp any game now left with zero tgam rows
@@ -137,7 +137,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     `,
     params: [],
     table: 'tgd_gamesdecon',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   // 5. Delete the purged tpos_positions rows themselves — safe unconditionally now:
@@ -149,7 +149,7 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     query: `DELETE FROM tpos_positions WHERE pos_id IN (SELECT pur_pos_id FROM tpur_workfile) RETURNING pos_id`,
     params: [],
     table: 'tpos_positions',
-    level, isupdate: true, severity: 'D'
+    level, isupdate: true, severity: 'I'
   })
 
   const durationMs = Date.now() - t0

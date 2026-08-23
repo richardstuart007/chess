@@ -57,7 +57,7 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
     query: `SELECT fpl_fideid, fpl_first_name, fpl_last_name, fpl_rating FROM ${FIDE_PLAYERS_TABLE}`,
     params: [],
     table: FIDE_PLAYERS_TABLE,
-    level, isupdate: false, severity: 'D', skipCache: true
+    level, isupdate: false, severity: 'I', skipCache: true
   })
   if (candidateRows.length === 0) throw new Error(`${FIDE_PLAYERS_TABLE} has no rows — run Parse FIDE XML first`)
 
@@ -167,7 +167,7 @@ export async function refreshFideRatings(level: number = 1, forceNewRun?: boolea
     query: `SELECT fpl_fideid, fpl_rating FROM ${FIDE_PLAYERS_TABLE} WHERE fpl_fideid IN (${placeholders})`,
     params: fideids,
     table: FIDE_PLAYERS_TABLE,
-    level, isupdate: false, severity: 'D', skipCache: true
+    level, isupdate: false, severity: 'I', skipCache: true
   })
   const ratingByFideid = new Map<number, number>(ratingRows.map((r: any) => [Number(r.fpl_fideid), Number(r.fpl_rating)]))
 

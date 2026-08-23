@@ -68,7 +68,7 @@ export async function initSync(
     caller: 'initSync_clearStaging',
     skipCache: true,
     level: 2,
-    severity: 'D'
+    severity: 'I'
   })
 
   const latestEndTime = syncType === 'refresh'

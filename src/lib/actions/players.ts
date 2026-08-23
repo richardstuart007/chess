@@ -80,7 +80,7 @@ export async function updatePlayerRating(player: string): Promise<void> {
       params: [player.toLowerCase(), timeClass],
       table: 'tgd_gamesdecon',
       level: 2,
-      severity: 'D'
+      severity: 'I'
     })
     if (rows.length > 0) {
       await upsertPlayerRating(player, timeClass, Number(rows[0].rating), true, 2, 'D')
@@ -103,7 +103,7 @@ export async function getPlayerLastSyncedEndTime(player: string): Promise<number
     columns: ['pl_last_synced_end_time'],
     skipCache: true,
     level: 2,
-    severity: 'D'
+    severity: 'I'
   })
   return rows[0]?.pl_last_synced_end_time ?? null
 }
@@ -126,7 +126,7 @@ export async function markPlayerSynced(player: string, endTime: number): Promise
     whereColumnValuePairs: [{ column: 'pl_plid', value: existing.pl_plid }],
     skipCache: true,
     level: 2,
-    severity: 'D'
+    severity: 'I'
   })
   await logEnd('markPlayerSynced', 'gameSyncPipeline', `pl_last_synced_end_time set to ${endTime}`, 2)
 }

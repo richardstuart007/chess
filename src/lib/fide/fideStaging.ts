@@ -201,7 +201,7 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
         query: `INSERT INTO tfpl_fide_players (fpl_fideid, fpl_first_name, fpl_last_name, fpl_rating) VALUES ${values}`,
         params,
         table: 'tfpl_fide_players',
-        level, isupdate: true, severity: 'D'
+        level, isupdate: true, severity: 'I'
       })
     }
     parsedCount += pendingRows.length
@@ -244,7 +244,7 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
           query: `SELECT fxm_data FROM tfxm_fide_xml WHERE fxm_seq >= $1 AND fxm_seq < $2 ORDER BY fxm_seq`,
           params: [offset, offset + FIDE_XML_READ_BATCH_CHUNKS],
           table: 'tfxm_fide_xml',
-          level, isupdate: false, severity: 'D', skipCache: true
+          level, isupdate: false, severity: 'I', skipCache: true
         })
         for (const row of batch) {
           parser.write(row.fxm_data as string)
