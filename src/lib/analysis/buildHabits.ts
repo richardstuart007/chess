@@ -5,7 +5,7 @@ import { table_query } from 'nextjs-shared/table_query'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
-import { MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, HABITS_MOVE_CP_CLAMP, POSITION_INSERT_CHUNK_SIZE } from '../constants'
+import { MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, HABITS_MOVE_CP_CLAMP, POSITION_INSERT_CHUNK_SIZE, PIPELINE_TYPE_GAMES } from '../constants'
 
 interface HabitAggregate {
   player:           string
@@ -188,7 +188,7 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
   const durationMs = Date.now() - t0
 
   await logPipelineStep({
-    step: 7, subStep: 'a', stepName: 'Build Habits',
+    step: 7, subStep: 'a', stepName: 'Build Habits', pipelineType: PIPELINE_TYPE_GAMES,
     inputTable: 'tgam_game_positions', inputRecs: aggregates.length,
     outputTable: 'thab_habits', outputRecs: built,
     durationMs, forceNewRun

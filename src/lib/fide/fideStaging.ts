@@ -10,7 +10,7 @@ import { table_truncate } from 'nextjs-shared/table_truncate'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
-import { FIDE_STANDARD_RATING_LIST_URL, FIDE_XML_CHUNK_SIZE, FIDE_XML_READ_BATCH_CHUNKS, FIDE_TOP_RATING_CUTOFF, POSITION_INSERT_CHUNK_SIZE } from '../constants'
+import { FIDE_STANDARD_RATING_LIST_URL, FIDE_XML_CHUNK_SIZE, FIDE_XML_READ_BATCH_CHUNKS, FIDE_TOP_RATING_CUTOFF, POSITION_INSERT_CHUNK_SIZE, PIPELINE_TYPE_MASTERS } from '../constants'
 
 const FIDE_SOURCE_LABEL = 'FIDE standard rating list'
 
@@ -52,7 +52,7 @@ export async function downloadFideZip(level: number = 1, forceNewRun?: boolean):
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 10, subStep: 'a', stepName: 'Download FIDE Zip',
+    step: 10, subStep: 'a', stepName: 'Download FIDE Zip', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: FIDE_SOURCE_LABEL, inputRecs: 1,
     outputTable: 'tfzp_fide_zip', outputRecs: buffer.length,
     durationMs, forceNewRun
@@ -146,7 +146,7 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 11, subStep: 'a', stepName: 'Unzip FIDE File',
+    step: 11, subStep: 'a', stepName: 'Unzip FIDE File', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: 'tfzp_fide_zip', inputRecs: zipBuffer.length,
     outputTable: 'tfxm_fide_xml', outputRecs: totalChars,
     durationMs, forceNewRun
@@ -258,7 +258,7 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 12, subStep: 'a', stepName: 'Parse FIDE XML',
+    step: 12, subStep: 'a', stepName: 'Parse FIDE XML', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: 'tfxm_fide_xml', inputRecs: totalChunks,
     outputTable: 'tfpl_fide_players', outputRecs: parsedCount,
     durationMs, forceNewRun

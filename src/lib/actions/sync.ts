@@ -5,7 +5,7 @@ import { table_delete } from 'nextjs-shared/table_delete'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from './pipelineLog'
-import { INCLUDED_TIME_CLASSES } from '../constants'
+import { INCLUDED_TIME_CLASSES, PIPELINE_TYPE_GAMES } from '../constants'
 import { getPlayers, getPlayerLastSyncedEndTime, markPlayerSynced, updatePlayerRating } from './players'
 import { deconstructGames } from './deconstruct'
 
@@ -212,10 +212,10 @@ export async function runGameSync(): Promise<{
   const totalDeconstructed  = summary.reduce((s, p) => s + p.deconstructed, 0)
   const durationMs          = Date.now() - t0
 
-  await logPipelineStep({ step: 1, subStep: 'a', stepName: 'Query chess.com API', inputTable: 'tpl_players', inputRecs: players.length, outputTable: 'chess.com API', outputRecs: totalRead, durationMs })
-  await logPipelineStep({ step: 1, subStep: 'b', stepName: 'Fetch & Insert Raw Games', inputTable: 'chess.com API', inputRecs: totalRead, outputTable: 'tgr_gamesraw', outputRecs: totalInserted, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 1, subStep: 'c', stepName: 'Deconstruct Games', inputTable: 'tgr_gamesraw', inputRecs: totalInserted, outputTable: 'tgd_gamesdecon', outputRecs: totalDeconstructed, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 1, subStep: 'd', stepName: 'Update Player Ratings', inputTable: 'tgd_gamesdecon', inputRecs: totalDeconstructed, outputTable: 'tplr_player_ratings', outputRecs: players.length - errors, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'a', stepName: 'Query chess.com API', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpl_players', inputRecs: players.length, outputTable: 'chess.com API', outputRecs: totalRead, durationMs })
+  await logPipelineStep({ step: 1, subStep: 'b', stepName: 'Fetch & Insert Raw Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'chess.com API', inputRecs: totalRead, outputTable: 'tgr_gamesraw', outputRecs: totalInserted, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'c', stepName: 'Deconstruct Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgr_gamesraw', inputRecs: totalInserted, outputTable: 'tgd_gamesdecon', outputRecs: totalDeconstructed, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'd', stepName: 'Update Player Ratings', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: totalDeconstructed, outputTable: 'tplr_player_ratings', outputRecs: players.length - errors, durationMs, forceNewRun: false })
   await logEnd('runGameSync', 'vercelCronSync', `${summary.length} players processed, ${totalInserted} inserted, ${totalDeconstructed} deconstructed`, 1)
 
   return { players: summary, totalInserted, totalDeconstructed }

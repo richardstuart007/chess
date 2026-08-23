@@ -10,9 +10,9 @@ import PipelineHelp from '@/src/ui/analysis/PipelineHelp'
 import { MyHelpStep } from 'nextjs-shared/MyHelpStep'
 import { getPlayers } from '@/src/lib/actions/players'
 import { runGameSync } from '@/src/lib/actions/sync'
-import { getPipelineStatus, refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, refreshGameEndingsStatus, refreshDeepenPopularStatus, type PipelineStatus } from '@/src/lib/actions/pipelineStatus'
+import { refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, refreshGameEndingsStatus, refreshDeepenPopularStatus } from '@/src/lib/actions/pipelineStatus'
 import { getPipelineRates, getLatestPipelineRuns, getRecentRunIds } from '@/src/lib/actions/pipelineLog'
-import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, STOCKFISH_DEPTH, PIPELINE_CRON_SCHEDULE } from '@/src/lib/constants'
+import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, STOCKFISH_DEPTH, PIPELINE_CRON_SCHEDULE, PIPELINE_TYPE_GAMES } from '@/src/lib/constants'
 
 type LatestRun = {
   pip_step:         number
@@ -218,23 +218,23 @@ export default function PipelinePage() {
   const [runs, setRuns] = useState<LatestRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runAllRunning, setRunAllRunning] = useState(false)
-  const [recentRunIds, setRecentRunIds] = useState<number[]>([])
+  const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
   async function doRefreshRuns() {
     setRunsLoading(true)
-    const ids = await getRecentRunIds()
+    const ids = await getRecentRunIds(PIPELINE_TYPE_GAMES)
     setRecentRunIds(ids)
-    const latestId = ids[0] ?? null
+    const latestId = ids[0]?.runId ?? null
     setSelectedRunId(latestId)
-    setRuns(await getLatestPipelineRuns(latestId ?? undefined))
+    setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_GAMES, latestId ?? undefined))
     setRunsLoading(false)
   }
 
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
-    setRuns(await getLatestPipelineRuns(runId))
+    setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_GAMES, runId))
     setRunsLoading(false)
   }
   async function doRefreshStep1() { setS1Loading(true); setS1(await refreshStep1()); setS1Loading(false) }
@@ -272,28 +272,12 @@ export default function PipelinePage() {
     async function load() {
       const ps = await getPlayers()
       setPlayers(ps)
-      const [all, r] = await Promise.all([getPipelineStatus(), getPipelineRates()])
-      setRates(r)
-      setS1({ pending: all.pending, allDecon: all.gamesdecon })
-      setS3({ allProcessed: all.treeGamesProcessed, allRemaining: all.treeGamesRemaining })
-      setS3b({ positions: all.positions, unresolved: all.positionsUnresolved })
-      const s4init = await refreshStep4()
-      setS4(s4init)
-      const cpInit = await refreshCpChangeStatus()
-      setSCp(cpInit)
-      const purgeInit = await refreshPurgeStatus()
-      setSPurge(purgeInit)
-      const habitsInit = await refreshHabitsStatus()
-      setSHabits(habitsInit)
-      const gameEndingsInit = await refreshGameEndingsStatus()
-      setSGameEndings(gameEndingsInit)
-      const deepenPopularInit = await refreshDeepenPopularStatus()
-      setSDeepenPopular(deepenPopularInit)
-      const ids = await getRecentRunIds()
+      setRates(await getPipelineRates())
+      const ids = await getRecentRunIds(PIPELINE_TYPE_GAMES)
       setRecentRunIds(ids)
-      const latestId = ids[0] ?? null
+      const latestId = ids[0]?.runId ?? null
       setSelectedRunId(latestId)
-      setRuns(await getLatestPipelineRuns(latestId ?? undefined))
+      setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_GAMES, latestId ?? undefined))
     }
     load()
   }, [])
@@ -558,10 +542,10 @@ export default function PipelinePage() {
         <div className='flex items-center gap-2 mb-2'>
           <h3 className='text-xs font-bold'>Pipeline Jobs —</h3>
           <MySelect
-            options={recentRunIds.map(id => `Run #${id}`)}
-            value={selectedRunId != null ? `Run #${selectedRunId}` : ''}
-            onChange={e => handleSelectRunId(parseInt(e.target.value.replace('Run #', ''), 10))}
-            overrideClass='w-28 h-6 md:h-6'
+            options={recentRunIds.map(r => ({ value: String(r.runId), label: `${r.runId} — ${new Date(r.created).toLocaleDateString()}` }))}
+            value={selectedRunId != null ? String(selectedRunId) : ''}
+            onChange={e => handleSelectRunId(parseInt(e.target.value, 10))}
+            overrideClass='w-40 h-6 md:h-6'
           />
           <MyButton onClick={doRefreshRuns} disabled={runsLoading} overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'>{runsLoading ? '…' : '↻'}</MyButton>
         </div>
@@ -972,7 +956,7 @@ export default function PipelinePage() {
                   <MyHelpStep
                     title='9. Deepen Popular Positions'
                     input={['tpos_positions/tpose_positions_eval — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current pose_depth']}
-                    processing="Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: reach >= 50 -> depth 30, >= 30 -> depth 24, >= 10 -> depth 22. Each qualifying position is re-evaluated at its own tier's depth (not one uniform depth for the whole batch), then merged via upgradePositionEvaluation — the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions)."
+                    processing="Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: reach >= 50 -> depth 30, >= 30 -> depth 24, >= 20 -> depth 22, >= 10 -> depth 20. Each qualifying position is re-evaluated at its own tier's depth (not one uniform depth for the whole batch), then merged via upgradePositionEvaluation — the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions)."
                     output={['tpose_positions_eval — pose_cp/pose_best_move/pose_depth upgraded for qualifying positions; tgam_game_positions.gam_cp_change recomputed for affected rows']}
                     consumers={[
                       'Every tpose_positions_eval reader benefits — Moves From This Position, Position Detail, Habits eval',

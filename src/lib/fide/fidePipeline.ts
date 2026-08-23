@@ -7,6 +7,7 @@ import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
+import { PIPELINE_TYPE_MASTERS } from '../constants'
 const MASTER_PLAYERS_TABLE = 'tmst_master_players'
 const FIDE_PLAYERS_TABLE = 'tfpl_fide_players'
 
@@ -130,7 +131,7 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 13, subStep: 'a', stepName: 'Populate FIDE Top Players',
+    step: 13, subStep: 'a', stepName: 'Populate FIDE Top Players', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: FIDE_PLAYERS_TABLE, inputRecs: candidates.length,
     outputTable: MASTER_PLAYERS_TABLE, outputRecs: inserted + updated,
     durationMs, forceNewRun
@@ -196,7 +197,7 @@ export async function refreshFideRatings(level: number = 1, forceNewRun?: boolea
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 14, subStep: 'a', stepName: 'Refresh FIDE Ratings',
+    step: 14, subStep: 'a', stepName: 'Refresh FIDE Ratings', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: FIDE_PLAYERS_TABLE, inputRecs: linkedRows.length,
     outputTable: MASTER_PLAYERS_TABLE, outputRecs: updated,
     durationMs, forceNewRun

@@ -31,6 +31,8 @@ import {
   FIDE_XML_CHUNK_SIZE,
   FIDE_XML_READ_BATCH_CHUNKS,
   GAME_ENDINGS_CONCURRENCY,
+  PIPELINE_TYPE_GAMES,
+  PIPELINE_TYPE_MASTERS,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
   STOCKFISH_REANALYZE_DEFAULT_DEPTH,
@@ -166,7 +168,9 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'POSITION_GAMES_ROWS_DEFAULT', value: POSITION_GAMES_ROWS_DEFAULT, description: "Default rows-per-page for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
       { name: 'POSITION_GAMES_ROWS_OPTIONS', value: POSITION_GAMES_ROWS_OPTIONS, description: "Rows-per-page dropdown options for the Analyze page's Games Played panel.", consumers: ['ChessBoardView.tsx: ChessBoardView'] },
       { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
-      { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] }
+      { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] },
+      { name: 'PIPELINE_TYPE_GAMES', value: PIPELINE_TYPE_GAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the game-sync/analysis pipeline (steps 1-9) — keeps its run-id allocation and Run selector scoped separately from the masters pipeline.', consumers: ['sync.ts: runGameSync', 'buildPositionTree.ts: buildPositionTree, syncTposFromTgam', 'purgePositions.ts: purgeStaleReachOnePositions', 'buildHabits.ts: buildHabits', 'enrichPositionsStockfish.ts: bulkUpdateCpLoss, enrichPositionsStockfish, deepenPopularPositions, evaluateGameEndings', 'owner/pipelinegames/page.tsx: PipelinePage'] },
+      { name: 'PIPELINE_TYPE_MASTERS', value: PIPELINE_TYPE_MASTERS, description: 'tpip_pipelinelog.pip_pipeline_type value for the FIDE master-players pipeline (steps 10-14) — keeps its run-id allocation and Run selector scoped separately from the games pipeline.', consumers: ['fideStaging.ts: downloadFideZip, unzipFideZip, parseFideXml', 'fidePipeline.ts: populateFideTopPlayers, refreshFideRatings', 'owner/pipelinemasters/page.tsx: PipelineMastersPage'] }
     ]
   },
   {

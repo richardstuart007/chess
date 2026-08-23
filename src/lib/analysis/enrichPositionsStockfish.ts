@@ -8,7 +8,7 @@ import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY, POSITION_INSERT_CHUNK_SIZE, POPULAR_POSITION_DEPTH_TIERS } from '../constants'
+import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY, POSITION_INSERT_CHUNK_SIZE, POPULAR_POSITION_DEPTH_TIERS, PIPELINE_TYPE_GAMES } from '../constants'
 import { truncateFen } from '../fen'
 
 //----------------------------------------------------------------------------------
@@ -216,7 +216,7 @@ export async function bulkUpdateCpLoss(level: number, forceNewRun?: boolean): Pr
     severity: 'I'
   })
   const rowCount = res.length
-  await logPipelineStep({ step: 6, subStep: 'a', stepName: 'Update CP Change', inputTable: 'tgam_game_positions', inputRecs: rowCount, outputTable: 'tgam_game_positions', outputRecs: rowCount, durationMs: Date.now() - t0, forceNewRun })
+  await logPipelineStep({ step: 6, subStep: 'a', stepName: 'Update CP Change', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: rowCount, outputTable: 'tgam_game_positions', outputRecs: rowCount, durationMs: Date.now() - t0, forceNewRun })
   await logEnd('bulkUpdateCpLoss', 'enrichPositionsStockfish', `${rowCount} tgam_game_positions rows updated`, level)
   return rowCount
 }
@@ -269,7 +269,7 @@ export async function enrichPositionsStockfish(opts: {
   ]
 
   if (allFensToEval.length === 0) {
-    await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
     await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', '0 processed, 0 errors, 0 remaining', level)
     return { processed: 0, errors: 0, remaining: 0 }
   }
@@ -311,7 +311,7 @@ export async function enrichPositionsStockfish(opts: {
 
   sf.quit()
 
-  await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', inputTable: 'tpos_positions', inputRecs: allFensToEval.length, outputTable: 'tpose_positions_eval', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+  await logPipelineStep({ step: 5, subStep: 'a', stepName: 'Evaluate Positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: allFensToEval.length, outputTable: 'tpose_positions_eval', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
   const remaining = await countRemainingPositions(level)
   await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
   return { processed, errors, remaining }
@@ -384,7 +384,7 @@ export async function deepenPopularPositions(opts: {
     }))
 
   if (candidates.length === 0) {
-    await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
     await logEnd('deepenPopularPositions', 'deepenPopularPositionsRoute', '0 processed, 0 errors, 0 remaining', level)
     return { processed: 0, errors: 0, remaining: 0 }
   }
@@ -421,7 +421,7 @@ export async function deepenPopularPositions(opts: {
 
   sf.quit()
 
-  await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', inputTable: 'tpos_positions', inputRecs: candidates.length, outputTable: 'tpose_positions_eval', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+  await logPipelineStep({ step: 9, subStep: 'a', stepName: 'Deepen Popular Positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: candidates.length, outputTable: 'tpose_positions_eval', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
   const remaining = await countRemainingPopularPositions(level)
   await logEnd('deepenPopularPositions', 'deepenPopularPositionsRoute', `${processed} processed, ${errors} errors, ${remaining} remaining`, level)
   return { processed, errors, remaining }
@@ -584,7 +584,7 @@ export async function evaluateGameEndings(opts: {
   const games = await getGamesNeedingFinalEval(limit, level)
 
   if (games.length === 0) {
-    await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', inputTable: 'tgd_gamesdecon', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+    await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
     await logEnd('evaluateGameEndings', 'evaluateGameEndingsRoute', '0 processed, 0 errors, 0 remaining', level)
     return { processed: 0, reused: 0, errors: 0, remaining: 0 }
   }
@@ -696,7 +696,7 @@ export async function evaluateGameEndings(opts: {
     engines.forEach(e => e.quit())
   }
 
-  await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgd_gamesdecon', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+  await logPipelineStep({ step: 8, subStep: 'a', stepName: 'Evaluate Game Endings', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgd_gamesdecon', outputRecs: processed, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
 
   const remainingRes = await table_query({
     caller: 'evaluateGameEndings_remaining',

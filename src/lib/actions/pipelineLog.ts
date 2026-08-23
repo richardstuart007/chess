@@ -1,6 +1,9 @@
 'use server'
 
 import { table_query } from 'nextjs-shared/table_query'
+import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS } from '@/src/lib/constants'
+
+type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS
 
 //----------------------------------------------------------------------------------
 //  resolvePipRunId — step 1a (the very first sub-step of Fetch & Insert Raw Games)
@@ -11,15 +14,15 @@ import { table_query } from 'nextjs-shared/table_query'
 //  together, and also what lets Run All's later steps join the run id 1a just
 //  allocated moments earlier.
 //----------------------------------------------------------------------------------
-async function resolvePipRunId(step: number, subStep: string, forceNew: boolean = false): Promise<number> {
+async function resolvePipRunId(step: number, subStep: string, pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
   const isAllocator = step === 1 && subStep === 'a'
   const rows = await table_query({
     caller:       'resolvePipRunId',
     table:        'tpip_pipelinelog',
     query:        (isAllocator || forceNew)
-      ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog`
-      : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog`,
-    params:       [],
+      ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`
+      : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`,
+    params:       [pipelineType],
     skipCache:    true
   })
   return rows[0].run_id as number
@@ -34,6 +37,7 @@ export async function logPipelineStep(params: {
   step:         number
   subStep:      string
   stepName:     string
+  pipelineType: PipelineType
   inputTable:   string
   inputRecs:    number
   outputTable:  string
@@ -41,18 +45,18 @@ export async function logPipelineStep(params: {
   durationMs:   number
   forceNewRun?: boolean
 }): Promise<number> {
-  const runId = await resolvePipRunId(params.step, params.subStep, params.forceNewRun)
+  const runId = await resolvePipRunId(params.step, params.subStep, params.pipelineType, params.forceNewRun)
   const rows = await table_query({
     caller:       'logPipelineStep',
     table:        'tpip_pipelinelog',
     query:        `
       INSERT INTO tpip_pipelinelog
-        (pip_step, pip_sub_step, pip_step_name, pip_run_id, pip_input_table, pip_input_recs, pip_output_table, pip_output_recs, pip_duration_ms)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (pip_step, pip_sub_step, pip_step_name, pip_run_id, pip_pipeline_type, pip_input_table, pip_input_recs, pip_output_table, pip_output_recs, pip_duration_ms)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING pip_pipid
     `,
     params:       [
-      params.step, params.subStep, params.stepName, runId,
+      params.step, params.subStep, params.stepName, runId, params.pipelineType,
       params.inputTable, params.inputRecs, params.outputTable, params.outputRecs,
       params.durationMs
     ],
@@ -132,7 +136,7 @@ export async function getPipelineRates(): Promise<{
 //  (which allocates its own new run_id) will make every other step show "—" until
 //  the next coordinated run repopulates them all together.
 //----------------------------------------------------------------------------------
-export async function getLatestPipelineRuns(runId?: number): Promise<{
+export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: number): Promise<{
   pip_step:        number
   pip_sub_step:    string
   pip_step_name:   string
@@ -153,31 +157,34 @@ export async function getLatestPipelineRuns(runId?: number): Promise<{
         pip_input_table, pip_input_recs, pip_output_table, pip_output_recs,
         pip_duration_ms
       FROM tpip_pipelinelog
-      WHERE pip_run_id = ${runId != null ? '$1' : '(SELECT MAX(pip_run_id) FROM tpip_pipelinelog)'}
+      WHERE pip_pipeline_type = $1
+        AND pip_run_id = ${runId != null ? '$2' : '(SELECT MAX(pip_run_id) FROM tpip_pipelinelog WHERE pip_pipeline_type = $1)'}
       ORDER BY pip_step, pip_sub_step
     `,
-    params:       runId != null ? [runId] : [],
+    params:       runId != null ? [pipelineType, runId] : [pipelineType],
     skipCache:    true
   })
   return rows
 }
 
 //----------------------------------------------------------------------------------
-//  getRecentRunIds — the last N distinct pip_run_id values, descending (most recent
-//  first), for the Pipeline page's Run # selector.
+//  getRecentRunIds — the last N pip_run_id values, descending (most recent first),
+//  each with its earliest pip_created, for the Pipeline page's Run # selector.
 //----------------------------------------------------------------------------------
-export async function getRecentRunIds(limit: number = 5): Promise<number[]> {
+export async function getRecentRunIds(pipelineType: PipelineType, limit: number = 5): Promise<{ runId: number; created: string }[]> {
   const rows = await table_query({
     caller:       'getRecentRunIds',
     table:        'tpip_pipelinelog',
     query:        `
-      SELECT DISTINCT pip_run_id
+      SELECT pip_run_id, MIN(pip_created) AS pip_created
       FROM tpip_pipelinelog
+      WHERE pip_pipeline_type = $1
+      GROUP BY pip_run_id
       ORDER BY pip_run_id DESC
-      LIMIT $1
+      LIMIT $2
     `,
-    params:       [limit],
+    params:       [pipelineType, limit],
     skipCache:    true
   })
-  return rows.map((r: any) => Number(r.pip_run_id))
+  return rows.map((r: any) => ({ runId: Number(r.pip_run_id), created: r.pip_created }))
 }

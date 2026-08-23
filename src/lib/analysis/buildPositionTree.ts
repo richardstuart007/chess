@@ -5,7 +5,7 @@ import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE } from '../constants'
+import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE, PIPELINE_TYPE_GAMES } from '../constants'
 import { truncateFen } from '../fen'
 
 interface GameRecord {
@@ -285,8 +285,8 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
 
   const tgamBackfilled = beforeRes.length + resultingRes.length
   const durationMs     = Date.now() - t0
-  await logPipelineStep({ step: 3, subStep: 'a', stepName: 'Sync tpos_positions', inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tpos_positions', outputRecs: touchedPosIds.length, durationMs, forceNewRun })
-  await logPipelineStep({ step: 3, subStep: 'b', stepName: 'Backfill tgam ids', inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tgam_game_positions', outputRecs: tgamBackfilled, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 3, subStep: 'a', stepName: 'Sync tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tpos_positions', outputRecs: touchedPosIds.length, durationMs, forceNewRun })
+  await logPipelineStep({ step: 3, subStep: 'b', stepName: 'Backfill tgam ids', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tgam_game_positions', outputRecs: tgamBackfilled, durationMs, forceNewRun: false })
 
   await logEnd('syncTposFromTgam', 'buildPositionTree', `${touchedPosIds.length} positions synced`, level)
   return { positionsSynced: touchedPosIds.length }
@@ -405,7 +405,7 @@ export async function buildPositionTree(opts: {
 
   const processed      = games.length - errors
   const afterRemaining = Math.max(0, snapRemaining - processed)
-  await logPipelineStep({ step: 2, subStep: 'a', stepName: 'Build Position Tree', inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgam_game_positions', outputRecs: totalPositions, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
+  await logPipelineStep({ step: 2, subStep: 'a', stepName: 'Build Position Tree', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgam_game_positions', outputRecs: totalPositions, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
 
   await logEnd('buildPositionTree', caller, `${totalPositions} positions recorded, treeBuilt ${snapProcessed + processed}, remaining ${afterRemaining}`, level)
 

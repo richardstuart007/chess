@@ -10,7 +10,7 @@ import {
   refreshFideZipStatus, refreshFideXmlStatus, refreshFideParsedStatus, refreshFideTaggedCount
 } from '@/src/lib/actions/fidePipelineStatus'
 import { getLatestPipelineRuns, getRecentRunIds } from '@/src/lib/actions/pipelineLog'
-import { FIDE_TOP_RATING_CUTOFF, FIDE_XML_CHUNK_SIZE } from '@/src/lib/constants'
+import { FIDE_TOP_RATING_CUTOFF, FIDE_XML_CHUNK_SIZE, PIPELINE_TYPE_MASTERS } from '@/src/lib/constants'
 
 type LatestRun = {
   pip_step:         number
@@ -57,7 +57,7 @@ export default function PipelineMastersPage() {
 
   const [runs, setRuns] = useState<LatestRun[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
-  const [recentRunIds, setRecentRunIds] = useState<number[]>([])
+  const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
   async function doRefreshZip()     { setSZipLoading(true);     setSZip(await refreshFideZipStatus());       setSZipLoading(false) }
@@ -68,18 +68,18 @@ export default function PipelineMastersPage() {
 
   async function doRefreshRuns() {
     setRunsLoading(true)
-    const ids = await getRecentRunIds()
+    const ids = await getRecentRunIds(PIPELINE_TYPE_MASTERS)
     setRecentRunIds(ids)
-    const latestId = ids[0] ?? null
+    const latestId = ids[0]?.runId ?? null
     setSelectedRunId(latestId)
-    setRuns(await getLatestPipelineRuns(latestId ?? undefined))
+    setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_MASTERS, latestId ?? undefined))
     setRunsLoading(false)
   }
 
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
-    setRuns(await getLatestPipelineRuns(runId))
+    setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_MASTERS, runId))
     setRunsLoading(false)
   }
 
@@ -245,7 +245,7 @@ export default function PipelineMastersPage() {
         <div className='flex items-center gap-2 mb-2'>
           <h3 className='text-xs font-bold'>Pipeline Jobs —</h3>
           <MySelect
-            options={recentRunIds.map(id => `Run #${id}`)}
+            options={recentRunIds.map(r => `Run #${r.runId}`)}
             value={selectedRunId != null ? `Run #${selectedRunId}` : ''}
             onChange={e => handleSelectRunId(parseInt(e.target.value.replace('Run #', ''), 10))}
             overrideClass='w-28 h-6 md:h-6'

@@ -75,7 +75,8 @@ export const RESULT_MISMATCH_CP_THRESHOLD = 200
 export const POPULAR_POSITION_DEPTH_TIERS: { minReach: number; depth: number }[] = [
   { minReach: 50, depth: 30 },
   { minReach: 30, depth: 24 },
-  { minReach: 10, depth: 22 }
+  { minReach: 20, depth: 22 },
+  { minReach: 10, depth: 20 }
 ]
 
 //----------------------------------------------------------------------------------
@@ -98,6 +99,8 @@ export const FIDE_STANDARD_RATING_LIST_URL = 'https://ratings.fide.com/download/
 export const FIDE_XML_CHUNK_SIZE = 2_000_000
 export const FIDE_XML_READ_BATCH_CHUNKS = 5
 export const GAME_ENDINGS_CONCURRENCY = 4
+export const PIPELINE_TYPE_GAMES = 'games'
+export const PIPELINE_TYPE_MASTERS = 'masters'
 export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
   1: '3:00am',  // Game Sync
   2: '3:20am',  // Build Game Positions

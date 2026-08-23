@@ -5,7 +5,7 @@ import { table_query } from 'nextjs-shared/table_query'
 import { table_truncate } from 'nextjs-shared/table_truncate'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
-import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP, MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE } from '../constants'
+import { PURGE_REACH_GRACE_DAYS, MIN_REACH_TO_KEEP, MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, PIPELINE_TYPE_GAMES } from '../constants'
 
 //----------------------------------------------------------------------------------
 //  purgeStaleReachOnePositions — EXPLICIT EXCEPTION to the "no destructive SQL in
@@ -78,10 +78,10 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
 
   if (!purgedCount) {
     const durationMs = Date.now() - t0
-    await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs, forceNewRun })
-    await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgam_game_positions', outputRecs: 0, durationMs, forceNewRun: false })
-    await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpos_positions', outputRecs: 0, durationMs, forceNewRun: false })
-    await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs, forceNewRun: false })
+    await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpose_positions_eval', outputRecs: 0, durationMs, forceNewRun })
+    await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgam_game_positions', outputRecs: 0, durationMs, forceNewRun: false })
+    await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tpos_positions', outputRecs: 0, durationMs, forceNewRun: false })
+    await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: 0, outputTable: 'tgd_gamesdecon', outputRecs: 0, durationMs, forceNewRun: false })
     await logEnd('purgeStaleReachOnePositions', 'purgeRoute', '0 positions eligible', level)
     return { purged: 0 }
   }
@@ -153,10 +153,10 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   })
 
   const durationMs = Date.now() - t0
-  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpose_positions_eval', outputRecs: evalsRes.length, durationMs, forceNewRun })
-  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.length + tgamNullRes.length, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.length, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpose_positions_eval', outputRecs: evalsRes.length, durationMs, forceNewRun })
+  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.length + tgamNullRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.length, durationMs, forceNewRun: false })
 
   await write_logging({
     lg_functionname: 'purgeStaleReachOnePositions',
