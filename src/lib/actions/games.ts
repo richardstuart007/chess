@@ -6,6 +6,7 @@ import { table_count } from 'nextjs-shared/table_count'
 import { table_delete } from 'nextjs-shared/table_delete'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { Chess } from 'chess.js'
 import { classifyMove } from '@/src/lib/stockfish'
 import { truncateFen } from '@/src/lib/fen'
@@ -34,37 +35,66 @@ const DECON_TABLE = 'tgd_gamesdecon'
 // -----------------------------------------------------------------------
 
 export async function getGameCount(player: string): Promise<number> {
-  return table_count({
+  const result = await table_count({
     table: GAMES_TABLE,
     whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
     caller: 'getGameCount'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getGameCount',
+      lg_caller: 'getGameCount',
+      lg_msg: 'Failed to count games: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 export async function getRecentGames(player: string, limit: number = 100) {
-  return table_fetch({
+  const result = await table_fetch({
     caller: 'getRecentGames',
     table: GAMES_TABLE,
     whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
     orderBy: 'gr_end_time DESC',
     limit
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getRecentGames',
+      lg_caller: 'getRecentGames',
+      lg_msg: 'Failed to fetch recent games: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data
 }
 
 //----------------------------------------------------------------------------------
 //  getGameById — reads from tgd_gamesdecon, matched by its own permanent gd_gdid
 //----------------------------------------------------------------------------------
 export async function getGameById(gdid: number) {
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'getGameById',
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_gdid', value: gdid }]
   })
-  return rows[0] ?? null
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getGameById',
+      lg_caller: 'getGameById',
+      lg_msg: 'Failed to fetch game ' + gdid + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  return result.data[0] ?? null
 }
 
 export async function getLatestGameEndTime(player: string): Promise<number | null> {
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'getLatestGameEndTime',
     table: GAMES_TABLE,
     whereColumnValuePairs: [{ column: 'gr_player', value: player.toLowerCase() }],
@@ -72,7 +102,16 @@ export async function getLatestGameEndTime(player: string): Promise<number | nul
     limit: 1,
     columns: ['gr_end_time']
   })
-  return rows[0]?.gr_end_time ?? null
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getLatestGameEndTime',
+      lg_caller: 'getLatestGameEndTime',
+      lg_msg: 'Failed to fetch latest game end time: ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  return result.data[0]?.gr_end_time ?? null
 }
 
 export async function insertRawGame(data: {
@@ -83,7 +122,7 @@ export async function insertRawGame(data: {
   end_time: number
   time_class: string
 }) {
-  return table_write({
+  const result = await table_write({
     caller: 'insertRawGame',
     table: GAMES_TABLE,
     columnValuePairs: [
@@ -95,6 +134,16 @@ export async function insertRawGame(data: {
       { column: 'gr_time_class', value: data.time_class }
     ]
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'insertRawGame',
+      lg_caller: 'insertRawGame',
+      lg_msg: 'Failed to insert raw game: ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  return result.data
 }
 
 //----------------------------------------------------------------------------------
@@ -159,14 +208,23 @@ export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRo
 //  they always come from gev (blank if no tgev row exists for that ply).
 //----------------------------------------------------------------------------------
 export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefined)[]> {
-  const gameRows = await table_fetch({
+  const gameResult = await table_fetch({
     caller: 'getGameEvals_pgn',
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_gdid', value: gdid }],
     columns: ['gd_pgn'],
     skipCache: true
   })
-  const pgn = gameRows[0]?.gd_pgn as string | undefined
+  if (!gameResult.ok) {
+    write_logging({
+      lg_functionname: 'getGameEvals',
+      lg_caller: 'getGameEvals_pgn',
+      lg_msg: 'Failed to fetch game PGN for ' + gdid + ': ' + gameResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  const pgn = gameResult.data[0]?.gd_pgn as string | undefined
   if (!pgn) return []
 
   const g = new Chess()
@@ -185,7 +243,7 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
     fens.push(g2.fen())
   }
 
-  const tgevRows = await table_fetch({
+  const tgevResult = await table_fetch({
     caller: 'getGameEvals',
     table: 'tgev_game_evals',
     whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
@@ -193,8 +251,17 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
     columns: ['gev_ply', 'gev_cp', 'gev_best_move', 'gev_best_move_san', 'gev_best_line', 'gev_depth'],
     skipCache: true
   })
+  if (!tgevResult.ok) {
+    write_logging({
+      lg_functionname: 'getGameEvals',
+      lg_caller: 'getGameEvals',
+      lg_msg: 'Failed to fetch game evals for ' + gdid + ': ' + tgevResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
   const tgevByPly = new Map<number, any>()
-  for (const r of tgevRows) tgevByPly.set(Number(r.gev_ply), r)
+  for (const r of tgevResult.data) tgevByPly.set(Number(r.gev_ply), r)
 
   const poseEvals = await getPositionEvaluationsBulk(fens)
 
@@ -251,21 +318,41 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
 // -----------------------------------------------------------------------
 
 export async function getDeconGames(player: string, limit: number = 100) {
-  return table_fetch({
+  const result = await table_fetch({
     caller: 'getDeconGames',
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     orderBy: 'gd_end_time DESC',
     limit
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getDeconGames',
+      lg_caller: 'getDeconGames',
+      lg_msg: 'Failed to fetch deconstructed games: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data
 }
 
 export async function getDeconGameCount(player: string): Promise<number> {
-  return table_count({
+  const result = await table_count({
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     caller: 'getDeconGameCount'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getDeconGameCount',
+      lg_caller: 'getDeconGameCount',
+      lg_msg: 'Failed to count deconstructed games: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 // -----------------------------------------------------------------------
@@ -357,7 +444,7 @@ export async function fetchFilteredGames(
   const filterArray = buildFilters(players, filters)
   const offset = (page - 1) * itemsPerPage
 
-  return fetchFiltered({
+  const result = await fetchFiltered({
     table: DECON_TABLE,
     filters: filterArray,
     orderBy: 'gd_end_time DESC',
@@ -365,6 +452,16 @@ export async function fetchFilteredGames(
     offset,
     caller: 'fetchFilteredGames'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'fetchFilteredGames',
+      lg_caller: 'fetchFilteredGames',
+      lg_msg: 'Failed to fetch filtered games: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data
 }
 
 //----------------------------------------------------------------------------------
@@ -376,12 +473,22 @@ export async function getGamesPageCount(
   itemsPerPage: number = GAMES_ITEMS_PER_PAGE
 ): Promise<number> {
   const filterArray = buildFilters(players, filters)
-  return fetchTotalPages({
+  const result = await fetchTotalPages({
     table: DECON_TABLE,
     filters: filterArray,
     items_per_page: itemsPerPage,
     caller: 'getGamesPageCount'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getGamesPageCount',
+      lg_caller: 'getGamesPageCount',
+      lg_msg: 'Failed to fetch games page count: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 export async function getOpeningScores(
@@ -416,7 +523,7 @@ export async function getOpeningScores(
     params.push(timeClass)
     timeClassFilter = ` AND gd_time_class = $${params.length}`
   }
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getOpeningScores',
     table: DECON_TABLE,
     query: `
@@ -442,7 +549,16 @@ export async function getOpeningScores(
     `,
     params
   })
-  return rows.map((r: any) => ({
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getOpeningScores',
+      lg_caller: 'getOpeningScores',
+      lg_msg: 'Failed to fetch opening scores: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map((r: any) => ({
     eco_code: r.gd_eco_code ?? '',
     opening_name: r.gd_opening_name ?? '',
     games: Number(r.games),
@@ -477,7 +593,7 @@ export async function getTerminationStats(
     params.push(timeClass)
     filters += ` AND gd_time_class = $${params.length}`
   }
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getTerminationStats',
     table: DECON_TABLE,
     query: `
@@ -495,7 +611,16 @@ export async function getTerminationStats(
     `,
     params
   })
-  return rows.map((r: any) => ({
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getTerminationStats',
+      lg_caller: 'getTerminationStats',
+      lg_msg: 'Failed to fetch termination stats: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map((r: any) => ({
     termination: r.termination,
     win:   Number(r.win),
     loss:  Number(r.loss),
@@ -509,7 +634,7 @@ export async function backfillOpeningMoves(
 ): Promise<{ updated: number; remaining: number }> {
   const { parsePgnOpening } = await import('../parsePgn')
 
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'backfillOpeningMoves',
     table: DECON_TABLE,
     whereColumnValuePairs: [
@@ -519,8 +644,17 @@ export async function backfillOpeningMoves(
     columns: ['gd_gdid', 'gd_pgn'],
     limit: batchSize
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'backfillOpeningMoves',
+      lg_caller: 'backfillOpeningMoves',
+      lg_msg: 'Failed to fetch games needing opening-moves backfill: ' + result.error,
+      lg_severity: 'E'
+    })
+    return { updated: 0, remaining: 0 }
+  }
 
-  for (const row of rows) {
+  for (const row of result.data) {
     const moves = parsePgnOpening(row.gd_pgn ?? '')
     await table_update({
       caller: 'backfillOpeningMoves_update',
@@ -531,7 +665,7 @@ export async function backfillOpeningMoves(
   }
 
   // table_count has no IS NULL support (unlike table_fetch) — table_query needed here
-  const remaining = await table_query({
+  const remainingResult = await table_query({
     caller: 'backfillOpeningMoves_count',
     table: DECON_TABLE,
     query: `SELECT COUNT(*) FROM tgd_gamesdecon
@@ -539,23 +673,41 @@ export async function backfillOpeningMoves(
               AND gd_opening_moves IS NULL`,
     params: [player.toLowerCase()]
   })
+  if (!remainingResult.ok) {
+    write_logging({
+      lg_functionname: 'backfillOpeningMoves',
+      lg_caller: 'backfillOpeningMoves_count',
+      lg_msg: 'Failed to count remaining opening-moves backfill: ' + remainingResult.error,
+      lg_severity: 'E'
+    })
+    return { updated: result.data.length, remaining: 0 }
+  }
 
   return {
-    updated: rows.length,
-    remaining: Number(remaining[0]?.count ?? 0)
+    updated: result.data.length,
+    remaining: Number(remainingResult.data[0]?.count ?? 0)
   }
 }
 
 export async function getEarliestGameDate(players: string[]): Promise<string | null> {
   const placeholders = players.map((_, i) => `$${i + 1}`).join(', ')
   const playerFilter = players.length > 0 ? `WHERE gd_player IN (${placeholders})` : ''
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getEarliestGameDate',
     table: DECON_TABLE,
     query: `SELECT MIN(gd_end_time) AS min_time FROM tgd_gamesdecon ${playerFilter}`,
     params: players.map(u => u.toLowerCase())
   })
-  const minTime = rows[0]?.min_time
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getEarliestGameDate',
+      lg_caller: 'getEarliestGameDate',
+      lg_msg: 'Failed to fetch earliest game date: ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  const minTime = result.data[0]?.min_time
   if (!minTime) return null
   return new Date(Number(minTime) * 1000).toISOString().slice(0, 10)
 }
@@ -648,9 +800,18 @@ export async function getPlayerRatingOverTime(
     `
   }
 
-  const rows = await table_query({ caller: 'getPlayerRatingOverTime', table: DECON_TABLE, query, params })
+  const result = await table_query({ caller: 'getPlayerRatingOverTime', table: DECON_TABLE, query, params })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getPlayerRatingOverTime',
+      lg_caller: 'getPlayerRatingOverTime',
+      lg_msg: 'Failed to fetch player rating over time: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
 
-  return rows.map((r: any) => ({
+  return result.data.map((r: any) => ({
     date: r.date,
     avgRating: r.avg_rating,
     games: r.games

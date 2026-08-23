@@ -101,6 +101,7 @@ export const FIDE_XML_READ_BATCH_CHUNKS = 5
 export const GAME_ENDINGS_CONCURRENCY = 4
 export const PIPELINE_TYPE_GAMES = 'games'
 export const PIPELINE_TYPE_MASTERS = 'masters'
+export const PIPELINE_TYPE_MASTERGAMES = 'mastergames'
 export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
   1: '3:00am',  // Game Sync
   2: '3:20am',  // Build Game Positions
@@ -146,6 +147,17 @@ export const STOCKFISH_DEPTH_INPUT_MAX = 40
 //  Masters Explorer (Lichess)
 //----------------------------------------------------------------------------------
 export const MASTERS_EXPLORER_MOVES_LIMIT = 12
+
+//----------------------------------------------------------------------------------
+//  Master Games (position database — proof of concept)
+//----------------------------------------------------------------------------------
+export const MASTER_INCLUDED_TIME_CLASSES = ['blitz', 'rapid']
+export const MASTER_MIN_ANALYSIS_MOVE = 4
+export const MASTER_MAX_ANALYSIS_MOVE = 16
+export const MASTER_POSITION_INSERT_CHUNK_SIZE = 500
+export const MASTER_GAME_LIST_ROWS_DEFAULT = 20
+export const MASTER_GAME_LIST_ROWS_OPTIONS = [10, 15, 20, 50] as const
+export const MASTER_GAMES_SYNC_YEARS = [2026, 2025, 2024, 2023, 2022, 2021, 2020] as const
 
 //----------------------------------------------------------------------------------
 //  UI Display

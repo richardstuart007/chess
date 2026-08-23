@@ -26,11 +26,11 @@ type LatestRun = {
 }
 
 const STEPS = [
-  { step: 10, label: 'Download FIDE Zip' },
-  { step: 11, label: 'Unzip FIDE File' },
-  { step: 12, label: 'Parse FIDE XML' },
-  { step: 13, label: 'Populate FIDE Top Players' },
-  { step: 14, label: 'Refresh FIDE Ratings' },
+  { step: 1, label: 'Download FIDE Zip' },
+  { step: 2, label: 'Unzip FIDE File' },
+  { step: 3, label: 'Parse FIDE XML' },
+  { step: 4, label: 'Populate FIDE Top Players' },
+  { step: 5, label: 'Refresh FIDE Ratings' },
 ]
 
 function n(val: number | undefined): string {
@@ -310,11 +310,11 @@ export default function PipelineMastersPage() {
           <tbody>
             {/* Step 10 */}
             <tr className='border-t border-gray-100'>
-              <td className='py-1 pr-2 text-xs font-bold'>10.</td>
+              <td className='py-1 pr-2 text-xs font-bold'>1.</td>
               <td className='py-1 pr-2 text-xs font-bold'>Download FIDE Zip</td>
               <td className='py-1 pr-2'>
                 <MyHelpStep
-                  title='10. Download FIDE Zip'
+                  title='1. Download FIDE Zip'
                   input={["FIDE's monthly standard rating list zip (external download)"]}
                   processing='Downloads the zipped standard rating list and stores the raw bytes in tfzp_fide_zip (single row, truncated and refilled every run). A separate, independently re-runnable stage — nothing further down the pipeline needs to re-download if it fails.'
                   output={['tfzp_fide_zip.fzp_data — the raw downloaded zip bytes']}
@@ -337,11 +337,11 @@ export default function PipelineMastersPage() {
 
             {/* Step 11 */}
             <tr className='border-t border-gray-100'>
-              <td className='py-1 pr-2 text-xs font-bold'>11.</td>
+              <td className='py-1 pr-2 text-xs font-bold'>2.</td>
               <td className='py-1 pr-2 text-xs font-bold'>Unzip FIDE File</td>
               <td className='py-1 pr-2'>
                 <MyHelpStep
-                  title='11. Unzip FIDE File'
+                  title='2. Unzip FIDE File'
                   input={['tfzp_fide_zip — the zip staged by step 10']}
                   processing={`Decompresses the single entry and writes the decompressed text into tfxm_fide_xml in ${FIDE_XML_CHUNK_SIZE.toLocaleString()}-character chunks (a StringDecoder is used so a multi-byte UTF-8 character split across two incoming stream chunks is never corrupted). Chunked storage keeps both this stage's writes and step 12's reads bounded to roughly one chunk in memory at a time, rather than the full ~158MB file.`}
                   output={['tfxm_fide_xml — decompressed XML text, one row per chunk (fxm_seq, fxm_data)']}
@@ -364,11 +364,11 @@ export default function PipelineMastersPage() {
 
             {/* Step 12 */}
             <tr className='border-t border-gray-100'>
-              <td className='py-1 pr-2 text-xs font-bold'>12.</td>
+              <td className='py-1 pr-2 text-xs font-bold'>3.</td>
               <td className='py-1 pr-2 text-xs font-bold'>Parse FIDE XML</td>
               <td className='py-1 pr-2'>
                 <MyHelpStep
-                  title='12. Parse FIDE XML'
+                  title='3. Parse FIDE XML'
                   input={['tfxm_fide_xml — chunks staged by step 11']}
                   processing={`Reads the chunks back in ordered batches (never one giant SELECT of every chunk), feeding each into a streaming SAX parser as it arrives, and batch-inserts every qualifying player into tfpl_fide_players (truncated and fully repopulated every run) — filtered at this stage to active players rated >= ${FIDE_TOP_RATING_CUTOFF} (not the full ~562K-player FIDE list), so a player who later drops below the cutoff simply stops being refreshable by step 14.`}
                   output={['tfpl_fide_players — one row per qualifying FIDE player: fideid, first/last name, rating']}
@@ -391,11 +391,11 @@ export default function PipelineMastersPage() {
 
             {/* Step 13 */}
             <tr className='border-t border-gray-100'>
-              <td className='py-1 pr-2 text-xs font-bold'>13.</td>
+              <td className='py-1 pr-2 text-xs font-bold'>4.</td>
               <td className='py-1 pr-2 text-xs font-bold'>Populate FIDE Top Players</td>
               <td className='py-1 pr-2'>
                 <MyHelpStep
-                  title='13. Populate FIDE Top Players'
+                  title='4. Populate FIDE Top Players'
                   input={[`tfpl_fide_players — active players rated >= ${FIDE_TOP_RATING_CUTOFF}`]}
                   processing="Pure DB-to-DB — no download or parsing here, so re-running after fixing a bug is fast. Full recompute every run (no safe incremental cursor — the top-rated set itself shifts month to month). For each qualifying FIDE player: updates mst_grade only if a tmst_master_players row is already linked by mst_fideid; else attaches mst_fideid to an existing unlinked row matched by surname (case-insensitive, disambiguated by first name on a collision); else inserts a brand-new row with names taken from FIDE data. Names are only ever written on insert — never touched on update, so a manual name correction in pgAdmin is permanent."
                   output={['tmst_master_players.mst_fideid / mst_grade / mst_first_name / mst_last_name']}
@@ -418,11 +418,11 @@ export default function PipelineMastersPage() {
 
             {/* Step 14 */}
             <tr className='border-t border-gray-100'>
-              <td className='py-1 pr-2 text-xs font-bold'>14.</td>
+              <td className='py-1 pr-2 text-xs font-bold'>5.</td>
               <td className='py-1 pr-2 text-xs font-bold'>Refresh FIDE Ratings</td>
               <td className='py-1 pr-2'>
                 <MyHelpStep
-                  title='14. Refresh FIDE Ratings'
+                  title='5. Refresh FIDE Ratings'
                   input={['tmst_master_players — rows with mst_fideid already set', 'tfpl_fide_players']}
                   processing='Pure DB-to-DB. For every tmst_master_players row already linked to a FIDE id, looks up its current rating by fideid (not name) in tfpl_fide_players and updates mst_grade only — names are never touched.'
                   output={['tmst_master_players.mst_grade — refreshed for every FIDE-linked row']}

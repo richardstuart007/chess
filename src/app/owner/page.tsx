@@ -5,12 +5,15 @@ import OwnerTableCache from 'nextjs-shared/OwnerTableCache'
 import DataflowTabs from '@/src/ui/dataflow/DataflowTabs'
 import ConstantsPage from './constants/page'
 import OwnerTableSessionStorage from 'nextjs-shared/OwnerTableSessionStorage'
+import OwnerRoutingMaintenance from 'nextjs-shared/OwnerRoutingMaintenance'
 
 const TOOLS = [
   { href: '/owner/pipelinegames', label: 'Pipeline (Games)', description: 'Step-by-step control panel for the chess game analysis pipeline (sync, build tree, evaluate) — includes Run All and per-job status.', step: '▶' },
   { href: '/owner/pipelinemasters', label: 'Pipeline (Masters)', description: 'Step-by-step control panel for the FIDE master-players pipeline (download, unzip, parse, populate, refresh) — each stage independently re-runnable.', step: '♛' },
   { href: '/owner/pipelinelog', label: 'Pipeline Log', description: 'History of pipeline runs — per-step attempted/processed/errors/duration.', step: '📈' },
-  { href: '/owner/masterplayers', label: 'Master Players', description: 'Harvest chess.com master-game player names by Year/Player into tmst_master_players, and flag names as priority for the Analyze page\'s "Search known masters" loop.', step: '♟' }
+  { href: '/owner/masterplayers', label: 'Master Players', description: 'Harvest chess.com master-game player names by Year/Player into tmst_master_players, and flag names as priority for the Analyze page\'s "Search known masters" loop.', step: '♟' },
+  { href: '/owner/pipelinemastergames', label: 'Pipeline (Master Games POC)', description: 'Step-by-step control panel for the master-games position database pipeline (sync, deconstruct, build tree) — proof of concept scoped to Magnus Carlsen/2026.', step: '🧪' },
+  { href: '/owner/mastergames', label: 'Master Games — FEN Lookup', description: 'Paste a FEN and see what synced master players played from that exact position (once the Pipeline (Master Games POC) has been run).', step: '🔍' }
 ]
 
 function ToolsPanel() {
@@ -44,7 +47,8 @@ export default function Page() {
         { label: 'Tools', content: <ToolsPanel /> },
         { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
         { label: 'Constants', content: <ConstantsPage /> },
-        { label: 'Session Storage', content: <OwnerTableSessionStorage /> }
+        { label: 'Session Storage', content: <OwnerTableSessionStorage /> },
+        { label: 'Routing Maintenance', content: <OwnerRoutingMaintenance /> }
       ]}
     />
   )

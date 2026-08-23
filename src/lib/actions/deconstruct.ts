@@ -6,7 +6,7 @@ import { table_count } from 'nextjs-shared/table_count'
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
-import { parsePgnHeaders, parsePgnOpening, countMoves } from '../parsePgn'
+import { parsePgnHeaders, parsePgnOpening, countMoves, normalizeTermination } from '../parsePgn'
 import { INCLUDED_TIME_CLASSES, MIN_ANALYSIS_MOVE } from '../constants'
 
 const RAW_TABLE = 'tgr_gamesraw'
@@ -21,25 +21,6 @@ const ECO_TABLE = 'tec_ecoreference'
 const MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE - 1) * 2
 
 //----------------------------------------------------------------------------------
-//  normalizeTermination — map raw chess.com termination string to short label
-//----------------------------------------------------------------------------------
-function normalizeTermination(raw: string | undefined): string {
-  if (!raw) return ''
-  const t = raw.toLowerCase()
-  if (t.includes('won by resignation'))   return 'Resignation'
-  if (t.includes('won on time'))          return 'Time'
-  if (t.includes('won by checkmate'))     return 'Checkmate'
-  if (t.includes('won - game abandoned')) return 'Abandoned'
-  if (t.includes('drawn by repetition'))   return 'Repetition'
-  if (t.includes('drawn by timeout'))      return 'Timeout'
-  if (t.includes('drawn by agreement'))    return 'Agreement'
-  if (t.includes('drawn by insufficient')) return 'Insufficient'
-  if (t.includes('drawn by stalemate'))    return 'Stalemate'
-  if (t.includes('drawn by 50-move'))      return '50 Moves'
-  return raw
-}
-
-//----------------------------------------------------------------------------------
 //  getUndeconstructedCount — count raw games not yet deconstructed for a player
 //----------------------------------------------------------------------------------
 export async function getUndeconstructedCount(
@@ -47,24 +28,43 @@ export async function getUndeconstructedCount(
   timeClasses: string[] = INCLUDED_TIME_CLASSES
 ): Promise<number> {
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getUndeconstructedCount',
     table: RAW_TABLE,
     query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
     params: [player.toLowerCase(), ...timeClasses]
   })
-  return Number(rows[0].count)
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getUndeconstructedCount',
+      lg_caller: 'getUndeconstructedCount',
+      lg_msg: 'Failed to count undeconstructed games for ' + player + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return Number(result.data[0].count)
 }
 
 //----------------------------------------------------------------------------------
 //  getDeconstructedCount — count deconstructed games for a player
 //----------------------------------------------------------------------------------
 export async function getDeconstructedCount(player: string): Promise<number> {
-  return table_count({
+  const result = await table_count({
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
     caller: 'getDeconstructedCount'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getDeconstructedCount',
+      lg_caller: 'getDeconstructedCount',
+      lg_msg: 'Failed to count deconstructed games for ' + player + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 //----------------------------------------------------------------------------------
@@ -80,7 +80,7 @@ export async function deconstructGames(
 
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
-  const rawGames = await table_query({
+  const rawGamesResult = await table_query({
     caller: 'deconstructGames',
     query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
     params: [player, ...timeClasses],
@@ -88,11 +88,21 @@ export async function deconstructGames(
     level: 2,
     severity: 'I'
   })
+  if (!rawGamesResult.ok) {
+    write_logging({
+      lg_functionname: 'deconstructGames',
+      lg_caller: 'deconstructGames',
+      lg_msg: 'Failed to fetch raw games for ' + player + ': ' + rawGamesResult.error,
+      lg_severity: 'E'
+    })
+    await logEnd('deconstructGames', 'gameSyncPipeline', `failed to fetch raw games: ${rawGamesResult.error}`, 2)
+    return { processed: 0, skipped: 0, errors: 0 }
+  }
   let processed = 0
   let skipped = 0
   let errors = 0
 
-  for (const row of rawGames) {
+  for (const row of rawGamesResult.data) {
     try {
       const rawData = typeof row.gr_raw_data === 'string'
         ? JSON.parse(row.gr_raw_data)
@@ -174,7 +184,7 @@ export async function deconstructGames(
 //----------------------------------------------------------------------------------
 //  upsertEcoReference — insert an ECO code → opening name mapping if not present
 //----------------------------------------------------------------------------------
-async function upsertEcoReference(ecoCode: string, openingName: string): Promise<void> {
+export async function upsertEcoReference(ecoCode: string, openingName: string): Promise<void> {
   const existing = await table_fetch({
     caller: 'upsertEcoReference',
     table: ECO_TABLE,
@@ -185,8 +195,17 @@ async function upsertEcoReference(ecoCode: string, openingName: string): Promise
     limit: 1,
     skipCache: true
   })
+  if (!existing.ok) {
+    write_logging({
+      lg_functionname: 'upsertEcoReference',
+      lg_caller: 'upsertEcoReference',
+      lg_msg: 'Failed to check existing ECO reference ' + ecoCode + ': ' + existing.error,
+      lg_severity: 'E'
+    })
+    return
+  }
 
-  if (existing.length === 0) {
+  if (existing.data.length === 0) {
     try {
       await table_write({
         caller: 'upsertEcoReference',

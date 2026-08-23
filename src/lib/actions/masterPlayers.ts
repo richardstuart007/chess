@@ -33,14 +33,40 @@ function combineName(firstName: string | null, lastName: string): string {
 //  search sightings.
 //----------------------------------------------------------------------------------
 export async function getMasterPlayerNames(): Promise<string[]> {
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'getMasterPlayerNames',
     table: MASTER_PLAYERS_TABLE,
     orderBy: 'mst_last_name, mst_first_name',
     columns: ['mst_first_name', 'mst_last_name'],
     skipCache: true
   })
-  return rows.map((r: any) => combineName(r.mst_first_name, r.mst_last_name))
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getMasterPlayerNames',
+      lg_caller: 'getMasterPlayerNames',
+      lg_msg: 'Failed to fetch master player names: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map((r: any) => combineName(r.mst_first_name, r.mst_last_name))
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterHandleNameMap — chess.com handle (lowercased) → display name, for every
+//  master player that has a handle. Used to attach a real name onto master-games rows
+//  (tmgd_mastergamesdecon, secondary database) in app code, since that table only
+//  stores the handle and the two tables can never be SQL-joined across databases.
+//----------------------------------------------------------------------------------
+export async function getMasterHandleNameMap(): Promise<Record<string, string>> {
+  const players = await getMasterPlayers('')
+  const map: Record<string, string> = {}
+  for (const p of players) {
+    if (p.chesscomHandle) {
+      map[p.chesscomHandle.toLowerCase()] = combineName(p.firstName, p.lastName)
+    }
+  }
+  return map
 }
 
 //----------------------------------------------------------------------------------
@@ -58,7 +84,7 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
     whereColumnValuePairs.push({ column: 'mst_chesscom_handle', operator: 'IS NULL', value: null })
   }
 
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'getMasterPlayers',
     table: MASTER_PLAYERS_TABLE,
     whereColumnValuePairs: whereColumnValuePairs.length > 0 ? whereColumnValuePairs : undefined,
@@ -66,7 +92,16 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
     columns: ['mst_mstid', 'mst_first_name', 'mst_last_name', 'mst_fideid', 'mst_grade', 'mst_priority', 'mst_chesscom_handle'],
     skipCache: true
   })
-  return rows.map((r: any) => ({
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getMasterPlayers',
+      lg_caller: 'getMasterPlayers',
+      lg_msg: 'Failed to fetch master players: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map((r: any) => ({
     mstid: Number(r.mst_mstid),
     firstName: (r.mst_first_name as string) ?? '',
     lastName: r.mst_last_name as string,
@@ -92,7 +127,7 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
 //  flagged as priority. Returns null once no eligible row remains.
 //----------------------------------------------------------------------------------
 export async function findNextMasterPlayerHandle(): Promise<{ mstid: number; name: string; handle: string | null } | null> {
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'findNextMasterPlayerHandle',
     table: MASTER_PLAYERS_TABLE,
     whereColumnValuePairs: [
@@ -105,9 +140,18 @@ export async function findNextMasterPlayerHandle(): Promise<{ mstid: number; nam
     limit: 1,
     skipCache: true
   })
-  if (rows.length === 0) return null
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'findNextMasterPlayerHandle',
+      lg_caller: 'findNextMasterPlayerHandle',
+      lg_msg: 'Failed to fetch next master player: ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  if (result.data.length === 0) return null
 
-  const row = rows[0]
+  const row = result.data[0]
   const firstName = (row.mst_first_name as string) ?? ''
   const lastName = row.mst_last_name as string
   const fideid = Number(row.mst_fideid)

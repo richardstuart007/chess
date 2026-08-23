@@ -1,9 +1,10 @@
 'use server'
 
 import { table_query } from 'nextjs-shared/table_query'
-import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS } from '@/src/lib/constants'
+import { write_logging } from 'nextjs-shared/write_logging'
+import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS, PIPELINE_TYPE_MASTERGAMES } from '@/src/lib/constants'
 
-type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS
+type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | typeof PIPELINE_TYPE_MASTERGAMES
 
 //----------------------------------------------------------------------------------
 //  resolvePipRunId — step 1a (the very first sub-step of Fetch & Insert Raw Games)
@@ -16,7 +17,7 @@ type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS
 //----------------------------------------------------------------------------------
 async function resolvePipRunId(step: number, subStep: string, pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
   const isAllocator = step === 1 && subStep === 'a'
-  const rows = await table_query({
+  const result = await table_query({
     caller:       'resolvePipRunId',
     table:        'tpip_pipelinelog',
     query:        (isAllocator || forceNew)
@@ -25,7 +26,16 @@ async function resolvePipRunId(step: number, subStep: string, pipelineType: Pipe
     params:       [pipelineType],
     skipCache:    true
   })
-  return rows[0].run_id as number
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'resolvePipRunId',
+      lg_caller: 'resolvePipRunId',
+      lg_msg: 'Failed to resolve pipeline run id: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data[0].run_id as number
 }
 
 //----------------------------------------------------------------------------------
@@ -46,7 +56,7 @@ export async function logPipelineStep(params: {
   forceNewRun?: boolean
 }): Promise<number> {
   const runId = await resolvePipRunId(params.step, params.subStep, params.pipelineType, params.forceNewRun)
-  const rows = await table_query({
+  const result = await table_query({
     caller:       'logPipelineStep',
     table:        'tpip_pipelinelog',
     query:        `
@@ -62,7 +72,16 @@ export async function logPipelineStep(params: {
     ],
     isupdate:     true
   })
-  return rows[0].pip_pipid as number
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'logPipelineStep',
+      lg_caller: 'logPipelineStep',
+      lg_msg: 'Failed to log pipeline step: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data[0].pip_pipid as number
 }
 
 //----------------------------------------------------------------------------------
@@ -81,7 +100,7 @@ export async function getPipelineRates(): Promise<{
   step8: number | null
   step9: number | null
 }> {
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getPipelineRates',
     table: 'tpip_pipelinelog',
     query: `
@@ -112,7 +131,16 @@ export async function getPipelineRates(): Promise<{
     params:       [],
     skipCache:    true
   })
-  const r = rows[0]
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getPipelineRates',
+      lg_caller: 'getPipelineRates',
+      lg_msg: 'Failed to fetch pipeline rates: ' + result.error,
+      lg_severity: 'E'
+    })
+    return { step1: null, step2: null, step3: null, step4: null, step5: null, step6: null, step8: null, step9: null }
+  }
+  const r = result.data[0]
   return {
     step1: r.rate1 != null ? Number(r.rate1) : null,
     step2: r.rate2 != null ? Number(r.rate2) : null,
@@ -148,7 +176,7 @@ export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: 
   pip_output_recs: number
   pip_duration_ms: number
 }[]> {
-  const rows = await table_query({
+  const result = await table_query({
     caller:       'getLatestPipelineRuns',
     table:        'tpip_pipelinelog',
     query:        `
@@ -164,7 +192,16 @@ export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: 
     params:       runId != null ? [pipelineType, runId] : [pipelineType],
     skipCache:    true
   })
-  return rows
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getLatestPipelineRuns',
+      lg_caller: 'getLatestPipelineRuns',
+      lg_msg: 'Failed to fetch latest pipeline runs: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data
 }
 
 //----------------------------------------------------------------------------------
@@ -172,7 +209,7 @@ export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: 
 //  each with its earliest pip_created, for the Pipeline page's Run # selector.
 //----------------------------------------------------------------------------------
 export async function getRecentRunIds(pipelineType: PipelineType, limit: number = 5): Promise<{ runId: number; created: string }[]> {
-  const rows = await table_query({
+  const result = await table_query({
     caller:       'getRecentRunIds',
     table:        'tpip_pipelinelog',
     query:        `
@@ -186,5 +223,14 @@ export async function getRecentRunIds(pipelineType: PipelineType, limit: number 
     params:       [pipelineType, limit],
     skipCache:    true
   })
-  return rows.map((r: any) => ({ runId: Number(r.pip_run_id), created: r.pip_created }))
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getRecentRunIds',
+      lg_caller: 'getRecentRunIds',
+      lg_msg: 'Failed to fetch recent pipeline run ids: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map((r: any) => ({ runId: Number(r.pip_run_id), created: r.pip_created }))
 }

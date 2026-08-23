@@ -96,13 +96,27 @@ function PlayerHeader() {
 
 //----------------------------------------------------------------------------------------------
 //  AppShell — wraps every page with the shared PlayerProfile header + AppNav, except /owner/*
-//  which keeps only its own OwnerLayout dev-guard chrome
+//  (which keeps only its own OwnerLayout dev-guard chrome, no header, no nav) and the
+//  master-games pages (which keep AppNav for tab navigation but drop the tracked-player cards —
+//  player selection doesn't apply to master-games data)
 //----------------------------------------------------------------------------------------------
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isOwner = pathname?.startsWith('/owner') ?? false
+  const isMasterGames = pathname === '/mastergames' || pathname === '/analyzemaster'
 
   if (isOwner) return <>{children}</>
+
+  if (isMasterGames) {
+    return (
+      <div className='space-y-4'>
+        <Suspense fallback={null}>
+          <AppNav />
+        </Suspense>
+        {children}
+      </div>
+    )
+  }
 
   return (
     <div className='space-y-4'>

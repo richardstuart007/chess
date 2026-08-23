@@ -133,7 +133,7 @@ class StockfishWasm extends StockfishEngineBase {
 //  Reads tpos_positions (unevaluated), writes tpose_positions_eval.
 //----------------------------------------------------------------------------------
 async function countRemainingPositions(level: number = 1): Promise<number> {
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'enrichPositionsStockfish_count',
     table: 'tpos_positions',
     query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
@@ -145,7 +145,16 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
     severity: 'I',
     skipCache: true
   })
-  return parseInt(rows[0]?.cnt ?? '0')
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'countRemainingPositions',
+      lg_caller: 'enrichPositionsStockfish_count',
+      lg_msg: 'Failed to count remaining positions: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return parseInt(result.data[0]?.cnt ?? '0')
 }
 
 async function getResultingFensToEvaluate(limit: number, level: number): Promise<{ posId: number; fen: string; color: string | null }[]> {
@@ -174,7 +183,16 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
     severity: 'I',
     skipCache: true
   })
-  const rows = res.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
+  if (!res.ok) {
+    write_logging({
+      lg_functionname: 'getResultingFensToEvaluate',
+      lg_caller: 'getResultingFensToEvaluate',
+      lg_msg: 'Failed to fetch resulting FENs to evaluate: ' + res.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  const rows = res.data.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
   await logEnd('getResultingFensToEvaluate', 'enrichPositionsStockfish', `${rows.length} FENs found`, level)
   return rows
 }
@@ -215,7 +233,17 @@ export async function bulkUpdateCpLoss(level: number, forceNewRun?: boolean): Pr
     isupdate: true,
     severity: 'I'
   })
-  const rowCount = res.length
+  if (!res.ok) {
+    write_logging({
+      lg_functionname: 'bulkUpdateCpLoss',
+      lg_caller: 'bulkUpdateCpLoss',
+      lg_msg: 'Failed to bulk update cp loss: ' + res.error,
+      lg_severity: 'E'
+    })
+    await logEnd('bulkUpdateCpLoss', 'enrichPositionsStockfish', 'failed — ' + res.error, level)
+    return 0
+  }
+  const rowCount = res.data.length
   await logPipelineStep({ step: 6, subStep: 'a', stepName: 'Update CP Change', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: rowCount, outputTable: 'tgam_game_positions', outputRecs: rowCount, durationMs: Date.now() - t0, forceNewRun })
   await logEnd('bulkUpdateCpLoss', 'enrichPositionsStockfish', `${rowCount} tgam_game_positions rows updated`, level)
   return rowCount
@@ -256,8 +284,18 @@ export async function enrichPositionsStockfish(opts: {
     severity: 'I',
     skipCache: true
   })
+  if (!posRes.ok) {
+    write_logging({
+      lg_functionname: 'enrichPositionsStockfish',
+      lg_caller: 'enrichPositionsStockfish_phase1',
+      lg_msg: 'Failed to fetch positions to evaluate: ' + posRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('enrichPositionsStockfish', 'evaluatePositionsRoute', 'failed — ' + posRes.error, level)
+    return { processed: 0, errors: 0, remaining: 0 }
+  }
   const positions: Array<{ posId: number; fen: string; color: string | null }> =
-    posRes.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
+    posRes.data.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
 
   // Phase 2 — resulting positions not yet evaluated (real tpos_positions rows already
   // exist for these, created eagerly by Build Position Tree)
@@ -375,8 +413,18 @@ export async function deepenPopularPositions(opts: {
     severity: 'I',
     skipCache: true
   })
+  if (!rows.ok) {
+    write_logging({
+      lg_functionname: 'deepenPopularPositions',
+      lg_caller: 'deepenPopularPositions_select',
+      lg_msg: 'Failed to fetch popular position candidates: ' + rows.error,
+      lg_severity: 'E'
+    })
+    await logEnd('deepenPopularPositions', 'deepenPopularPositionsRoute', 'failed — ' + rows.error, level)
+    return { processed: 0, errors: 0, remaining: 0 }
+  }
   const candidates: Array<{ posId: number; fen: string; color: string | null; targetDepth: number }> =
-    rows.map((r: any) => ({
+    rows.data.map((r: any) => ({
       posId: Number(r.pos_id),
       fen: r.pos_fen as string,
       color: (r.pos_color ?? null) as string | null,
@@ -435,6 +483,7 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
   const { caseSql, lowestMinReach } = popularPositionTierSql()
   const rows = await table_query({
     caller: 'countRemainingPopularPositions',
+    table: 'tpos_positions',
     query: `
       SELECT COUNT(*) AS cnt FROM (
         SELECT p.pos_reached, e.pose_depth,
@@ -452,7 +501,16 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
     severity: 'I',
     skipCache: true
   })
-  return parseInt(rows[0]?.cnt ?? '0')
+  if (!rows.ok) {
+    write_logging({
+      lg_functionname: 'countRemainingPopularPositions',
+      lg_caller: 'countRemainingPopularPositions',
+      lg_msg: 'Failed to count remaining popular positions: ' + rows.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return parseInt(rows.data[0]?.cnt ?? '0')
 }
 
 //----------------------------------------------------------------------------------
@@ -469,6 +527,7 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
     .join(',\n        ')
   const rows = await table_query({
     caller: 'countRemainingPopularPositionsByTier',
+    table: 'tpos_positions',
     query: `
       SELECT
         ${filterSql}
@@ -488,7 +547,16 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
     severity: 'I',
     skipCache: true
   })
-  const r = rows[0] ?? {}
+  if (!rows.ok) {
+    write_logging({
+      lg_functionname: 'countRemainingPopularPositionsByTier',
+      lg_caller: 'countRemainingPopularPositionsByTier',
+      lg_msg: 'Failed to count remaining popular positions by tier: ' + rows.error,
+      lg_severity: 'E'
+    })
+    return POPULAR_POSITION_DEPTH_TIERS.map(t => ({ depth: t.depth, remaining: 0 }))
+  }
+  const r = rows.data[0] ?? {}
   return POPULAR_POSITION_DEPTH_TIERS.map(t => ({
     depth: t.depth,
     remaining: parseInt(r[`d${t.depth}`] ?? '0')
@@ -521,7 +589,16 @@ async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{
     severity: 'I',
     skipCache: true
   })
-  return rows.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
+  if (!rows.ok) {
+    write_logging({
+      lg_functionname: 'getGamesNeedingFinalEval',
+      lg_caller: 'getGamesNeedingFinalEval',
+      lg_msg: 'Failed to fetch games needing final eval: ' + rows.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return rows.data.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
 }
 
 //----------------------------------------------------------------------------------
@@ -549,8 +626,17 @@ async function findExistingEvals(truncatedFens: string[], level: number): Promis
     severity: 'I',
     skipCache: true
   })
+  if (!rows.ok) {
+    write_logging({
+      lg_functionname: 'findExistingEvals',
+      lg_caller: 'findExistingEvals',
+      lg_msg: 'Failed to fetch existing evals: ' + rows.error,
+      lg_severity: 'E'
+    })
+    return {}
+  }
   const result: Record<string, number> = {}
-  for (const r of rows) result[r.pos_fen] = Number(r.pose_cp)
+  for (const r of rows.data) result[r.pos_fen] = Number(r.pose_cp)
   return result
 }
 
@@ -707,7 +793,15 @@ export async function evaluateGameEndings(opts: {
     severity: 'I',
     skipCache: true
   })
-  const remaining = parseInt(remainingRes[0]?.cnt ?? '0')
+  if (!remainingRes.ok) {
+    write_logging({
+      lg_functionname: 'evaluateGameEndings',
+      lg_caller: 'evaluateGameEndings_remaining',
+      lg_msg: 'Failed to count remaining game endings: ' + remainingRes.error,
+      lg_severity: 'E'
+    })
+  }
+  const remaining = remainingRes.ok ? parseInt(remainingRes.data[0]?.cnt ?? '0') : 0
 
   await logEnd('evaluateGameEndings', 'evaluateGameEndingsRoute', `${processed} processed (${reused} reused), ${errors} errors, ${remaining} remaining`, level)
   return { processed, reused, errors, remaining }

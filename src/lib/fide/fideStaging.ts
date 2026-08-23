@@ -27,7 +27,7 @@ function splitFideName(name: string): { firstName: string; lastName: string } {
 }
 
 //----------------------------------------------------------------------------------
-//  downloadFideZip — pipeline stage 1 (step 10). Downloads FIDE's monthly zipped
+//  downloadFideZip — pipeline stage 1 (step 1). Downloads FIDE's monthly zipped
 //  standard rating list into tfzp_fide_zip (single row, truncated and refilled every
 //  run) — a separate, independently re-runnable stage so a failure further down the
 //  pipeline (unzip/parse/match) never requires re-downloading. Stored as base64 text
@@ -52,7 +52,7 @@ export async function downloadFideZip(level: number = 1, forceNewRun?: boolean):
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 10, subStep: 'a', stepName: 'Download FIDE Zip', pipelineType: PIPELINE_TYPE_MASTERS,
+    step: 1, subStep: 'a', stepName: 'Download FIDE Zip', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: FIDE_SOURCE_LABEL, inputRecs: 1,
     outputTable: 'tfzp_fide_zip', outputRecs: buffer.length,
     durationMs, forceNewRun
@@ -66,7 +66,7 @@ export async function downloadFideZip(level: number = 1, forceNewRun?: boolean):
 }
 
 //----------------------------------------------------------------------------------
-//  unzipFideZip — pipeline stage 2 (step 11). Reads the zip bytes staged by
+//  unzipFideZip — pipeline stage 2 (step 2). Reads the zip bytes staged by
 //  downloadFideZip, decompresses the single entry, and writes the decompressed text
 //  into tfxm_fide_xml in fixed-size chunks (FIDE_XML_CHUNK_SIZE characters each) — a
 //  StringDecoder is used (not naive Buffer->string per chunk) so a multi-byte UTF-8
@@ -78,13 +78,14 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
   await logStart('unzipFideZip', 'fideStagingRoute', 'decompressing FIDE zip', level)
   const t0 = Date.now()
 
-  const zipRows = await table_fetch({
+  const zipResult = await table_fetch({
     caller: 'unzipFideZip',
     table: 'tfzp_fide_zip',
     columns: ['fzp_data']
   })
-  if (zipRows.length === 0) throw new Error('tfzp_fide_zip is empty — run Download FIDE Zip first')
-  const zipBuffer = Buffer.from(zipRows[0].fzp_data as string, 'base64')
+  if (!zipResult.ok) throw new Error('Failed to fetch tfzp_fide_zip: ' + zipResult.error)
+  if (zipResult.data.length === 0) throw new Error('tfzp_fide_zip is empty — run Download FIDE Zip first')
+  const zipBuffer = Buffer.from(zipResult.data[0].fzp_data as string, 'base64')
 
   await table_truncate('tfxm_fide_xml', 'unzipFideZip', false, level, 'D')
 
@@ -146,7 +147,7 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 11, subStep: 'a', stepName: 'Unzip FIDE File', pipelineType: PIPELINE_TYPE_MASTERS,
+    step: 2, subStep: 'a', stepName: 'Unzip FIDE File', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: 'tfzp_fide_zip', inputRecs: zipBuffer.length,
     outputTable: 'tfxm_fide_xml', outputRecs: totalChars,
     durationMs, forceNewRun
@@ -160,7 +161,7 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
 }
 
 //----------------------------------------------------------------------------------
-//  parseFideXml — pipeline stage 3 (step 12). Reads tfxm_fide_xml back in ordered
+//  parseFideXml — pipeline stage 3 (step 3). Reads tfxm_fide_xml back in ordered
 //  batches of FIDE_XML_READ_BATCH_CHUNKS chunks at a time (never one giant SELECT of
 //  every chunk), feeding each into a SAX parser as it arrives, and batch-inserts
 //  parsed player rows into tfpl_fide_players (truncated and fully repopulated every
@@ -174,11 +175,12 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
   await logStart('parseFideXml', 'fideStagingRoute', 'parsing FIDE XML into structured rows', level)
   const t0 = Date.now()
 
-  const countRows = await table_query({
-    caller: 'parseFideXml_count', params: [], skipCache: true,
+  const countResult = await table_query({
+    caller: 'parseFideXml_count', table: 'tfxm_fide_xml', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS cnt FROM tfxm_fide_xml`
   })
-  const totalChunks = parseInt(countRows[0]?.cnt ?? '0')
+  if (!countResult.ok) throw new Error('Failed to count tfxm_fide_xml: ' + countResult.error)
+  const totalChunks = parseInt(countResult.data[0]?.cnt ?? '0')
   if (totalChunks === 0) throw new Error('tfxm_fide_xml is empty — run Unzip FIDE File first')
 
   await table_truncate('tfpl_fide_players', 'parseFideXml', false, level, 'D')
@@ -239,14 +241,15 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
     parser.on('end', resolve)
     ;(async () => {
       for (let offset = 0; offset < totalChunks; offset += FIDE_XML_READ_BATCH_CHUNKS) {
-        const batch = await table_query({
+        const batchResult = await table_query({
           caller: 'parseFideXml_readBatch',
           query: `SELECT fxm_data FROM tfxm_fide_xml WHERE fxm_seq >= $1 AND fxm_seq < $2 ORDER BY fxm_seq`,
           params: [offset, offset + FIDE_XML_READ_BATCH_CHUNKS],
           table: 'tfxm_fide_xml',
           level, isupdate: false, severity: 'I', skipCache: true
         })
-        for (const row of batch) {
+        if (!batchResult.ok) throw new Error('Failed to read FIDE xml batch: ' + batchResult.error)
+        for (const row of batchResult.data) {
           parser.write(row.fxm_data as string)
           await flushPendingRows()
         }
@@ -258,7 +261,7 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 12, subStep: 'a', stepName: 'Parse FIDE XML', pipelineType: PIPELINE_TYPE_MASTERS,
+    step: 3, subStep: 'a', stepName: 'Parse FIDE XML', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: 'tfxm_fide_xml', inputRecs: totalChunks,
     outputTable: 'tfpl_fide_players', outputRecs: parsedCount,
     durationMs, forceNewRun

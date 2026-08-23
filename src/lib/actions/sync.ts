@@ -22,7 +22,7 @@ async function insertRawGame(data: {
   end_time: number
   time_class: string
 }): Promise<boolean> {
-  const rows = await table_write({
+  const result = await table_write({
     caller: 'insertRawGame',
     table: GAMES_TABLE,
     columnValuePairs: [
@@ -36,7 +36,16 @@ async function insertRawGame(data: {
     conflictColumn: 'gr_chesscom_uuid, gr_player',
     skipCache: true
   })
-  return rows.length > 0
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'insertRawGame',
+      lg_caller: 'insertRawGame',
+      lg_msg: 'Failed to insert raw game ' + data.chesscom_uuid + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return false
+  }
+  return result.data.length > 0
 }
 
 //----------------------------------------------------------------------------------

@@ -94,3 +94,22 @@ export function parsePlayedDate(utcDate: string): string | null {
   if (!utcDate) return null
   return utcDate.replace(/\./g, '-')
 }
+
+//----------------------------------------------------------------------------------
+//  normalizeTermination — map raw chess.com termination string to short label
+//----------------------------------------------------------------------------------
+export function normalizeTermination(raw: string | undefined): string {
+  if (!raw) return ''
+  const t = raw.toLowerCase()
+  if (t.includes('won by resignation'))   return 'Resignation'
+  if (t.includes('won on time'))          return 'Time'
+  if (t.includes('won by checkmate'))     return 'Checkmate'
+  if (t.includes('won - game abandoned')) return 'Abandoned'
+  if (t.includes('drawn by repetition'))   return 'Repetition'
+  if (t.includes('drawn by timeout'))      return 'Timeout'
+  if (t.includes('drawn by agreement'))    return 'Agreement'
+  if (t.includes('drawn by insufficient')) return 'Insufficient'
+  if (t.includes('drawn by stalemate'))    return 'Stalemate'
+  if (t.includes('drawn by 50-move'))      return '50 Moves'
+  return raw
+}

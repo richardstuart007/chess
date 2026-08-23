@@ -115,8 +115,17 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
     table: 'thab_habits',
     level: 1, isupdate: false, severity: 'I', skipCache: true
   })
+  if (!selectRes.ok) {
+    write_logging({
+      lg_functionname: 'fetchHabitAggregates',
+      lg_caller: 'fetchHabitAggregates_select',
+      lg_msg: 'Failed to fetch habit aggregates: ' + selectRes.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
 
-  return selectRes.map((r: any) => ({
+  return selectRes.data.map((r: any) => ({
     player:         r.player,
     posId:          Number(r.pos_id),
     moveSan:        r.move_san,
@@ -172,7 +181,16 @@ async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number
       table: 'thab_habits',
       level, isupdate: true, severity: 'I'
     })
-    built += upsertRes.length
+    if (!upsertRes.ok) {
+      write_logging({
+        lg_functionname: 'upsertHabitAggregates',
+        lg_caller: 'upsertHabitAggregates_upsert',
+        lg_msg: 'Failed to upsert habit aggregates: ' + upsertRes.error,
+        lg_severity: 'E'
+      })
+      continue
+    }
+    built += upsertRes.data.length
   }
   cache_clearTable('thab_habits', 'buildHabits')
   return built

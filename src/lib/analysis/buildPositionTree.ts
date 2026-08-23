@@ -218,7 +218,15 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     severity: 'I',
     skipCache: true
   })
-  const backlogBefore = parseInt(backlogRes[0]?.cnt ?? '0')
+  if (!backlogRes.ok) {
+    write_logging({
+      lg_functionname: 'syncTposFromTgam',
+      lg_caller: 'syncTposFromTgam_backlog',
+      lg_msg: 'Failed to fetch tgam backlog count: ' + backlogRes.error,
+      lg_severity: 'E'
+    })
+  }
+  const backlogBefore = backlogRes.ok ? parseInt(backlogRes.data[0]?.cnt ?? '0') : 0
 
   // Step 1 — ensure a tpos_positions row exists for every FEN still referenced by an
   // unresolved tgam row. pos_color is the FEN's own active-color field (2nd token),
@@ -274,16 +282,26 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
     isupdate: true,
     severity: 'I'
   })
+  if (!beforeRes.ok || !resultingRes.ok) {
+    write_logging({
+      lg_functionname: 'syncTposFromTgam',
+      lg_caller: 'syncTposFromTgam_backfill',
+      lg_msg: 'Failed to backfill tgam ids: ' + [beforeRes, resultingRes].filter(r => !r.ok).map(r => r.error).join('; '),
+      lg_severity: 'E'
+    })
+    await logEnd('syncTposFromTgam', 'buildPositionTree', 'failed during id backfill', level)
+    return { positionsSynced: 0 }
+  }
 
   const touchedPosIds = [...new Set<number>([
-    ...beforeRes.map((r: any) => Number(r.pos_id)),
-    ...resultingRes.map((r: any) => Number(r.pos_id))
+    ...beforeRes.data.map((r: any) => Number(r.pos_id)),
+    ...resultingRes.data.map((r: any) => Number(r.pos_id))
   ])]
 
   // Step 3 — recompute pos_reached only for touched positions
   await recomputePosReachedByIds(touchedPosIds, level)
 
-  const tgamBackfilled = beforeRes.length + resultingRes.length
+  const tgamBackfilled = beforeRes.data.length + resultingRes.data.length
   const durationMs     = Date.now() - t0
   await logPipelineStep({ step: 3, subStep: 'a', stepName: 'Sync tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tpos_positions', outputRecs: touchedPosIds.length, durationMs, forceNewRun })
   await logPipelineStep({ step: 3, subStep: 'b', stepName: 'Backfill tgam ids', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tgam_game_positions', outputRecs: tgamBackfilled, durationMs, forceNewRun: false })
@@ -345,8 +363,17 @@ export async function buildPositionTree(opts: {
     severity: 'I',
     skipCache: true
   })
+  if (!gamesRes.ok) {
+    write_logging({
+      lg_functionname: 'buildPositionTree',
+      lg_caller: 'buildPositionTree_fetch',
+      lg_msg: 'Failed to fetch games for position tree: ' + gamesRes.error,
+      lg_severity: 'E'
+    })
+    return { gamesProcessed: 0, positions: 0, errors: 0, treeBuilt: 0, remaining: 0 }
+  }
 
-  const games: GameRecord[] = gamesRes.map((r: any) => ({
+  const games: GameRecord[] = gamesRes.data.map((r: any) => ({
     gdid:          r.gdid,
     pgn:           r.pgn ?? ''
   }))
@@ -355,6 +382,7 @@ export async function buildPositionTree(opts: {
 
   const snapRes = await table_query({
     caller: 'buildPositionTree_snap',
+    table:  'tgam_game_positions',
     query:  `SELECT
       (SELECT COUNT(*) FROM (
          SELECT DISTINCT gp.gam_gdid
@@ -371,8 +399,16 @@ export async function buildPositionTree(opts: {
     severity:     'D',
     skipCache:    true
   })
-  const snapProcessed = parseInt(snapRes[0].snap_processed ?? '0')
-  const snapRemaining = parseInt(snapRes[0].snap_remaining ?? '0')
+  if (!snapRes.ok) {
+    write_logging({
+      lg_functionname: 'buildPositionTree',
+      lg_caller: 'buildPositionTree_snap',
+      lg_msg: 'Failed to fetch position tree snapshot counts: ' + snapRes.error,
+      lg_severity: 'E'
+    })
+  }
+  const snapProcessed = snapRes.ok ? parseInt(snapRes.data[0].snap_processed ?? '0') : 0
+  const snapRemaining = snapRes.ok ? parseInt(snapRes.data[0].snap_remaining ?? '0') : 0
 
   const t0    = Date.now()
 

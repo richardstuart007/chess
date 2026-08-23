@@ -71,7 +71,7 @@ export default function PipelineLogTable() {
     try {
       const table = 'tpip_pipelinelog'
       const offset = (currentPage - 1) * rowsPerPage
-      const data = await fetchFiltered({
+      const dataResult = await fetchFiltered({
         caller: functionName,
         table,
         filters,
@@ -80,22 +80,25 @@ export default function PipelineLogTable() {
         offset,
         skipCache: true
       })
-      setTabledata(data)
-      const fetchedTotalPages = await fetchTotalPages({
+      if (!dataResult.ok) throw new Error(dataResult.error ?? 'fetchFiltered failed')
+      setTabledata(dataResult.data)
+      const totalPagesResult = await fetchTotalPages({
         caller: functionName,
         table,
         filters,
         items_per_page: rowsPerPage,
         skipCache: true
       })
-      setTotalPages(fetchedTotalPages)
-      const fetchedTotalRows = await fetchTotalRows({
+      if (!totalPagesResult.ok) throw new Error(totalPagesResult.error ?? 'fetchTotalPages failed')
+      setTotalPages(totalPagesResult.data)
+      const totalRowsResult = await fetchTotalRows({
         caller: functionName,
         table,
         filters,
         skipCache: true
       })
-      setTotalRows(fetchedTotalRows)
+      if (!totalRowsResult.ok) throw new Error(totalRowsResult.error ?? 'fetchTotalRows failed')
+      setTotalRows(totalRowsResult.data)
     } catch (error) {
       console.error('Error fetching pipeline log:', error)
     }

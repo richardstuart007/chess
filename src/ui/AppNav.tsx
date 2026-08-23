@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
 const SECTIONS = [
-  { key: 'games',    label: 'Games',    href: '/' },
-  { key: 'habits',   label: 'Habits',   href: '/habits' },
-  { key: 'graph',    label: 'Graph',    href: '/graph' },
-  { key: 'openings', label: 'Openings', href: '/openings' },
-  { key: 'endings',  label: 'Endings',  href: '/endings' }
+  { key: 'games',       label: 'Games',        href: '/' },
+  { key: 'habits',      label: 'Habits',       href: '/habits' },
+  { key: 'graph',       label: 'Graph',        href: '/graph' },
+  { key: 'openings',    label: 'Openings',     href: '/openings' },
+  { key: 'endings',     label: 'Endings',      href: '/endings' },
+  { key: 'mastergames', label: 'Masters Games', href: '/mastergames' }
 ] as const
 
 //
@@ -42,6 +43,7 @@ export default function AppNav() {
     : pathname === '/graph' ? 'graph'
     : pathname === '/openings' ? 'openings'
     : pathname === '/endings' ? 'endings'
+    : pathname === '/mastergames' ? 'mastergames'
     : pathname === '/' ? 'games'
     : null
 

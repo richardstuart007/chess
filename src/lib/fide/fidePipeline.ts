@@ -19,7 +19,7 @@ type FideCandidate = { fideid: number; firstName: string; lastName: string; rati
 //  Returns null (treated as "no existing row, insert new") if still ambiguous.
 //----------------------------------------------------------------------------------
 async function findUnlinkedRowByName(lastName: string, firstName: string): Promise<number | null> {
-  const bySurname = await table_fetch({
+  const result = await table_fetch({
     caller: 'findUnlinkedRowByName',
     table: MASTER_PLAYERS_TABLE,
     whereColumnValuePairs: [
@@ -28,6 +28,16 @@ async function findUnlinkedRowByName(lastName: string, firstName: string): Promi
     ],
     columns: ['mst_mstid', 'mst_first_name']
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'findUnlinkedRowByName',
+      lg_caller: 'findUnlinkedRowByName',
+      lg_msg: 'Failed to look up unlinked master player by surname ' + lastName + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  const bySurname = result.data
   if (bySurname.length === 1) return Number(bySurname[0].mst_mstid)
   if (bySurname.length > 1) {
     const byFirstNameToo = bySurname.filter((r: any) => ((r.mst_first_name as string) ?? '').toLowerCase() === firstName.toLowerCase())
@@ -37,7 +47,7 @@ async function findUnlinkedRowByName(lastName: string, firstName: string): Promi
 }
 
 //----------------------------------------------------------------------------------
-//  populateFideTopPlayers — pipeline stage 4 (step 13). Reads the already-parsed FIDE
+//  populateFideTopPlayers — pipeline stage 4 (step 4). Reads the already-parsed FIDE
 //  snapshot (tfpl_fide_players, populated by parseFideXml) rather than re-downloading
 //  or re-parsing anything — this stage is pure DB-to-DB, so re-running it after fixing
 //  a bug is fast and never touches FIDE's server. No filtering needed here — parseFideXml
@@ -53,16 +63,17 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
   await logStart('populateFideTopPlayers', 'fidePipelineRoute', 'matching FIDE top players into tmst_master_players', level)
   const t0 = Date.now()
 
-  const candidateRows = await table_query({
+  const candidateResult = await table_query({
     caller: 'populateFideTopPlayers_candidates',
     query: `SELECT fpl_fideid, fpl_first_name, fpl_last_name, fpl_rating FROM ${FIDE_PLAYERS_TABLE}`,
     params: [],
     table: FIDE_PLAYERS_TABLE,
     level, isupdate: false, severity: 'I', skipCache: true
   })
-  if (candidateRows.length === 0) throw new Error(`${FIDE_PLAYERS_TABLE} has no rows — run Parse FIDE XML first`)
+  if (!candidateResult.ok) throw new Error(`Failed to fetch ${FIDE_PLAYERS_TABLE}: ` + candidateResult.error)
+  if (candidateResult.data.length === 0) throw new Error(`${FIDE_PLAYERS_TABLE} has no rows — run Parse FIDE XML first`)
 
-  const candidates: FideCandidate[] = candidateRows.map((r: any) => ({
+  const candidates: FideCandidate[] = candidateResult.data.map((r: any) => ({
     fideid: Number(r.fpl_fideid),
     firstName: (r.fpl_first_name as string) ?? '',
     lastName: r.fpl_last_name as string,
@@ -74,12 +85,14 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
 
   for (const c of candidates) {
     try {
-      const linked = await table_fetch({
+      const linkedResult = await table_fetch({
         caller: 'populateFideTopPlayers',
         table: MASTER_PLAYERS_TABLE,
         whereColumnValuePairs: [{ column: 'mst_fideid', value: c.fideid }],
         columns: ['mst_mstid']
       })
+      if (!linkedResult.ok) throw new Error('Failed to look up linked master player: ' + linkedResult.error)
+      const linked = linkedResult.data
 
       if (linked.length > 0) {
         await table_update({
@@ -131,7 +144,7 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
 
   const durationMs = Date.now() - t0
   await logPipelineStep({
-    step: 13, subStep: 'a', stepName: 'Populate FIDE Top Players', pipelineType: PIPELINE_TYPE_MASTERS,
+    step: 4, subStep: 'a', stepName: 'Populate FIDE Top Players', pipelineType: PIPELINE_TYPE_MASTERS,
     inputTable: FIDE_PLAYERS_TABLE, inputRecs: candidates.length,
     outputTable: MASTER_PLAYERS_TABLE, outputRecs: inserted + updated,
     durationMs, forceNewRun
@@ -145,7 +158,7 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
 }
 
 //----------------------------------------------------------------------------------
-//  refreshFideRatings — pipeline stage 5 (step 14). Reads the already-parsed FIDE
+//  refreshFideRatings — pipeline stage 5 (step 5). Reads the already-parsed FIDE
 //  snapshot (tfpl_fide_players) rather than re-downloading/re-parsing. For every
 //  tmst_master_players row already linked to a FIDE id, looks up its current rating
 //  by fideid (not name) and updates mst_grade only; names are never touched.
@@ -154,22 +167,44 @@ export async function refreshFideRatings(level: number = 1, forceNewRun?: boolea
   await logStart('refreshFideRatings', 'fidePipelineRoute', 'refreshing known FIDE ratings', level)
   const t0 = Date.now()
 
-  const linkedRows = await table_fetch({
+  const linkedResult = await table_fetch({
     caller: 'refreshFideRatings',
     table: MASTER_PLAYERS_TABLE,
     whereColumnValuePairs: [{ column: 'mst_fideid', operator: 'IS NOT NULL', value: null }],
     columns: ['mst_mstid', 'mst_fideid']
   })
+  if (!linkedResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshFideRatings',
+      lg_caller: 'refreshFideRatings',
+      lg_msg: 'Failed to fetch linked master players: ' + linkedResult.error,
+      lg_severity: 'E'
+    })
+    await logEnd('refreshFideRatings', 'fidePipelineRoute', 'failed — ' + linkedResult.error, level)
+    return { updated: 0 }
+  }
+  const linkedRows = linkedResult.data
 
   const fideids = linkedRows.map((r: any) => Number(r.mst_fideid))
   const placeholders = fideids.map((_, i) => `$${i + 1}`).join(',')
-  const ratingRows = fideids.length === 0 ? [] : await table_query({
+  const ratingResult = fideids.length === 0 ? null : await table_query({
     caller: 'refreshFideRatings_ratings',
     query: `SELECT fpl_fideid, fpl_rating FROM ${FIDE_PLAYERS_TABLE} WHERE fpl_fideid IN (${placeholders})`,
     params: fideids,
     table: FIDE_PLAYERS_TABLE,
     level, isupdate: false, severity: 'I', skipCache: true
   })
+  if (ratingResult && !ratingResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshFideRatings',
+      lg_caller: 'refreshFideRatings_ratings',
+      lg_msg: 'Failed to fetch FIDE ratings: ' + ratingResult.error,
+      lg_severity: 'E'
+    })
+    await logEnd('refreshFideRatings', 'fidePipelineRoute', 'failed — ' + ratingResult.error, level)
+    return { updated: 0 }
+  }
+  const ratingRows = ratingResult ? ratingResult.data : []
   const ratingByFideid = new Map<number, number>(ratingRows.map((r: any) => [Number(r.fpl_fideid), Number(r.fpl_rating)]))
 
   let updated = 0

@@ -24,6 +24,7 @@ import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalRows } from 'nextjs-shared/fetchTotalRows'
 import type { Filter, JoinParams } from 'nextjs-shared/structures'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { truncateFen }  from '../fen'
 import { RESULT_MISMATCH_CP_THRESHOLD, MIN_ANALYSIS_MOVE } from '../constants'
 
@@ -59,7 +60,17 @@ export interface EvaluationRow {
 //  getPositionCount — total number of positions
 //----------------------------------------------------------------------------------
 export async function getPositionCount(): Promise<number> {
-  return await table_count({ table: 'tpos_positions', caller: 'getPositionCount' })
+  const result = await table_count({ table: 'tpos_positions', caller: 'getPositionCount' })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getPositionCount',
+      lg_caller: 'getPositionCount',
+      lg_msg: 'Failed to count positions: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +89,9 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
   const playerFilter = player ? `AND d.gd_player = $2` : ''
   if (player) params.push(player.toLowerCase())
 
-  return await table_query({
+  const result = await table_query({
     caller: 'getMovesForPosition',
+    table: 'tgam_game_positions',
     query: `
       SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp, e.pose_depth
       FROM (
@@ -101,7 +113,17 @@ export async function getMovesForPosition(posId: number, player?: string): Promi
       ORDER BY sub.mov_times DESC
     `,
     params
-  }) as MoveRow[]
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getMovesForPosition',
+      lg_caller: 'getMovesForPosition',
+      lg_msg: 'Failed to fetch moves for position ' + posId + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data as MoveRow[]
 }
 
 //----------------------------------------------------------------------------------
@@ -120,8 +142,9 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
   params.push(player.toLowerCase())
   const playerPlaceholder = `$${params.length}`
 
-  const rows = await table_query({
+  const queryResult = await table_query({
     caller: 'getMovePlayCounts',
+    table: 'tpos_positions',
     query: `
       SELECT p.pos_fen, gp.gam_move_played, COUNT(*)::int AS times
       FROM tpos_positions p
@@ -133,7 +156,17 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
       GROUP BY p.pos_fen, gp.gam_move_played
     `,
     params
-  }) as { pos_fen: string; gam_move_played: string; times: number }[]
+  })
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getMovePlayCounts',
+      lg_caller: 'getMovePlayCounts',
+      lg_msg: 'Failed to fetch move play counts: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return {}
+  }
+  const rows = queryResult.data as { pos_fen: string; gam_move_played: string; times: number }[]
 
   const result: Record<string, Record<string, number>> = {}
   for (const row of rows) {
@@ -152,8 +185,9 @@ export async function getMovePlayCounts(fens: string[], player: string): Promise
 //  position+move), not an average — see getMovesForPosition's comment.
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition(fen: string, player: string): Promise<MoveRow[]> {
-  return await table_query({
+  const result = await table_query({
     caller: 'getMoveSummaryForPosition',
+    table: 'tpos_positions',
     query: `
       SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp, e.pose_depth
       FROM (
@@ -176,7 +210,17 @@ export async function getMoveSummaryForPosition(fen: string, player: string): Pr
       ORDER BY sub.mov_times DESC
     `,
     params: [truncateFen(fen), player.toLowerCase()]
-  }) as MoveRow[]
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getMoveSummaryForPosition',
+      lg_caller: 'getMoveSummaryForPosition',
+      lg_msg: 'Failed to fetch move summary for position: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data as MoveRow[]
 }
 
 export interface PositionGameHit {
@@ -251,7 +295,7 @@ export async function fetchGamesForPosition(
   move?: string
 ): Promise<PositionGameHit[]> {
   const offset = (page - 1) * itemsPerPage
-  const rows = await fetchFiltered({
+  const result = await fetchFiltered({
     table: 'tpos_positions',
     joins: POSITION_GAMES_JOINS,
     filters: buildPositionGamesFilters(fen, player, move),
@@ -260,19 +304,38 @@ export async function fetchGamesForPosition(
     offset,
     caller: 'fetchGamesForPosition'
   })
-  return rows.map(mapPositionGameRow)
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'fetchGamesForPosition',
+      lg_caller: 'fetchGamesForPosition',
+      lg_msg: 'Failed to fetch games for position: ' + result.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return result.data.map(mapPositionGameRow)
 }
 
 //----------------------------------------------------------------------------------
 //  getGamesForPositionCount — total row count for fetchGamesForPosition's same filter set
 //----------------------------------------------------------------------------------
 export async function getGamesForPositionCount(fen: string, player: string, move?: string): Promise<number> {
-  return await fetchTotalRows({
+  const result = await fetchTotalRows({
     table: 'tpos_positions',
     joins: POSITION_GAMES_JOINS,
     filters: buildPositionGamesFilters(fen, player, move),
     caller: 'getGamesForPositionCount'
   })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getGamesForPositionCount',
+      lg_caller: 'getGamesForPositionCount',
+      lg_msg: 'Failed to fetch games count for position: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }
 
 // ---------------------------------------------------------------------------
@@ -306,12 +369,21 @@ export async function saveEvaluation(data: {
 //  getEvaluationForPosition — the Stockfish evaluation for a position
 //----------------------------------------------------------------------------------
 export async function getEvaluationForPosition(posId: number): Promise<EvaluationRow | null> {
-  const rows = await table_fetch({
+  const result = await table_fetch({
     caller: 'getEvaluationForPosition',
     table: 'tpose_positions_eval',
     whereColumnValuePairs: [{ column: 'pose_pos_id', value: posId }]
   })
-  return rows[0] as EvaluationRow ?? null
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getEvaluationForPosition',
+      lg_caller: 'getEvaluationForPosition',
+      lg_msg: 'Failed to fetch evaluation for position ' + posId + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  return result.data[0] as EvaluationRow ?? null
 }
 
 //----------------------------------------------------------------------------------
@@ -332,7 +404,16 @@ async function getOrCreatePosition(truncatedFen: string): Promise<number> {
     params: [truncatedFen],
     skipCache: true
   })
-  if (existing[0]?.pos_id) return existing[0].pos_id as number
+  if (!existing.ok) {
+    write_logging({
+      lg_functionname: 'getOrCreatePosition',
+      lg_caller: 'getOrCreatePosition_lookup',
+      lg_msg: 'Failed to look up position ' + truncatedFen + ': ' + existing.error,
+      lg_severity: 'E'
+    })
+    throw new Error('getOrCreatePosition: lookup failed — ' + existing.error)
+  }
+  if (existing.data[0]?.pos_id) return existing.data[0].pos_id as number
 
   const parts = truncatedFen.split(' ')
   const color = parts[1] ?? null
@@ -359,7 +440,16 @@ async function getOrCreatePosition(truncatedFen: string): Promise<number> {
     params: [truncatedFen],
     skipCache: true
   })
-  return created[0].pos_id as number
+  if (!created.ok) {
+    write_logging({
+      lg_functionname: 'getOrCreatePosition',
+      lg_caller: 'getOrCreatePosition_reselect',
+      lg_msg: 'Failed to re-select newly created position ' + truncatedFen + ': ' + created.error,
+      lg_severity: 'E'
+    })
+    throw new Error('getOrCreatePosition: re-select failed — ' + created.error)
+  }
+  return created.data[0].pos_id as number
 }
 
 //----------------------------------------------------------------------------------
@@ -421,21 +511,30 @@ export async function upgradePositionEvaluation(data: {
   if (Number.isFinite(moveNum) && moveNum < MIN_ANALYSIS_MOVE) return false
 
   const truncated = truncateFen(data.fen)
-  const posRows = await table_query({
+  const posResult = await table_query({
     caller: 'upgradePositionEvaluation_lookup',
     table: 'tpos_positions',
     query: `SELECT pos_id FROM tpos_positions WHERE pos_fen = $1`,
     params: [truncated],
     skipCache: true
   })
-  let posId = posRows[0]?.pos_id as number | undefined
+  if (!posResult.ok) {
+    write_logging({
+      lg_functionname: 'upgradePositionEvaluation',
+      lg_caller: 'upgradePositionEvaluation_lookup',
+      lg_msg: 'Failed to look up position ' + truncated + ': ' + posResult.error,
+      lg_severity: 'E'
+    })
+    return false
+  }
+  let posId = posResult.data[0]?.pos_id as number | undefined
   if (!posId) {
     if (!data.createIfMissing) return false
     posId = await getOrCreatePosition(truncated)
   }
 
   const depthGuard = data.force ? '' : 'WHERE tpose_positions_eval.pose_depth < EXCLUDED.pose_depth'
-  const updated = await table_query({
+  const updatedResult = await table_query({
     caller: 'upgradePositionEvaluation_update',
     table: 'tpose_positions_eval',
     query: `
@@ -449,7 +548,16 @@ export async function upgradePositionEvaluation(data: {
     params: [posId, data.cp, data.bestMove, data.depth],
     isupdate: true
   })
-  if (updated.length === 0) return false
+  if (!updatedResult.ok) {
+    write_logging({
+      lg_functionname: 'upgradePositionEvaluation',
+      lg_caller: 'upgradePositionEvaluation_update',
+      lg_msg: 'Failed to upsert position evaluation for pos_id ' + posId + ': ' + updatedResult.error,
+      lg_severity: 'E'
+    })
+    return false
+  }
+  if (updatedResult.data.length === 0) return false
 
   await table_query({
     caller: 'upgradePositionEvaluation_recompute_cp_change',
@@ -532,7 +640,7 @@ export async function upgradePositionEvaluation(data: {
 //----------------------------------------------------------------------------------
 export async function getPositionEvaluationsBulk(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const truncated = fens.map(truncateFen)
-  const rows = await table_query({
+  const queryResult = await table_query({
     caller: 'getPositionEvaluationsBulk',
     table: 'tpose_positions_eval',
     query: `
@@ -544,7 +652,17 @@ export async function getPositionEvaluationsBulk(fens: string[]): Promise<Record
     // table_query's params type doesn't declare array elements (needed for = ANY($1)),
     // even though the underlying driver handles them fine — narrow cast, not a real risk
     params: [truncated] as unknown as string[]
-  }) as { pos_fen: string; pose_cp: number; pose_best_move: string | null; pose_depth: number }[]
+  })
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getPositionEvaluationsBulk',
+      lg_caller: 'getPositionEvaluationsBulk',
+      lg_msg: 'Failed to fetch bulk position evaluations: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return {}
+  }
+  const rows = queryResult.data as { pos_fen: string; pose_cp: number; pose_best_move: string | null; pose_depth: number }[]
 
   const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = {}
   for (const row of rows) {
@@ -561,14 +679,23 @@ export async function getPositionEvaluationsBulk(fens: string[]): Promise<Record
 //  gamePositionExists — check whether a game position has already been recorded
 //----------------------------------------------------------------------------------
 export async function gamePositionExists(gdid: number, posId: number): Promise<boolean> {
-  const { found } = await table_check([{
+  const result = await table_check([{
     table: 'tgam_game_positions',
     whereColumnValuePairs: [
       { column: 'gam_gdid',  value: gdid },
       { column: 'gam_pos_id', value: posId }
     ]
   }], 'gamePositionExists')
-  return found
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'gamePositionExists',
+      lg_caller: 'gamePositionExists',
+      lg_msg: 'Failed to check game position existence: ' + result.error,
+      lg_severity: 'E'
+    })
+    return false
+  }
+  return result.data.found
 }
 
 // ---------------------------------------------------------------------------
@@ -672,8 +799,9 @@ export async function getHabitsData(opts: {
     ? 'h.hab_move_times DESC, ABS(h.hab_move_cp) DESC NULLS LAST'
     : 'ABS(h.hab_move_cp) DESC NULLS LAST'
 
-  const rows = await table_query({
+  const queryResult = await table_query({
     caller: 'getHabitsData',
+    table: 'thab_habits',
     query: `
       SELECT
         h.hab_pos_id                                     AS pos_id,
@@ -709,7 +837,16 @@ export async function getHabitsData(opts: {
     `,
     params
   })
-  return rows.map((r: any) => ({
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getHabitsData',
+      lg_caller: 'getHabitsData',
+      lg_msg: 'Failed to fetch habits data: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  return queryResult.data.map((r: any) => ({
     pos_id:       Number(r.pos_id),
     pos_fen:      r.pos_fen,
     pos_color:    r.pos_color,
@@ -744,8 +881,9 @@ export async function getHabitsCount(opts: {
 }): Promise<number> {
   const { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter } = buildHabitsFilter(opts)
 
-  const rows = await table_query({
+  const result = await table_query({
     caller: 'getHabitsCount',
+    table: 'thab_habits',
     query: `
       SELECT COUNT(*)::int AS total
       FROM thab_habits h
@@ -761,7 +899,16 @@ export async function getHabitsCount(opts: {
     `,
     params
   })
-  return rows.length > 0 ? Number(rows[0].total) : 0
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getHabitsCount',
+      lg_caller: 'getHabitsCount',
+      lg_msg: 'Failed to fetch habits count: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data.length > 0 ? Number(result.data[0].total) : 0
 }
 
 //----------------------------------------------------------------------------------
@@ -839,7 +986,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     gamesPlayerFilter = `AND d.gd_player = $${gamesParams.length}`
   }
 
-  const [posRows, movRows, posEvalRows, gameCountRows, gamesRows] = await Promise.all([
+  const [posResult, movResult, posEvalResult, gameCountResult, gamesResult] = await Promise.all([
     table_fetch({
       caller: 'getPositionDetail',
       table: 'tpos_positions',
@@ -847,6 +994,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     }),
     table_query({
       caller: 'getPositionDetail',
+      table: 'tgam_game_positions',
       query: `
         SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp
         FROM (
@@ -875,6 +1023,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     }),
     table_query({
       caller: 'getPositionDetail',
+      table: 'tgam_game_positions',
       query: `
         SELECT COUNT(DISTINCT gp.gam_gdid)::int AS game_count
         FROM tgam_game_positions gp
@@ -887,6 +1036,7 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     }),
     table_query({
       caller: 'getPositionDetail',
+      table: 'tgam_game_positions',
       query: `
         SELECT
           d.gd_player,
@@ -907,12 +1057,24 @@ export async function getPositionDetail(posId: number, player?: string): Promise
     })
   ])
 
+  if (!posResult.ok || !movResult.ok || !posEvalResult.ok || !gameCountResult.ok || !gamesResult.ok) {
+    write_logging({
+      lg_functionname: 'getPositionDetail',
+      lg_caller: 'getPositionDetail',
+      lg_msg: 'Failed to fetch position detail for pos_id ' + posId + ': ' +
+        [posResult, movResult, posEvalResult, gameCountResult, gamesResult]
+          .filter(r => !r.ok).map(r => r.error).join('; '),
+      lg_severity: 'E'
+    })
+    return { position: null, moves: [], posEval: null, gameCount: 0, games: [] }
+  }
+
   return {
-    position:  posRows[0]     as PositionRow  ?? null,
-    moves:     movRows        as MoveRow[],
-    posEval:   posEvalRows[0] as EvaluationRow ?? null,
-    gameCount: Number((gameCountRows[0] as any)?.game_count ?? 0),
-    games: gamesRows.map((r: any) => ({
+    position:  posResult.data[0]     as PositionRow  ?? null,
+    moves:     movResult.data        as MoveRow[],
+    posEval:   posEvalResult.data[0] as EvaluationRow ?? null,
+    gameCount: Number((gameCountResult.data[0] as any)?.game_count ?? 0),
+    games: gamesResult.data.map((r: any) => ({
       player:       r.gd_player,
       move_played:  r.gam_move_played,
       move_num:     r.gam_move_num != null ? Number(r.gam_move_num) : null,

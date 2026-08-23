@@ -33,6 +33,7 @@ import {
   GAME_ENDINGS_CONCURRENCY,
   PIPELINE_TYPE_GAMES,
   PIPELINE_TYPE_MASTERS,
+  PIPELINE_TYPE_MASTERGAMES,
   PLAYER_TIME_CLASSES,
   STOCKFISH_DEPTH,
   STOCKFISH_REANALYZE_DEFAULT_DEPTH,
@@ -82,7 +83,14 @@ import {
   WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED,
   WIDTH_SORT_BY,
-  MASTERS_EXPLORER_MOVES_LIMIT
+  MASTERS_EXPLORER_MOVES_LIMIT,
+  MASTER_INCLUDED_TIME_CLASSES,
+  MASTER_MIN_ANALYSIS_MOVE,
+  MASTER_MAX_ANALYSIS_MOVE,
+  MASTER_POSITION_INSERT_CHUNK_SIZE,
+  MASTER_GAME_LIST_ROWS_DEFAULT,
+  MASTER_GAME_LIST_ROWS_OPTIONS,
+  MASTER_GAMES_SYNC_YEARS
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -170,7 +178,8 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'GAME_ENDINGS_CONCURRENCY', value: GAME_ENDINGS_CONCURRENCY, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
       { name: 'PIPELINE_CRON_SCHEDULE', value: PIPELINE_CRON_SCHEDULE, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] },
       { name: 'PIPELINE_TYPE_GAMES', value: PIPELINE_TYPE_GAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the game-sync/analysis pipeline (steps 1-9) — keeps its run-id allocation and Run selector scoped separately from the masters pipeline.', consumers: ['sync.ts: runGameSync', 'buildPositionTree.ts: buildPositionTree, syncTposFromTgam', 'purgePositions.ts: purgeStaleReachOnePositions', 'buildHabits.ts: buildHabits', 'enrichPositionsStockfish.ts: bulkUpdateCpLoss, enrichPositionsStockfish, deepenPopularPositions, evaluateGameEndings', 'owner/pipelinegames/page.tsx: PipelinePage'] },
-      { name: 'PIPELINE_TYPE_MASTERS', value: PIPELINE_TYPE_MASTERS, description: 'tpip_pipelinelog.pip_pipeline_type value for the FIDE master-players pipeline (steps 10-14) — keeps its run-id allocation and Run selector scoped separately from the games pipeline.', consumers: ['fideStaging.ts: downloadFideZip, unzipFideZip, parseFideXml', 'fidePipeline.ts: populateFideTopPlayers, refreshFideRatings', 'owner/pipelinemasters/page.tsx: PipelineMastersPage'] }
+      { name: 'PIPELINE_TYPE_MASTERS', value: PIPELINE_TYPE_MASTERS, description: 'tpip_pipelinelog.pip_pipeline_type value for the FIDE master-players pipeline (own steps 1-5) — keeps its run-id allocation and Run selector scoped separately from the games and master-games pipelines.', consumers: ['fideStaging.ts: downloadFideZip, unzipFideZip, parseFideXml', 'fidePipeline.ts: populateFideTopPlayers, refreshFideRatings', 'owner/pipelinemasters/page.tsx: PipelineMastersPage'] },
+      { name: 'PIPELINE_TYPE_MASTERGAMES', value: PIPELINE_TYPE_MASTERGAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the master-games position database pipeline (own steps 1-3, proof of concept) — keeps its run-id allocation and Run selector scoped separately from the games and FIDE masters pipelines.', consumers: ['masterSync.ts: syncMasterGames', 'masterDeconstruct.ts: deconstructMasterGames', 'masterPositionTree.ts: buildMasterPositionTree', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] }
     ]
   },
   {
@@ -221,6 +230,18 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     heading: 'Masters Explorer (Lichess)',
     entries: [
       { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] }
+    ]
+  },
+  {
+    heading: 'Master Games (position database — proof of concept)',
+    entries: [
+      { name: 'MASTER_INCLUDED_TIME_CLASSES', value: MASTER_INCLUDED_TIME_CLASSES, description: "Chess.com time classes synced into the master-games position database — own constant, never shared with the player pipeline's INCLUDED_TIME_CLASSES.", consumers: ['masterSync.ts: syncMasterGames', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
+      { name: 'MASTER_MIN_ANALYSIS_MOVE', value: MASTER_MIN_ANALYSIS_MOVE, description: 'Positions before this move number are never tracked in the master position tree — own constant, mirrors MIN_ANALYSIS_MOVE.', consumers: ['masterDeconstruct.ts (module scope)', 'masterPositionTree.ts: buildMasterPositionTree', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
+      { name: 'MASTER_MAX_ANALYSIS_MOVE', value: MASTER_MAX_ANALYSIS_MOVE, description: 'Positions past this move number are never tracked in the master position tree — own constant, mirrors MAX_ANALYSIS_MOVE.', consumers: ['masterPositionTree.ts: buildMasterPositionTree', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
+      { name: 'MASTER_POSITION_INSERT_CHUNK_SIZE', value: MASTER_POSITION_INSERT_CHUNK_SIZE, description: 'Target rows per bulk INSERT into tmgp_mastergamepositions — own constant, mirrors POSITION_INSERT_CHUNK_SIZE.', consumers: ['masterPositionTree.ts: buildMasterPositionTree'] },
+      { name: 'MASTER_GAME_LIST_ROWS_DEFAULT', value: MASTER_GAME_LIST_ROWS_DEFAULT, description: 'Default rows-per-page for the Masters Games list — own constant, never reuses GAME_LIST_ROWS_DEFAULT.', consumers: ['MasterGameList.tsx: MasterGameList', 'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount'] },
+      { name: 'MASTER_GAME_LIST_ROWS_OPTIONS', value: MASTER_GAME_LIST_ROWS_OPTIONS, description: 'Rows-per-page dropdown options for the Masters Games list — own constant, never reuses GAME_LIST_ROWS_OPTIONS.', consumers: ['MasterGameList.tsx: MasterGameList'] },
+      { name: 'MASTER_GAMES_SYNC_YEARS', value: MASTER_GAMES_SYNC_YEARS, description: 'Year dropdown options for the master-games sync pipeline (most recent first).', consumers: ['owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] }
     ]
   }
 ]
@@ -295,12 +316,18 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'ResultSelect.tsx: ResultSelect': 'Reusable gd_player_result single-select dropdown (GameList).',
   'ResultMultiSelect.tsx: ResultMultiSelect': "Reusable gd_player_result multi-select checkbox group (OpeningScoreChart's nested game table).",
   'TerminationMultiSelect.tsx: TerminationMultiSelect': 'Reusable gd_termination multi-select checkbox group, options overridable per call site (GameList default list, OpeningScoreChart dynamic list).',
-  'fideStaging.ts: downloadFideZip': "Downloads FIDE's zipped standard rating list into tfzp_fide_zip (pipeline step 10).",
-  'fideStaging.ts: unzipFideZip': 'Decompresses the staged zip and writes chunked XML text into tfxm_fide_xml (pipeline step 11).',
-  'fideStaging.ts: parseFideXml': 'Streams tfxm_fide_xml back through a SAX parser into structured rows in tfpl_fide_players (pipeline step 12).',
-  'fidePipeline.ts: populateFideTopPlayers': 'Matches/attaches/inserts tmst_master_players rows from the parsed FIDE top-players snapshot (pipeline step 13).',
-  'fidePipeline.ts: refreshFideRatings': 'Refreshes mst_grade for every FIDE-linked tmst_master_players row from the parsed FIDE snapshot (pipeline step 14).',
-  'masterPlayers.ts: findNextMasterPlayerHandle': "One-player-per-call lookup (highest grade first) of a FIDE-linked player's chess.com handle via chess.com/players/{slug}, matched by embedded FIDE id, not by name."
+  'fideStaging.ts: downloadFideZip': "Downloads FIDE's zipped standard rating list into tfzp_fide_zip (pipeline step 1).",
+  'fideStaging.ts: unzipFideZip': 'Decompresses the staged zip and writes chunked XML text into tfxm_fide_xml (pipeline step 2).',
+  'fideStaging.ts: parseFideXml': 'Streams tfxm_fide_xml back through a SAX parser into structured rows in tfpl_fide_players (pipeline step 3).',
+  'fidePipeline.ts: populateFideTopPlayers': 'Matches/attaches/inserts tmst_master_players rows from the parsed FIDE top-players snapshot (pipeline step 4).',
+  'fidePipeline.ts: refreshFideRatings': 'Refreshes mst_grade for every FIDE-linked tmst_master_players row from the parsed FIDE snapshot (pipeline step 5).',
+  'masterPlayers.ts: findNextMasterPlayerHandle': "One-player-per-call lookup (highest grade first) of a FIDE-linked player's chess.com handle via chess.com/players/{slug}, matched by embedded FIDE id, not by name.",
+  'masterSync.ts: syncMasterGames': "Downloads one master player's chess.com archives for a given year and inserts standard-chess games into tmgr_mastergamesraw (secondary database).",
+  'masterDeconstruct.ts (module scope)': 'Server actions module that deconstructs raw master-player chess.com games into tmgd_mastergamesdecon, reusing the shared tec_ecoreference table.',
+  'masterPositionTree.ts: buildMasterPositionTree': 'Full truncate-and-rebuild of the master position tree (tmps_masterpositions/tmgp_mastergamepositions) from tmgd_mastergamesdecon for one player.',
+  'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage': 'Owner pipeline page for the master-games position database (sync, deconstruct, build tree) — proof of concept scoped to Magnus Carlsen/2026.',
+  'MasterGameList.tsx: MasterGameList': 'Browsable/filterable list of synced master players\' games (own route, /mastergames) — local filter state only, no player-select filter yet, rows not clickable.',
+  'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount': 'Fetches a filtered, paginated page of master games from tmgd_mastergamesdecon, and the matching total page count.'
 }
 
 //----------------------------------------------------------------------------------
@@ -312,6 +339,7 @@ export default function ConstantsPage() {
       heading: 'Database',
       entries: [
         { name: 'POSTGRES_URL', value: process.env.POSTGRES_URL, description: 'Full Postgres connection string — the only DB var actually read by the app.', consumers: ['nextjs-shared/src/tables/db.ts', 'nextjs-shared/next.config.mjs', 'lib/sync-games.ts', 'lib/deconstruct-games.ts'] },
+        { name: 'POSTGRES_URL1', value: process.env.POSTGRES_URL1, description: 'Secondary Postgres connection string — the master-games position database, routed via xrtg_routing (see CONSUMING_PROJECTS.md §2a). Not read directly by app code; resolved automatically by table_ functions per-table.', consumers: ['nextjs-shared/src/tables/db.ts'] },
         { name: 'POSTGRES_DATABASE_LOCATION', value: process.env.POSTGRES_DATABASE_LOCATION, description: 'Human-readable environment label (local/dev/prod) shown in the app header.', consumers: ['src/app/layout.tsx'] }
       ]
     },

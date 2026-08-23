@@ -73,8 +73,18 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tpur_workfile',
     level, isupdate: true, severity: 'I'
   })
+  if (!insertRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_seed',
+      lg_msg: 'Failed to seed purge candidates: ' + insertRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed to seed candidates — ' + insertRes.error, level)
+    return { purged: 0 }
+  }
 
-  const purgedCount = insertRes.length
+  const purgedCount = insertRes.data.length
 
   if (!purgedCount) {
     const durationMs = Date.now() - t0
@@ -94,6 +104,16 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tpose_positions_eval',
     level, isupdate: true, severity: 'I'
   })
+  if (!evalsRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_evals',
+      lg_msg: 'Failed to delete purge-candidate evaluations: ' + evalsRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed deleting evaluations — ' + evalsRes.error, level)
+    return { purged: 0 }
+  }
 
   // 2. Full-delete tgam rows whose own before-position is a candidate.
   const tgamDeleteRes = await table_query({
@@ -103,6 +123,16 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tgam_game_positions',
     level, isupdate: true, severity: 'I'
   })
+  if (!tgamDeleteRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_tgam_delete',
+      lg_msg: 'Failed to delete purge-candidate game positions: ' + tgamDeleteRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed deleting tgam rows — ' + tgamDeleteRes.error, level)
+    return { purged: 0 }
+  }
 
   // 3. Null out the resulting-position reference on any surviving row (its own
   // before-position wasn't a candidate, so the row stays — only the now-dangling
@@ -124,6 +154,16 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tgam_game_positions',
     level, isupdate: true, severity: 'I'
   })
+  if (!tgamNullRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_tgam_null',
+      lg_msg: 'Failed to null out dangling resulting-position references: ' + tgamNullRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed nulling tgam references — ' + tgamNullRes.error, level)
+    return { purged: 0 }
+  }
 
   // 4. Resurrection guard — stamp any game now left with zero tgam rows
   const guardRes = await table_query({
@@ -139,6 +179,16 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tgd_gamesdecon',
     level, isupdate: true, severity: 'I'
   })
+  if (!guardRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_guard',
+      lg_msg: 'Failed to stamp resurrection guard: ' + guardRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed stamping guard — ' + guardRes.error, level)
+    return { purged: 0 }
+  }
 
   // 5. Delete the purged tpos_positions rows themselves — safe unconditionally now:
   // every reference to them was either removed with its row (step 2) or nulled out
@@ -151,12 +201,22 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     table: 'tpos_positions',
     level, isupdate: true, severity: 'I'
   })
+  if (!tposRes.ok) {
+    write_logging({
+      lg_functionname: 'purgeStaleReachOnePositions',
+      lg_caller: 'purgeStaleReachOnePositions_tpos',
+      lg_msg: 'Failed to delete purged tpos_positions rows: ' + tposRes.error,
+      lg_severity: 'E'
+    })
+    await logEnd('purgeStaleReachOnePositions', 'purgeRoute', 'failed deleting tpos rows — ' + tposRes.error, level)
+    return { purged: 0 }
+  }
 
   const durationMs = Date.now() - t0
-  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpose_positions_eval', outputRecs: evalsRes.length, durationMs, forceNewRun })
-  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.length + tgamNullRes.length, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.length, durationMs, forceNewRun: false })
-  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'a', stepName: 'Purge tpose_positions_eval', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpose_positions_eval', outputRecs: evalsRes.data.length, durationMs, forceNewRun })
+  await logPipelineStep({ step: 4, subStep: 'b', stepName: 'Purge tgam_game_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgam_game_positions', outputRecs: tgamDeleteRes.data.length + tgamNullRes.data.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'c', stepName: 'Purge tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tpos_positions', outputRecs: tposRes.data.length, durationMs, forceNewRun: false })
+  await logPipelineStep({ step: 4, subStep: 'd', stepName: 'Purge tgd_gamesdecon guard', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpos_positions', inputRecs: purgedCount, outputTable: 'tgd_gamesdecon', outputRecs: guardRes.data.length, durationMs, forceNewRun: false })
 
   await write_logging({
     lg_functionname: 'purgeStaleReachOnePositions',

@@ -1,6 +1,7 @@
 'use server'
 
 import { table_query } from 'nextjs-shared/table_query'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR } from '../constants'
 import { countRemainingPopularPositionsByTier } from '../analysis/enrichPositionsStockfish'
 
@@ -19,9 +20,15 @@ export type PipelineStatus = {
   evaluationsRemaining: number
 }
 
+const EMPTY_PIPELINE_STATUS: PipelineStatus = {
+  pending: 0, gamesdecon: 0, treeGamesProcessed: 0, treeGamesRemaining: 0,
+  positions: 0, positionsUnresolved: 0, gamePositions: 0, evaluated: 0, evaluationsRemaining: 0
+}
+
 export async function getPipelineStatus(): Promise<PipelineStatus> {
-  const rows = await table_query({
+  const queryResult = await table_query({
     caller: 'getPipelineStatus',
+    table: 'tgr_gamesraw',
     query: `
       SELECT
         (SELECT COUNT(*) FROM tgr_gamesraw r
@@ -49,8 +56,17 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
     params: [],
     skipCache: true
   })
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getPipelineStatus',
+      lg_caller: 'getPipelineStatus',
+      lg_msg: 'Failed to fetch pipeline status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return EMPTY_PIPELINE_STATUS
+  }
 
-  const r = rows[0] ?? {}
+  const r = queryResult.data[0] ?? {}
   const treeGamesEligible = parseInt(r.tree_games_eligible ?? '0')
   const treeGamesRemaining = parseInt(r.tree_games_remaining ?? '0')
   const result = {
@@ -72,8 +88,8 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 //----------------------------------------------------------------------------------
 
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
-  const rows = await table_query({
-    caller: 'refreshStep1', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshStep1', table: 'tgr_gamesraw', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgr_gamesraw r
        WHERE NOT EXISTS (
@@ -82,7 +98,16 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
        ))                                     AS pending,
       (SELECT COUNT(*) FROM tgd_gamesdecon)    AS all_decon`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshStep1',
+      lg_caller: 'refreshStep1',
+      lg_msg: 'Failed to fetch step 1 status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { pending: 0, allDecon: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
   return result
 }
@@ -90,8 +115,8 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
 export async function refreshStep3(): Promise<{
   allProcessed: number; allRemaining: number
 }> {
-  const rows = await table_query({
-    caller: 'refreshStep3', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshStep3', table: 'tgd_gamesdecon', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgd_gamesdecon)                                         AS all_eligible,
       (SELECT COUNT(*) FROM tgd_gamesdecon d
@@ -99,7 +124,16 @@ export async function refreshStep3(): Promise<{
          AND NOT EXISTS (SELECT 1 FROM tgam_game_positions
            WHERE gam_gdid = d.gd_gdid)) AS all_remaining`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshStep3',
+      lg_caller: 'refreshStep3',
+      lg_msg: 'Failed to fetch step 3 status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { allProcessed: 0, allRemaining: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const allEligible  = parseInt(r.all_eligible  ?? '0')
   const allRemaining = parseInt(r.all_remaining ?? '0')
   const result = {
@@ -109,27 +143,45 @@ export async function refreshStep3(): Promise<{
 }
 
 export async function refreshTposStatus(): Promise<{ positions: number; unresolved: number }> {
-  const rows = await table_query({
-    caller: 'refreshTposStatus', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshTposStatus', table: 'tpos_positions', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tpos_positions)                                AS positions,
       (SELECT COUNT(*) FROM tgam_game_positions WHERE gam_pos_id IS NULL)  AS unresolved`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshTposStatus',
+      lg_caller: 'refreshTposStatus',
+      lg_msg: 'Failed to fetch tpos status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { positions: 0, unresolved: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = { positions: parseInt(r.positions ?? '0'), unresolved: parseInt(r.unresolved ?? '0') }
   return result
 }
 
 export async function refreshStep4(): Promise<{ evaluated: number; remaining: number }> {
-  const rows = await table_query({
-    caller: 'refreshStep4', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshStep4', table: 'tpose_positions_eval', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tpose_positions_eval)                                      AS evaluated,
       (SELECT COUNT(*) FROM tpos_positions p
        LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
        WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})               AS remaining`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshStep4',
+      lg_caller: 'refreshStep4',
+      lg_msg: 'Failed to fetch step 4 status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { evaluated: 0, remaining: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = {
     evaluated: parseInt(r.evaluated ?? '0'),
     remaining: parseInt(r.remaining ?? '0'),
@@ -138,8 +190,8 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
 }
 
 export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
-  const rows = await table_query({
-    caller: 'refreshCpChangeStatus', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshCpChangeStatus', table: 'tgam_game_positions', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS pending
       FROM tgam_game_positions gp
       JOIN tpos_positions pb ON pb.pos_id = gp.gam_pos_id
@@ -147,7 +199,16 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
       WHERE gp.gam_cp_change IS NULL
         AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP}`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshCpChangeStatus',
+      lg_caller: 'refreshCpChangeStatus',
+      lg_msg: 'Failed to fetch cp-change status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { pending: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = {
     pending: parseInt(r.pending ?? '0'),
   }
@@ -170,8 +231,8 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  already runs, plus a LEFT JOIN to isolate never-yet-materialized combinations.
 //----------------------------------------------------------------------------------
 export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number; remaining: number }> {
-  const rows = await table_query({
-    caller: 'refreshHabitsStatus', params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshHabitsStatus', table: 'tgam_game_positions', params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR], skipCache: true,
     query: `
       WITH candidates AS (
         SELECT d.gd_player AS player, gp.gam_pos_id AS pos_id, gp.gam_move_played AS move_san
@@ -192,7 +253,16 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
          WHERE h.hab_habid IS NULL)                                AS remaining
     `
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshHabitsStatus',
+      lg_caller: 'refreshHabitsStatus',
+      lg_msg: 'Failed to fetch habits status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { total: 0, dismissed: 0, remaining: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = {
     total:     parseInt(r.total     ?? '0'),
     dismissed: parseInt(r.dismissed ?? '0'),
@@ -206,13 +276,22 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
 //  independent of the position-tree pipeline entirely (reads tgd_gamesdecon directly).
 //----------------------------------------------------------------------------------
 export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; remaining: number }> {
-  const rows = await table_query({
-    caller: 'refreshGameEndingsStatus', params: [], skipCache: true,
+  const queryResult = await table_query({
+    caller: 'refreshGameEndingsStatus', table: 'tgd_gamesdecon', params: [], skipCache: true,
     query: `SELECT
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NOT NULL)  AS evaluated,
       (SELECT COUNT(*) FROM tgd_gamesdecon WHERE gd_final_eval IS NULL)      AS remaining`
   })
-  const r = rows[0] ?? {}
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'refreshGameEndingsStatus',
+      lg_caller: 'refreshGameEndingsStatus',
+      lg_msg: 'Failed to fetch game endings status: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return { evaluated: 0, remaining: 0 }
+  }
+  const r = queryResult.data[0] ?? {}
   const result = {
     evaluated: parseInt(r.evaluated ?? '0'),
     remaining: parseInt(r.remaining ?? '0'),
@@ -232,7 +311,7 @@ export async function refreshDeepenPopularStatus(): Promise<{ tiers: { depth: nu
 
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const candidatesRes = await table_query({
-    caller: 'refreshPurgeStatus_find', params: [], skipCache: true,
+    caller: 'refreshPurgeStatus_find', table: 'tpos_positions', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS cnt
       FROM tpos_positions p
       WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
@@ -251,5 +330,14 @@ export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
             AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
         )`
   })
-  return { eligible: parseInt(candidatesRes[0]?.cnt ?? '0') }
+  if (!candidatesRes.ok) {
+    write_logging({
+      lg_functionname: 'refreshPurgeStatus',
+      lg_caller: 'refreshPurgeStatus_find',
+      lg_msg: 'Failed to fetch purge status: ' + candidatesRes.error,
+      lg_severity: 'E'
+    })
+    return { eligible: 0 }
+  }
+  return { eligible: parseInt(candidatesRes.data[0]?.cnt ?? '0') }
 }
