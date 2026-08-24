@@ -4,13 +4,17 @@ import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 
 //----------------------------------------------------------------------------------
-//  refreshMasterSyncStatus — row count currently staged in tmgr_mastergamesraw
-//  (step 1's own output).
+//  refreshMasterSyncStatus — step 1's own status (Sync Master Games, bundling
+//  download + deconstruct). Mirrors pipelineStatus.ts's refreshStep1: pending raw
+//  rows not yet deconstructed, and the total deconstructed count.
 //----------------------------------------------------------------------------------
-export async function refreshMasterSyncStatus(): Promise<{ rows: number }> {
+export async function refreshMasterSyncStatus(): Promise<{ pending: number; allDecon: number }> {
   const result = await table_query({
-    caller: 'refreshMasterSyncStatus', table: 'tmgr_mastergamesraw', params: [], skipCache: true,
-    query: `SELECT COUNT(*) AS rows FROM tmgr_mastergamesraw`
+    caller: 'refreshMasterSyncStatus', table: 'wk_mgr_gamesraw', params: [], skipCache: true,
+    query: `SELECT
+      (SELECT COUNT(*) FROM wk_mgr_gamesraw r
+       WHERE NOT EXISTS (SELECT 1 FROM tmgd_gamesdecon d WHERE d.mgd_chesscom_uuid = r.mgr_chesscom_uuid)) AS pending,
+      (SELECT COUNT(*) FROM tmgd_gamesdecon) AS all_decon`
   })
   if (!result.ok) {
     write_logging({
@@ -19,42 +23,24 @@ export async function refreshMasterSyncStatus(): Promise<{ rows: number }> {
       lg_msg: 'Failed to fetch master sync status: ' + result.error,
       lg_severity: 'E'
     })
-    return { rows: 0 }
+    return { pending: 0, allDecon: 0 }
   }
-  return { rows: parseInt(result.data[0]?.rows ?? '0') }
+  const r = result.data[0] ?? {}
+  return { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
 }
 
 //----------------------------------------------------------------------------------
-//  refreshMasterDeconStatus — row count currently staged in tmgd_mastergamesdecon
-//  (step 2's own output).
+//  refreshMasterTreeStatus — step 2's own status (Build Master Position Tree).
+//  Mirrors pipelineStatus.ts's refreshStep3: how many tmgd_gamesdecon rows are
+//  already represented in tmgam_game_positions vs. still outstanding.
 //----------------------------------------------------------------------------------
-export async function refreshMasterDeconStatus(): Promise<{ rows: number }> {
+export async function refreshMasterTreeStatus(): Promise<{ allProcessed: number; allRemaining: number }> {
   const result = await table_query({
-    caller: 'refreshMasterDeconStatus', table: 'tmgd_mastergamesdecon', params: [], skipCache: true,
-    query: `SELECT COUNT(*) AS rows FROM tmgd_mastergamesdecon`
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'refreshMasterDeconStatus',
-      lg_caller: 'refreshMasterDeconStatus',
-      lg_msg: 'Failed to fetch master decon status: ' + result.error,
-      lg_severity: 'E'
-    })
-    return { rows: 0 }
-  }
-  return { rows: parseInt(result.data[0]?.rows ?? '0') }
-}
-
-//----------------------------------------------------------------------------------
-//  refreshMasterTreeStatus — position/game-position counts currently built in
-//  tmps_masterpositions/tmgp_mastergamepositions (step 3's own output).
-//----------------------------------------------------------------------------------
-export async function refreshMasterTreeStatus(): Promise<{ positions: number; gamePositions: number }> {
-  const result = await table_query({
-    caller: 'refreshMasterTreeStatus', table: 'tmps_masterpositions', params: [], skipCache: true,
+    caller: 'refreshMasterTreeStatus', table: 'tmgd_gamesdecon', params: [], skipCache: true,
     query: `SELECT
-      (SELECT COUNT(*) FROM tmps_masterpositions)     AS positions,
-      (SELECT COUNT(*) FROM tmgp_mastergamepositions)  AS game_positions`
+      (SELECT COUNT(*) FROM tmgd_gamesdecon)                                          AS all_eligible,
+      (SELECT COUNT(*) FROM tmgd_gamesdecon d
+       WHERE NOT EXISTS (SELECT 1 FROM tmgam_game_positions WHERE mgam_mgdid = d.mgd_mgdid)) AS all_remaining`
   })
   if (!result.ok) {
     write_logging({
@@ -63,8 +49,35 @@ export async function refreshMasterTreeStatus(): Promise<{ positions: number; ga
       lg_msg: 'Failed to fetch master tree status: ' + result.error,
       lg_severity: 'E'
     })
-    return { positions: 0, gamePositions: 0 }
+    return { allProcessed: 0, allRemaining: 0 }
   }
   const r = result.data[0] ?? {}
-  return { positions: parseInt(r.positions ?? '0'), gamePositions: parseInt(r.game_positions ?? '0') }
+  const allEligible = parseInt(r.all_eligible ?? '0')
+  const allRemaining = parseInt(r.all_remaining ?? '0')
+  return { allProcessed: allEligible - allRemaining, allRemaining }
+}
+
+//----------------------------------------------------------------------------------
+//  refreshMasterTposStatus — step 3's own status (Sync Master Position Tree).
+//  Mirrors pipelineStatus.ts's refreshTposStatus: total tmpos_positions rows, and
+//  how many tmgam_game_positions rows still have no mgam_pos_id link.
+//----------------------------------------------------------------------------------
+export async function refreshMasterTposStatus(): Promise<{ positions: number; unresolved: number }> {
+  const result = await table_query({
+    caller: 'refreshMasterTposStatus', table: 'tmpos_positions', params: [], skipCache: true,
+    query: `SELECT
+      (SELECT COUNT(*) FROM tmpos_positions)                                  AS positions,
+      (SELECT COUNT(*) FROM tmgam_game_positions WHERE mgam_pos_id IS NULL)    AS unresolved`
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'refreshMasterTposStatus',
+      lg_caller: 'refreshMasterTposStatus',
+      lg_msg: 'Failed to fetch master tpos status: ' + result.error,
+      lg_severity: 'E'
+    })
+    return { positions: 0, unresolved: 0 }
+  }
+  const r = result.data[0] ?? {}
+  return { positions: parseInt(r.positions ?? '0'), unresolved: parseInt(r.unresolved ?? '0') }
 }

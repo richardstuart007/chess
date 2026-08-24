@@ -5,8 +5,9 @@ import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_ANALYSIS_MOVE, MAX_ANALYSIS_MOVE, POSITION_INSERT_CHUNK_SIZE, PIPELINE_TYPE_GAMES } from '../constants'
+import { MIN_ANALYSIS_MOVE_Player, MAX_ANALYSIS_MOVE_Player, POSITION_INSERT_CHUNK_SIZE_Player, POSITION_TREE_LIMIT_Player, PIPELINE_TYPE_GAMES } from '../constants'
 import { truncateFen } from '../fen'
+import { chunkByGame } from '../chunkByGame'
 
 interface GameRecord {
   gdid:          number
@@ -23,9 +24,9 @@ interface PositionRecord {
 }
 
 //----------------------------------------------------------------------------------
-//  getPositionsFromGame — pure chess.js, no DB, returns all recordable positions
+//  getPositionsFromGame_Player — pure chess.js, no DB, returns all recordable positions
 //----------------------------------------------------------------------------------
-function getPositionsFromGame(
+function getPositionsFromGame_Player(
   game: GameRecord,
   minHalfMove: number,
   maxHalfMove: number
@@ -35,8 +36,18 @@ function getPositionsFromGame(
   const chess = new Chess()
   try { chess.loadPgn(game.pgn) } catch { return [] }
 
+  //
+  //  Some games (e.g. a chess.com Live Chess reconnect) carry a PGN whose PGN itself
+  //  starts mid-game from a non-standard position (SetUp/FEN headers), not the
+  //  standard opening position. replay must be seeded from that same starting FEN,
+  //  or its very first move fails ("Invalid move") since it has no idea the game
+  //  didn't start from the normal board.
+  //
+  const headers = chess.getHeaders()
+  const startFen = headers.SetUp === '1' && headers.FEN ? headers.FEN : undefined
+
   const history  = chess.history({ verbose: true })
-  const replay   = new Chess()
+  const replay   = startFen ? new Chess(startFen) : new Chess()
   const records: PositionRecord[] = []
 
   for (let i = 0; i < Math.min(history.length, maxHalfMove); i++) {
@@ -84,43 +95,17 @@ function getPositionsFromGame(
 }
 
 //----------------------------------------------------------------------------------
-//  chunkByGame — group records into chunks without ever splitting one game's own
-//  records across two chunks. Records for the same gdid are always contiguous (games
-//  are processed in order), so a single Postgres statement per chunk is atomic per
-//  whole game on its own — no transaction needed.
-//----------------------------------------------------------------------------------
-function chunkByGame(records: PositionRecord[], maxRows: number): PositionRecord[][] {
-  const chunks: PositionRecord[][] = []
-  let current: PositionRecord[] = []
-  let i = 0
-  while (i < records.length) {
-    const gdid = records[i].gdid
-    let j = i
-    while (j < records.length && records[j].gdid === gdid) j++
-    const gameRecords = records.slice(i, j)
-    if (current.length > 0 && current.length + gameRecords.length > maxRows) {
-      chunks.push(current)
-      current = []
-    }
-    current.push(...gameRecords)
-    i = j
-  }
-  if (current.length > 0) chunks.push(current)
-  return chunks
-}
-
-//----------------------------------------------------------------------------------
-//  insertGamePositions — Phase A: write tgam_game_positions directly from parsed
+//  insertGamePositions_Player — Phase A: write tgam_game_positions directly from parsed
 //  records. gam_pos_fen/gam_resulting_fen carry the FEN text, so this step has no
 //  dependency on tpos_positions at all — tgam_game_positions is the source of truth.
-//  gam_pos_id/gam_resulting_pos_id are left NULL here; syncTposFromTgam (Phase B)
+//  gam_pos_id/gam_resulting_pos_id are left NULL here; syncTposFromTgam_Player (Phase B)
 //  backfills them afterward. Plain INSERT, no ON CONFLICT — a revisited position within
 //  a game is legitimate and gets its own row (gam_gamid's own IDENTITY makes every row
 //  distinct regardless); nothing about (gdid, pos_fen) is unique anymore.
 //----------------------------------------------------------------------------------
-async function insertGamePositions(records: PositionRecord[], level: number): Promise<void> {
-  await logStart('insertGamePositions', 'buildPositionTree', `inserting ${records.length} game-position rows`, level)
-  const chunks = chunkByGame(records, POSITION_INSERT_CHUNK_SIZE)
+async function insertGamePositions_Player(records: PositionRecord[], level: number): Promise<void> {
+  await logStart('insertGamePositions_Player', 'buildPositionTree_Player', `inserting ${records.length} game-position rows`, level)
+  const chunks = chunkByGame(records, POSITION_INSERT_CHUNK_SIZE_Player, r => r.gdid)
   for (const chunk of chunks) {
     const values = chunk.map((_, i) => {
       const b = i * 6
@@ -131,7 +116,7 @@ async function insertGamePositions(records: PositionRecord[], level: number): Pr
       r.moveUci, r.resultingFen, r.moveNum
     ])
     await table_query({
-      caller:       'insertGamePositions',
+      caller:       'insertGamePositions_Player',
       query:        `
         INSERT INTO tgam_game_positions
           (gam_gdid, gam_pos_fen, gam_move_played,
@@ -142,22 +127,22 @@ async function insertGamePositions(records: PositionRecord[], level: number): Pr
       table:        'tgam_game_positions',
       level,
       isupdate:     true,
-      severity:     'D'
+      severity:     'I'
     })
   }
-  await logEnd('insertGamePositions', 'buildPositionTree', `${records.length} tgam_game_positions rows inserted`, level)
+  await logEnd('insertGamePositions_Player', 'buildPositionTree_Player', `${records.length} tgam_game_positions rows inserted`, level)
 }
 
 //----------------------------------------------------------------------------------
-//  recomputePosReachedByIds — accurate count from tgam_game_positions for a specific
+//  recomputePosReachedByIds_Player — accurate count from tgam_game_positions for a specific
 //  set of positions. Counts only the "before" side (gam_pos_id) — every ply is now
 //  recorded, so a position's "resulting" occurrence in one record is the same reach as
 //  the next record's "before" occurrence in that game; counting both sides double-
-//  counts. The one exception (a game's final ply, or the MAX_ANALYSIS_MOVE truncation
+//  counts. The one exception (a game's final ply, or the MAX_ANALYSIS_MOVE_Player truncation
 //  cutoff, where a resulting position is never anyone's "before") is treated as
 //  inconsequential — those positions simply read as low-reach.
 //----------------------------------------------------------------------------------
-async function recomputePosReachedByIds(posIds: number[], level: number): Promise<void> {
+async function recomputePosReachedByIds_Player(posIds: number[], level: number): Promise<void> {
   if (posIds.length === 0) return
   for (let start = 0; start < posIds.length; start += 1000) {
     const chunk = posIds.slice(start, start + 1000)
@@ -189,7 +174,7 @@ async function recomputePosReachedByIds(posIds: number[], level: number): Promis
 }
 
 //----------------------------------------------------------------------------------
-//  syncTposFromTgam — Phase B: derive tpos_positions from tgam_game_positions.
+//  syncTposFromTgam_Player — Phase B: derive tpos_positions from tgam_game_positions.
 //  Idempotent and safely re-runnable at any time: only touches tgam rows not yet
 //  resolved (gam_pos_id / gam_resulting_pos_id IS NULL), so already-processed history
 //  is never rescanned. Three steps: (1) ensure a tpos_positions row exists for every
@@ -198,8 +183,8 @@ async function recomputePosReachedByIds(posIds: number[], level: number): Promis
 //  also be re-run on its own as a catch-up pass if it ever fails to complete for some
 //  batch.
 //----------------------------------------------------------------------------------
-export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean): Promise<{ positionsSynced: number }> {
-  await logStart('syncTposFromTgam', 'buildPositionTree', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
+export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: boolean): Promise<{ positionsSynced: number }> {
+  await logStart('syncTposFromTgam_Player', 'buildPositionTree_Player', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
   const t0 = Date.now()
 
   // Unresolved backlog size going in — logged as sub-step 3a's pip_input_recs (below)
@@ -220,7 +205,7 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   })
   if (!backlogRes.ok) {
     write_logging({
-      lg_functionname: 'syncTposFromTgam',
+      lg_functionname: 'syncTposFromTgam_Player',
       lg_caller: 'syncTposFromTgam_backlog',
       lg_msg: 'Failed to fetch tgam backlog count: ' + backlogRes.error,
       lg_severity: 'E'
@@ -284,12 +269,12 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   })
   if (!beforeRes.ok || !resultingRes.ok) {
     write_logging({
-      lg_functionname: 'syncTposFromTgam',
+      lg_functionname: 'syncTposFromTgam_Player',
       lg_caller: 'syncTposFromTgam_backfill',
       lg_msg: 'Failed to backfill tgam ids: ' + [beforeRes, resultingRes].filter(r => !r.ok).map(r => r.error).join('; '),
       lg_severity: 'E'
     })
-    await logEnd('syncTposFromTgam', 'buildPositionTree', 'failed during id backfill', level)
+    await logEnd('syncTposFromTgam_Player', 'buildPositionTree_Player', 'failed during id backfill', level)
     return { positionsSynced: 0 }
   }
 
@@ -299,25 +284,25 @@ export async function syncTposFromTgam(level: number = 1, forceNewRun?: boolean)
   ])]
 
   // Step 3 — recompute pos_reached only for touched positions
-  await recomputePosReachedByIds(touchedPosIds, level)
+  await recomputePosReachedByIds_Player(touchedPosIds, level)
 
   const tgamBackfilled = beforeRes.data.length + resultingRes.data.length
   const durationMs     = Date.now() - t0
   await logPipelineStep({ step: 3, subStep: 'a', stepName: 'Sync tpos_positions', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tpos_positions', outputRecs: touchedPosIds.length, durationMs, forceNewRun })
   await logPipelineStep({ step: 3, subStep: 'b', stepName: 'Backfill tgam ids', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgam_game_positions', inputRecs: backlogBefore, outputTable: 'tgam_game_positions', outputRecs: tgamBackfilled, durationMs, forceNewRun: false })
 
-  await logEnd('syncTposFromTgam', 'buildPositionTree', `${touchedPosIds.length} positions synced`, level)
+  await logEnd('syncTposFromTgam_Player', 'buildPositionTree_Player', `${touchedPosIds.length} positions synced`, level)
   return { positionsSynced: touchedPosIds.length }
 }
 
 //----------------------------------------------------------------------------------
-//  buildPositionTree — main export
+//  buildPositionTree_Player — main export
 //----------------------------------------------------------------------------------
-export async function buildPositionTree(opts: {
+export async function buildPositionTree_Player(opts: {
   limit?:          number
   player?:         string
   level?:          number
-  skipSync?:       boolean   // debug/verification only — skip Phase B (syncTposFromTgam)
+  skipSync?:       boolean   // debug/verification only — skip Phase B (syncTposFromTgam_Player)
   forceNewRun?:    boolean
 }): Promise<{
   gamesProcessed: number
@@ -328,9 +313,9 @@ export async function buildPositionTree(opts: {
 }> {
   const level    = opts.level ?? 1
   const caller   = 'buildTreeRoute'
-  const limit       = opts.limit ?? 100
-  const minHalfMove = (MIN_ANALYSIS_MOVE - 1) * 2
-  const maxHalfMove = MAX_ANALYSIS_MOVE * 2
+  const limit       = opts.limit ?? POSITION_TREE_LIMIT_Player
+  const minHalfMove = (MIN_ANALYSIS_MOVE_Player - 1) * 2
+  const maxHalfMove = MAX_ANALYSIS_MOVE_Player * 2
 
   const params: any[]     = []
   const conditions: string[] = [`NOT EXISTS (
@@ -365,7 +350,7 @@ export async function buildPositionTree(opts: {
   })
   if (!gamesRes.ok) {
     write_logging({
-      lg_functionname: 'buildPositionTree',
+      lg_functionname: 'buildPositionTree_Player',
       lg_caller: 'buildPositionTree_fetch',
       lg_msg: 'Failed to fetch games for position tree: ' + gamesRes.error,
       lg_severity: 'E'
@@ -378,7 +363,7 @@ export async function buildPositionTree(opts: {
     pgn:           r.pgn ?? ''
   }))
 
-  await logStart('buildPositionTree', caller, `building position tree, ${games.length} games fetched`, level)
+  await logStart('buildPositionTree_Player', caller, `building position tree, ${games.length} games fetched`, level)
 
   const snapRes = await table_query({
     caller: 'buildPositionTree_snap',
@@ -396,12 +381,12 @@ export async function buildPositionTree(opts: {
          )) AS snap_remaining`,
     params:       [],
     level,
-    severity:     'D',
+    severity:     'I',
     skipCache:    true
   })
   if (!snapRes.ok) {
     write_logging({
-      lg_functionname: 'buildPositionTree',
+      lg_functionname: 'buildPositionTree_Player',
       lg_caller: 'buildPositionTree_snap',
       lg_msg: 'Failed to fetch position tree snapshot counts: ' + snapRes.error,
       lg_severity: 'E'
@@ -419,13 +404,13 @@ export async function buildPositionTree(opts: {
 
   for (const game of games) {
     try {
-      const records = getPositionsFromGame(game, minHalfMove, maxHalfMove)
+      const records = getPositionsFromGame_Player(game, minHalfMove, maxHalfMove)
       allRecords.push(...records)
       totalPositions += records.filter(r => r.moveNum > 0).length
     } catch (err) {
-      console.error(`buildPositionTree: chess.js error on game ${game.gdid}`, err)
+      console.error(`buildPositionTree_Player: chess.js error on game ${game.gdid}`, err)
       await write_logging({
-        lg_functionname: 'buildPositionTree',
+        lg_functionname: 'buildPositionTree_Player',
         lg_caller: caller,
         lg_msg: `chess.js error on game ${game.gdid}: ` + (err as Error).message,
         lg_severity: 'E'
@@ -435,15 +420,15 @@ export async function buildPositionTree(opts: {
   }
 
   // Phase A — write tgam_game_positions (self-contained, no tpos_positions dependency)
-  await insertGamePositions(allRecords, level + 1)
+  await insertGamePositions_Player(allRecords, level + 1)
   // Phase B — derive tpos_positions from what Phase A just wrote
-  if (!opts.skipSync) await syncTposFromTgam(level + 1)
+  if (!opts.skipSync) await syncTposFromTgam_Player(level + 1)
 
   const processed      = games.length - errors
   const afterRemaining = Math.max(0, snapRemaining - processed)
   await logPipelineStep({ step: 2, subStep: 'a', stepName: 'Build Position Tree', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: games.length, outputTable: 'tgam_game_positions', outputRecs: totalPositions, durationMs: Date.now() - t0, forceNewRun: opts.forceNewRun })
 
-  await logEnd('buildPositionTree', caller, `${totalPositions} positions recorded, treeBuilt ${snapProcessed + processed}, remaining ${afterRemaining}`, level)
+  await logEnd('buildPositionTree_Player', caller, `${totalPositions} positions recorded, treeBuilt ${snapProcessed + processed}, remaining ${afterRemaining}`, level)
 
   return {
     gamesProcessed: games.length,

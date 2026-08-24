@@ -1,12 +1,14 @@
 'use server'
 
 import { table_write } from 'nextjs-shared/table_write'
+import { table_truncate } from 'nextjs-shared/table_truncate'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { logStart, logEnd } from '../logStep'
-import { MASTER_INCLUDED_TIME_CLASSES, PIPELINE_TYPE_MASTERGAMES } from '../constants'
+import { deconstructGames_Master } from './deconstructGames_Master'
+import { INCLUDED_TIME_CLASSES_Master, PIPELINE_TYPE_MASTERGAMES } from '../constants'
 
-const MASTER_GAMES_TABLE = 'tmgr_mastergamesraw'
+const MASTER_GAMES_TABLE = 'wk_mgr_gamesraw'
 
 //----------------------------------------------------------------------------------
 //  insertMasterRawGame — insert one raw master game row; returns true if inserted,
@@ -47,23 +49,37 @@ async function insertMasterRawGame(data: {
 }
 
 //----------------------------------------------------------------------------------
-//  syncMasterGames — POC scope: one player, one calendar year. Downloads every
+//  syncMasterGames — one player, one calendar year. Downloads every
 //  chess.com monthly archive for that year, keeps only standard chess
 //  (rules === 'chess', excludes chess960/variants) games in
-//  MASTER_INCLUDED_TIME_CLASSES, and inserts them into tmgr_mastergamesraw. No resume
+//  INCLUDED_TIME_CLASSES_Master, and inserts them into wk_mgr_gamesraw. No resume
 //  cursor — always a fresh pull for the given year, safe to re-run (ON CONFLICT DO
-//  NOTHING on the chess.com uuid).
+//  NOTHING on the chess.com uuid). Also runs deconstructGames_Master immediately
+//  afterward, in the same call — mirrors runGameSync bundling Deconstruct Games
+//  into its own Step 1, since wk_mgr_gamesraw is a workfile with no independent
+//  value between a download and its deconstruction.
 //----------------------------------------------------------------------------------
 export async function syncMasterGames(
   chesscomHandle: string,
   year: number,
   level: number = 1,
-  forceNewRun?: boolean
-): Promise<{ inserted: number; skipped: number; total: number }> {
+  forceNewRun?: boolean,
+  truncateFirst?: boolean
+): Promise<{ inserted: number; skipped: number; total: number; deconstructed: number }> {
   const player = chesscomHandle.toLowerCase()
   await logStart('syncMasterGames', 'masterGamesPipelineRoute', `syncing ${player}/${year}`, level)
-  const t0 = Date.now()
 
+  //
+  //  wk_mgr_gamesraw is a workfile — truncated fresh once at the start of the
+  //  whole run (gated by truncateFirst, set only for the first player in a
+  //  multi-player batch), not per player, then downloaded into for whichever
+  //  players get synced.
+  //
+  if (truncateFirst) {
+    await table_truncate(MASTER_GAMES_TABLE, 'syncMasterGames', true, level)
+  }
+
+  const tQuery0 = Date.now()
   const archivesRes = await fetch(`https://api.chess.com/pub/player/${player}/games/archives`, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
   })
@@ -75,15 +91,17 @@ export async function syncMasterGames(
       lg_severity: 'E'
     })
     await logEnd('syncMasterGames', 'masterGamesPipelineRoute', 'failed to fetch archive list', level)
-    return { inserted: 0, skipped: 0, total: 0 }
+    return { inserted: 0, skipped: 0, total: 0, deconstructed: 0 }
   }
   const { archives } = await archivesRes.json() as { archives: string[] }
   const yearArchives = archives.filter(url => url.includes(`/games/${year}/`))
+  const queryMs = Date.now() - tQuery0
 
   let inserted = 0
   let skipped = 0
   let total = 0
 
+  const tFetch0 = Date.now()
   for (const archiveUrl of yearArchives) {
     const monthRes = await fetch(archiveUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
@@ -99,7 +117,7 @@ export async function syncMasterGames(
     }
     const { games } = await monthRes.json() as { games: any[] }
     const standardGames = games.filter((g: any) =>
-      g.rules === 'chess' && g.pgn && MASTER_INCLUDED_TIME_CLASSES.includes(g.time_class)
+      g.rules === 'chess' && g.pgn && INCLUDED_TIME_CLASSES_Master.includes(g.time_class)
     )
     total += standardGames.length
 
@@ -119,6 +137,8 @@ export async function syncMasterGames(
     }
   }
 
+  const fetchMs = Date.now() - tFetch0
+
   write_logging({
     lg_functionname: 'syncMasterGames',
     lg_caller: 'syncMasterGames',
@@ -126,13 +146,29 @@ export async function syncMasterGames(
     lg_severity: 'I'
   })
 
-  await logPipelineStep({
-    step: 1, subStep: 'a', stepName: 'Sync Master Games', pipelineType: PIPELINE_TYPE_MASTERGAMES,
-    inputTable: 'chess.com API', inputRecs: total,
-    outputTable: 'tmgr_mastergamesraw', outputRecs: inserted,
-    durationMs: Date.now() - t0, forceNewRun
-  })
-  await logEnd('syncMasterGames', 'masterGamesPipelineRoute', `${inserted} inserted, ${skipped} skipped, ${total} total`, level)
+  const tDecon0 = Date.now()
+  const decon = await deconstructGames_Master(level)
+  const deconstructMs = Date.now() - tDecon0
 
-  return { inserted, skipped, total }
+  await logPipelineStep({
+    step: 1, subStep: 'a', stepName: `${chesscomHandle}: Query chess.com API`, pipelineType: PIPELINE_TYPE_MASTERGAMES,
+    inputTable: 'chess.com API', inputRecs: yearArchives.length,
+    outputTable: 'chess.com API', outputRecs: total,
+    durationMs: queryMs, forceNewRun
+  })
+  await logPipelineStep({
+    step: 1, subStep: 'b', stepName: `${chesscomHandle}: Fetch & Insert Raw Games`, pipelineType: PIPELINE_TYPE_MASTERGAMES,
+    inputTable: 'chess.com API', inputRecs: total,
+    outputTable: 'wk_mgr_gamesraw', outputRecs: inserted,
+    durationMs: fetchMs, forceNewRun: false
+  })
+  await logPipelineStep({
+    step: 1, subStep: 'c', stepName: `${chesscomHandle}: Deconstruct Master Games`, pipelineType: PIPELINE_TYPE_MASTERGAMES,
+    inputTable: 'wk_mgr_gamesraw', inputRecs: decon.rawScanned,
+    outputTable: 'tmgd_gamesdecon', outputRecs: decon.processed,
+    durationMs: deconstructMs, forceNewRun: false
+  })
+  await logEnd('syncMasterGames', 'masterGamesPipelineRoute', `${inserted} inserted, ${skipped} skipped, ${total} total, ${decon.processed} deconstructed`, level)
+
+  return { inserted, skipped, total, deconstructed: decon.processed }
 }

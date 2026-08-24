@@ -16,7 +16,7 @@ interface FilterMasterPlayerSelectProps {
 //----------------------------------------------------------------------------------------------
 //  FilterMasterPlayerSelect — filters the Masters Games list by which synced master player a
 //  row belongs to, "All" included. Self-fetches its own options from getSyncedMasterPlayers
-//  (distinct mgd_player handles actually present in tmgd_mastergamesdecon, each paired with its
+//  (distinct mgd_player handles actually present in tmgd_gamesdecon, each paired with its
 //  real name) — value is still the chess.com handle (what mgd_player filters on), but the label
 //  shown is the player's real name. Distinct from MasterPlayerSelect, which lists every known
 //  master player regardless of whether they've been synced (used to pick a sync target on the

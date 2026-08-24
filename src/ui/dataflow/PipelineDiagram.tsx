@@ -57,7 +57,7 @@ const NODES: Node<DiagramNodeData>[] = [
   { id: 'chesscom',      type: 'diagram', position: pos(1, 1),  data: { label: 'chess.com API',              variant: 'process' } },
   { id: 'tpl',           type: 'diagram', position: pos(1, 3),  data: { label: 'tpl_players',                variant: 'table' } },
   { id: 'gamesync',      type: 'diagram', position: pos(2, 2),  data: { label: 'Game Sync',                  variant: 'process' } },
-  { id: 'tgr',           type: 'diagram', position: pos(3, 2),  data: { label: 'tgr_gamesraw',                variant: 'table' } },
+  { id: 'tgr',           type: 'diagram', position: pos(3, 2),  data: { label: 'wk_gr_gamesraw',                variant: 'table' } },
   { id: 'deconstruct',   type: 'diagram', position: pos(4, 2),  data: { label: 'Deconstruct Games',          variant: 'process' } },
   { id: 'tgd',           type: 'diagram', position: pos(5, 2),  data: { label: 'tgd_gamesdecon',              variant: 'table' } },
   { id: 'gameendings',   type: 'diagram', position: pos(5, 4),  data: { label: 'Evaluate Game Endings',      variant: 'process' } },

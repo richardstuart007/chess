@@ -6,13 +6,13 @@ import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import type { Filter } from 'nextjs-shared/structures'
-import { MASTER_GAME_LIST_ROWS_DEFAULT } from '../constants'
+import { GAME_LIST_ROWS_DEFAULT_Master } from '../constants'
 import { getMasterHandleNameMap } from '../actions/masterPlayers'
 
-const MASTER_DECON_TABLE = 'tmgd_mastergamesdecon'
+const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 
 //----------------------------------------------------------------------------------
-//  getMasterGameById — reads from tmgd_mastergamesdecon, matched by its own
+//  getMasterGameById — reads from tmgd_gamesdecon, matched by its own
 //  permanent mgd_mgdid. Mirrors games.ts's getGameById.
 //----------------------------------------------------------------------------------
 export async function getMasterGameById(mgdid: number) {
@@ -112,12 +112,12 @@ function buildMasterGameFilters(filters: MasterGameFilters): Filter[] {
 
 //----------------------------------------------------------------------------------
 //  fetchFilteredMasterGames — mirrors games.ts's fetchFilteredGames, against
-//  tmgd_mastergamesdecon (secondary database)
+//  tmgd_gamesdecon (secondary database)
 //----------------------------------------------------------------------------------
 export async function fetchFilteredMasterGames(
   filters: MasterGameFilters,
   page: number,
-  itemsPerPage: number = MASTER_GAME_LIST_ROWS_DEFAULT
+  itemsPerPage: number = GAME_LIST_ROWS_DEFAULT_Master
 ) {
   const filterArray = buildMasterGameFilters(filters)
   const offset = (page - 1) * itemsPerPage
@@ -152,7 +152,7 @@ export async function fetchFilteredMasterGames(
 //----------------------------------------------------------------------------------
 export async function getMasterGamesPageCount(
   filters: MasterGameFilters,
-  itemsPerPage: number = MASTER_GAME_LIST_ROWS_DEFAULT
+  itemsPerPage: number = GAME_LIST_ROWS_DEFAULT_Master
 ): Promise<number> {
   const filterArray = buildMasterGameFilters(filters)
   const result = await fetchTotalPages({
@@ -177,7 +177,7 @@ export type SyncedMasterPlayer = { handle: string; name: string }
 
 //----------------------------------------------------------------------------------
 //  getSyncedMasterPlayers — distinct mgd_player handles actually present in
-//  tmgd_mastergamesdecon, each paired with its real name (merged in from
+//  tmgd_gamesdecon, each paired with its real name (merged in from
 //  tmst_master_players, primary database — no cross-database join possible), for the
 //  Masters Games list's Player filter (as opposed to MasterPlayerSelect, which lists
 //  every known master player regardless of whether they've been synced — this only

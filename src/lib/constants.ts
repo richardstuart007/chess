@@ -1,12 +1,12 @@
 //----------------------------------------------------------------------------------
 //  Player / Filter Defaults
 //----------------------------------------------------------------------------------
-export const INCLUDED_TIME_CLASSES = ['blitz', 'rapid']
+export const INCLUDED_TIME_CLASSES_Player = ['blitz', 'rapid']
 export const DEFAULT_PLAYER = 'stricade'
-export const DEFAULT_DATE_FROM = '2024-01-01'
-export const DEFAULT_MIN_GAMES = '25'
-export const DEFAULT_FILTER_TERMINATIONS = ['Checkmate', 'Resignation']
-export const TERMINATION_CHART_TYPES = ['Resignation', 'Checkmate', 'Time']
+export const DEFAULT_DATE_FROM_Player = '2024-01-01'
+export const DEFAULT_MIN_GAMES_Player = '25'
+export const DEFAULT_FILTER_TERMINATIONS_Player = ['Checkmate', 'Resignation']
+export const TERMINATION_CHART_TYPES_Player = ['Resignation', 'Checkmate', 'Time']
 
 //----------------------------------------------------------------------------------
 //  Filter Settings — shared components (src/ui/filters/*)
@@ -34,6 +34,8 @@ export const OPTIONS_RESULT_MULTI = [{ value: 'win', label: 'win' }, { value: 'l
 export const WIDTH_RESULT_MULTI = 'w-20'
 export const OPTIONS_TERMINATION = ['Resignation', 'Checkmate', 'Time', 'Repetition', 'Agreement', 'Stalemate', 'Insufficient', '50 Moves', 'Timeout', 'Abandoned']
 export const WIDTH_TERMINATION = 'w-20'
+export const OPTIONS_PIPELINE_TYPE = [{ value: '', label: 'All' }, { value: 'games', label: 'games' }, { value: 'masters', label: 'masters' }, { value: 'mastergames', label: 'mastergames' }]
+export const WIDTH_PIPELINE_TYPE = 'w-32'
 
 //
 //  Per-call-site width overrides — same DD item as above, but a tighter table-header layout
@@ -64,15 +66,15 @@ export const WIDTH_HABITS_OPENING = 'w-96'
 //----------------------------------------------------------------------------------
 //  Analysis Pipeline Thresholds
 //----------------------------------------------------------------------------------
-export const MIN_ANALYSIS_MOVE = 4
-export const MOVE_COUNT_MIN_MOVE = 6
-export const MAX_ANALYSIS_MOVE = 16
-export const PURGE_REACH_GRACE_DAYS = 90
-export const MIN_REACH_TO_KEEP = 2
-export const HABITS_MIN_REACH_FLOOR = 2
-export const HABITS_MOVE_CP_CLAMP = 9999
-export const RESULT_MISMATCH_CP_THRESHOLD = 200
-export const POPULAR_POSITION_DEPTH_TIERS: { minReach: number; depth: number }[] = [
+export const MIN_ANALYSIS_MOVE_Player = 4
+export const MOVE_COUNT_MIN_MOVE_Player = 6
+export const MAX_ANALYSIS_MOVE_Player = 16
+export const PURGE_REACH_GRACE_DAYS_Player = 90
+export const MIN_REACH_TO_KEEP_Player = 2
+export const HABITS_MIN_REACH_FLOOR_Player = 2
+export const HABITS_MOVE_CP_CLAMP_Player = 9999
+export const RESULT_MISMATCH_CP_THRESHOLD_Player = 200
+export const POPULAR_POSITION_DEPTH_TIERS_Player: { minReach: number; depth: number }[] = [
   { minReach: 50, depth: 30 },
   { minReach: 30, depth: 24 },
   { minReach: 20, depth: 22 },
@@ -82,27 +84,29 @@ export const POPULAR_POSITION_DEPTH_TIERS: { minReach: number; depth: number }[]
 //----------------------------------------------------------------------------------
 //  Batch / Pagination / Concurrency
 //----------------------------------------------------------------------------------
-export const DEFAULT_BATCH_SIZE = 200
-export const CRON_DEEPEN_POPULAR_BATCH_SIZE = 100
-export const POSITION_INSERT_CHUNK_SIZE = 500
-export const GAMES_ITEMS_PER_PAGE = 25
-export const GAME_LIST_ROWS_DEFAULT = 20
-export const GAME_LIST_ROWS_OPTIONS = [10, 15, 20, 50] as const
+export const DEFAULT_BATCH_SIZE_Player = 200
+export const CRON_DEEPEN_POPULAR_BATCH_SIZE_Player = 100
+export const POSITION_TREE_LIMIT_Player = 3000
+export const POSITION_TREE_LIMIT_Master = 10000
+export const POSITION_INSERT_CHUNK_SIZE_Player = 500
+export const GAMES_ITEMS_PER_PAGE_Player = 25
+export const GAME_LIST_ROWS_DEFAULT_Player = 20
+export const GAME_LIST_ROWS_OPTIONS_Player = [10, 15, 20, 50] as const
 export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const PIPELINE_LOG_ROWS_OPTIONS = [10, 20, 40, 100] as const
-export const HABITS_ITEMS_PER_PAGE = 3
-export const HABITS_ROWS_OPTIONS = [3, 6, 10, 20, 50] as const
-export const POSITION_GAMES_ROWS_DEFAULT = 10
-export const POSITION_GAMES_ROWS_OPTIONS = [10, 15, 20] as const
+export const HABITS_ITEMS_PER_PAGE_Player = 3
+export const HABITS_ROWS_OPTIONS_Player = [3, 6, 10, 20, 50] as const
+export const POSITION_GAMES_ROWS_DEFAULT_Player = 10
+export const POSITION_GAMES_ROWS_OPTIONS_Player = [10, 15, 20] as const
 export const FIDE_TOP_RATING_CUTOFF = 2600
 export const FIDE_STANDARD_RATING_LIST_URL = 'https://ratings.fide.com/download/standard_rating_list_xml.zip'
 export const FIDE_XML_CHUNK_SIZE = 2_000_000
 export const FIDE_XML_READ_BATCH_CHUNKS = 5
-export const GAME_ENDINGS_CONCURRENCY = 4
+export const GAME_ENDINGS_CONCURRENCY_Player = 4
 export const PIPELINE_TYPE_GAMES = 'games'
 export const PIPELINE_TYPE_MASTERS = 'masters'
 export const PIPELINE_TYPE_MASTERGAMES = 'mastergames'
-export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
+export const PIPELINE_CRON_SCHEDULE_Player: Record<number, string> = {
   1: '3:00am',  // Game Sync
   2: '3:20am',  // Build Game Positions
   3: '3:40am',  // Sync Position Tree
@@ -117,7 +121,7 @@ export const PIPELINE_CRON_SCHEDULE: Record<number, string> = {
 //----------------------------------------------------------------------------------
 //  Player Overrides + Helpers
 //----------------------------------------------------------------------------------
-export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
+export const TIME_CLASSES_Player: Record<string, string[]> = {
   stricade: ['blitz'],
   astarrboy: ['blitz', 'rapid']
 }
@@ -126,7 +130,7 @@ export const PLAYER_TIME_CLASSES: Record<string, string[]> = {
 //  getPlayerTimeClasses — per-player allowed time classes, falls back to the global default
 //----------------------------------------------------------------------------------
 export function getPlayerTimeClasses(player: string): string[] {
-  return PLAYER_TIME_CLASSES[player.toLowerCase()] ?? INCLUDED_TIME_CLASSES
+  return TIME_CLASSES_Player[player.toLowerCase()] ?? INCLUDED_TIME_CLASSES_Player
 }
 
 //----------------------------------------------------------------------------------
@@ -149,15 +153,15 @@ export const STOCKFISH_DEPTH_INPUT_MAX = 40
 export const MASTERS_EXPLORER_MOVES_LIMIT = 12
 
 //----------------------------------------------------------------------------------
-//  Master Games (position database — proof of concept)
+//  Master Games (position database)
 //----------------------------------------------------------------------------------
-export const MASTER_INCLUDED_TIME_CLASSES = ['blitz', 'rapid']
-export const MASTER_MIN_ANALYSIS_MOVE = 4
-export const MASTER_MAX_ANALYSIS_MOVE = 16
-export const MASTER_POSITION_INSERT_CHUNK_SIZE = 500
-export const MASTER_GAME_LIST_ROWS_DEFAULT = 20
-export const MASTER_GAME_LIST_ROWS_OPTIONS = [10, 15, 20, 50] as const
-export const MASTER_GAMES_SYNC_YEARS = [2026, 2025, 2024, 2023, 2022, 2021, 2020] as const
+export const INCLUDED_TIME_CLASSES_Master = ['blitz', 'rapid']
+export const MIN_ANALYSIS_MOVE_Master = 4
+export const MAX_ANALYSIS_MOVE_Master = 16
+export const POSITION_INSERT_CHUNK_SIZE_Master = 500
+export const GAME_LIST_ROWS_DEFAULT_Master = 20
+export const GAME_LIST_ROWS_OPTIONS_Master = [10, 15, 20, 50] as const
+export const GAMES_SYNC_YEARS_Master = [2026, 2025, 2024, 2023, 2022, 2021, 2020] as const
 
 //----------------------------------------------------------------------------------
 //  UI Display

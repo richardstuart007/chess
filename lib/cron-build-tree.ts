@@ -3,13 +3,13 @@ import * as path from 'path'
 
 dotenv.config({ path: path.join(process.cwd(), '.env') })
 
-import { buildPositionTree } from '../src/lib/analysis/buildPositionTree'
-import { DEFAULT_BATCH_SIZE } from '../src/lib/constants'
+import { buildPositionTree_Player } from '../src/lib/analysis/buildPositionTree_Player'
+import { POSITION_TREE_LIMIT_Player } from '../src/lib/constants'
 
-console.log('Running buildPositionTree() directly ...')
+console.log('Running buildPositionTree_Player() directly ...')
 
 async function main() {
-  const result = await buildPositionTree({ limit: DEFAULT_BATCH_SIZE, player: undefined, skipSync: true, forceNewRun: false })
+  const result = await buildPositionTree_Player({ limit: POSITION_TREE_LIMIT_Player, player: undefined, skipSync: true, forceNewRun: false })
   console.log(JSON.stringify(result, null, 2))
 }
 

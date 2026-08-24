@@ -21,7 +21,7 @@ import { MyButton } from 'nextjs-shared/MyButton'
 import { getOpeningScores, fetchFilteredGames } from '@/src/lib/actions/games'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
 import {
-  DEFAULT_DATE_FROM, DEFAULT_MIN_GAMES, DEFAULT_FILTER_TERMINATIONS, SESSION_STORAGE_PREFIX,
+  DEFAULT_DATE_FROM_Player, DEFAULT_MIN_GAMES_Player, DEFAULT_FILTER_TERMINATIONS_Player, SESSION_STORAGE_PREFIX,
   WIDTH_MIN_GAMES, WIDTH_SORT_DIRECTION, WIDTH_RESULTS_COUNT, WIDTH_DATE_FROM, WIDTH_GAME_SORT,
   WIDTH_OPPONENT_RATING, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
@@ -82,10 +82,10 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
   //  Date From is also global (shared via URL with every other page that has this filter).
   //  This page has no Filter/Refresh gate at all — every filter already applies instantly — so
   //  dateFrom becomes global the same way, no draft state needed. Absent still defaults to
-  //  DEFAULT_DATE_FROM, matching today's behavior.
+  //  DEFAULT_DATE_FROM_Player, matching today's behavior.
   //
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
-  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
 
   //
   //  Initialized to plain defaults (matching the server render) rather than reading
@@ -95,7 +95,7 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
   //
   const [color, setColor]               = useState<'' | 'white' | 'black'>('')
   const [from, setFrom]                 = useState<'Best' | 'Worst'>('Best')
-  const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES)
+  const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES_Player)
   const [resultsCount, setResultsCount] = useState('20')
   const [data, setData]                 = useState<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]>([])
   const [loading, setLoading]           = useState(false)
@@ -108,7 +108,7 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
   const [sortBy, setSortBy]                         = useState<'date' | 'moves'>('date')
   const [filterColors, setFilterColors]             = useState<string[]>([])
   const [filterResults, setFilterResults]           = useState<string[]>([])
-  const [filterTerminations, setFilterTerminations] = useState<string[]>(DEFAULT_FILTER_TERMINATIONS)
+  const [filterTerminations, setFilterTerminations] = useState<string[]>(DEFAULT_FILTER_TERMINATIONS_Player)
   const [filterRatingMin, setFilterRatingMin]       = useState<string>('')
   const [filterRatingMax, setFilterRatingMax]       = useState<string>('')
   const [hydrated, setHydrated]                     = useState(false)
@@ -117,14 +117,14 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
     const storedColor = sso<string>(`${SESSION_STORAGE_PREFIX}osc-color`, '')
     setColor(storedColor === 'white' || storedColor === 'black' ? storedColor : '')
     setFrom(sso(`${SESSION_STORAGE_PREFIX}osc-from`, 'Best'))
-    setMinGames(sso(`${SESSION_STORAGE_PREFIX}osc-mingames`, DEFAULT_MIN_GAMES))
+    setMinGames(sso(`${SESSION_STORAGE_PREFIX}osc-mingames`, DEFAULT_MIN_GAMES_Player))
     setResultsCount(sso(`${SESSION_STORAGE_PREFIX}osc-results-count`, '20'))
     setSelectedEco(sso(`${SESSION_STORAGE_PREFIX}osc-eco`, null))
     setSelectedName(sso(`${SESSION_STORAGE_PREFIX}osc-name`, ''))
     setSortBy(sso(`${SESSION_STORAGE_PREFIX}osc-sort`, 'date'))
     setFilterColors(sso(`${SESSION_STORAGE_PREFIX}osc-colors`, []))
     setFilterResults(sso(`${SESSION_STORAGE_PREFIX}osc-results`, []))
-    setFilterTerminations(sso(`${SESSION_STORAGE_PREFIX}osc-terminations`, DEFAULT_FILTER_TERMINATIONS))
+    setFilterTerminations(sso(`${SESSION_STORAGE_PREFIX}osc-terminations`, DEFAULT_FILTER_TERMINATIONS_Player))
     setFilterRatingMin(sso(`${SESSION_STORAGE_PREFIX}osc-rating-min`, ''))
     setFilterRatingMax(sso(`${SESSION_STORAGE_PREFIX}osc-rating-max`, ''))
     setHydrated(true)

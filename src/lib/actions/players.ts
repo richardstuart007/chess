@@ -6,7 +6,7 @@ import { table_upsert } from 'nextjs-shared/table_upsert'
 import { table_query }  from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
-import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES } from '../constants'
+import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES_Player } from '../constants'
 
 const TABLE        = 'tpl_players'
 const RATINGS_TABLE = 'tplr_player_ratings'
@@ -89,7 +89,7 @@ export async function getPlayerRatings(player: string): Promise<Record<string, n
 export async function updatePlayerRating(player: string): Promise<void> {
   await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${player}`, 2)
   let updated = 0
-  for (const timeClass of INCLUDED_TIME_CLASSES) {
+  for (const timeClass of INCLUDED_TIME_CLASSES_Player) {
     const result = await table_query({
       caller: 'updatePlayerRating',
       query: `SELECT CASE WHEN gd_player_color = 'white' THEN gd_white_rating ELSE gd_black_rating END AS rating
@@ -111,7 +111,7 @@ export async function updatePlayerRating(player: string): Promise<void> {
       continue
     }
     if (result.data.length > 0) {
-      await upsertPlayerRating(player, timeClass, Number(result.data[0].rating), true, 2, 'D')
+      await upsertPlayerRating(player, timeClass, Number(result.data[0].rating), true, 2, 'I')
       updated++
     }
   }
@@ -120,7 +120,7 @@ export async function updatePlayerRating(player: string): Promise<void> {
 
 //----------------------------------------------------------------------------------
 //  getPlayerLastSyncedEndTime — last successful sync cutoff for a player, used to
-//  resume chess.com downloads independent of tgr_gamesraw's own contents (so that
+//  resume chess.com downloads independent of wk_gr_gamesraw's own contents (so that
 //  table can be archived/truncated without breaking incremental sync)
 //----------------------------------------------------------------------------------
 export async function getPlayerLastSyncedEndTime(player: string): Promise<number | null> {
@@ -151,7 +151,7 @@ export async function getPlayerLastSyncedEndTime(player: string): Promise<number
 //----------------------------------------------------------------------------------
 export async function markPlayerSynced(player: string, endTime: number): Promise<void> {
   await logStart('markPlayerSynced', 'gameSyncPipeline', `stamping sync cutoff for ${player}`, 2)
-  const existing = await getPlayer(player, true, 2, 'D')
+  const existing = await getPlayer(player, true, 2, 'I')
   if (!existing) {
     await logEnd('markPlayerSynced', 'gameSyncPipeline', `${player}: player not found, skipped`, 2)
     return

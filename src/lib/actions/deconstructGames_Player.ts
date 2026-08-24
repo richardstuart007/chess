@@ -7,25 +7,25 @@ import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { logStart, logEnd } from '../logStep'
 import { parsePgnHeaders, parsePgnOpening, countMoves, normalizeTermination } from '../parsePgn'
-import { INCLUDED_TIME_CLASSES, MIN_ANALYSIS_MOVE } from '../constants'
+import { INCLUDED_TIME_CLASSES_Player, MIN_ANALYSIS_MOVE_Player } from '../constants'
 
-const RAW_TABLE = 'tgr_gamesraw'
+const RAW_TABLE = 'wk_gr_gamesraw'
 const DECON_TABLE = 'tgd_gamesdecon'
 const ECO_TABLE = 'tec_ecoreference'
 
 //
 //  A game with fewer half-moves than this can never produce a trackable
-//  position (buildPositionTree's analysis window starts at MIN_ANALYSIS_MOVE)
+//  position (buildPositionTree_Player's analysis window starts at MIN_ANALYSIS_MOVE_Player)
 //  — not a "game" for this app's purposes, so it's never written to tgd_gamesdecon.
 //
-const MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE - 1) * 2
+const MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Player - 1) * 2
 
 //----------------------------------------------------------------------------------
 //  getUndeconstructedCount — count raw games not yet deconstructed for a player
 //----------------------------------------------------------------------------------
 export async function getUndeconstructedCount(
   player: string,
-  timeClasses: string[] = INCLUDED_TIME_CLASSES
+  timeClasses: string[] = INCLUDED_TIME_CLASSES_Player
 ): Promise<number> {
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
   const result = await table_query({
@@ -68,20 +68,20 @@ export async function getDeconstructedCount(player: string): Promise<number> {
 }
 
 //----------------------------------------------------------------------------------
-//  deconstructGames — process raw games into tgd_gamesdecon
+//  deconstructGames_Player — process raw games into tgd_gamesdecon
 //----------------------------------------------------------------------------------
-export async function deconstructGames(
+export async function deconstructGames_Player(
   playerParam: string,
   limit: number,
-  timeClasses: string[] = INCLUDED_TIME_CLASSES
+  timeClasses: string[] = INCLUDED_TIME_CLASSES_Player
 ): Promise<{ processed: number; skipped: number; errors: number }> {
   const player = playerParam.toLowerCase()
-  await logStart('deconstructGames', 'gameSyncPipeline', `deconstructing raw games for ${player}`, 2)
+  await logStart('deconstructGames_Player', 'gameSyncPipeline', `deconstructing raw games for ${player}`, 2)
 
   const limitClause = limit > 0 ? `LIMIT ${limit}` : ''
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
   const rawGamesResult = await table_query({
-    caller: 'deconstructGames',
+    caller: 'deconstructGames_Player',
     query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
     params: [player, ...timeClasses],
     table: RAW_TABLE,
@@ -90,12 +90,12 @@ export async function deconstructGames(
   })
   if (!rawGamesResult.ok) {
     write_logging({
-      lg_functionname: 'deconstructGames',
-      lg_caller: 'deconstructGames',
+      lg_functionname: 'deconstructGames_Player',
+      lg_caller: 'deconstructGames_Player',
       lg_msg: 'Failed to fetch raw games for ' + player + ': ' + rawGamesResult.error,
       lg_severity: 'E'
     })
-    await logEnd('deconstructGames', 'gameSyncPipeline', `failed to fetch raw games: ${rawGamesResult.error}`, 2)
+    await logEnd('deconstructGames_Player', 'gameSyncPipeline', `failed to fetch raw games: ${rawGamesResult.error}`, 2)
     return { processed: 0, skipped: 0, errors: 0 }
   }
   let processed = 0
@@ -133,7 +133,7 @@ export async function deconstructGames(
       else if (opponentSide?.result === 'win') playerResult = 'loss'
 
       await table_write({
-        caller: 'deconstructGames',
+        caller: 'deconstructGames_Player',
         table: DECON_TABLE,
         columnValuePairs: [
           { column: 'gd_white_username', value: whiteUsername },
@@ -168,7 +168,7 @@ export async function deconstructGames(
     } catch (err) {
       console.error(`Error deconstructing game ${row.gr_chesscom_uuid}:`, err)
       await write_logging({
-        lg_functionname: 'deconstructGames',
+        lg_functionname: 'deconstructGames_Player',
         lg_caller: 'gameSyncPipeline',
         lg_msg: `Error deconstructing game ${row.gr_chesscom_uuid}: ` + (err as Error).message,
         lg_severity: 'E'
@@ -177,7 +177,7 @@ export async function deconstructGames(
     }
   }
 
-  await logEnd('deconstructGames', 'gameSyncPipeline', `${processed} ${DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`, 2)
+  await logEnd('deconstructGames_Player', 'gameSyncPipeline', `${processed} ${DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`, 2)
   return { processed, skipped, errors }
 }
 

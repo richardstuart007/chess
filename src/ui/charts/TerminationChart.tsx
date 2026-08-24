@@ -14,7 +14,7 @@ import ColorSelect from '@/src/ui/filters/ColorSelect'
 import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
 import { getTerminationStats } from '@/src/lib/actions/games'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
-import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -54,10 +54,10 @@ export default function TerminationChart({ players }: TerminationChartProps) {
   //  Date From is also global (shared via URL with every other page that has this filter).
   //  This page has no Filter/Refresh gate at all — every filter already applies instantly — so
   //  dateFrom becomes global the same way, no draft state needed. Absent still defaults to
-  //  DEFAULT_DATE_FROM, matching today's behavior.
+  //  DEFAULT_DATE_FROM_Player, matching today's behavior.
   //
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
-  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
 
   //
   //  Initialized to plain defaults (matching the server render) rather than reading

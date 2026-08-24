@@ -26,7 +26,7 @@ import type { Filter, JoinParams } from 'nextjs-shared/structures'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { truncateFen }  from '../fen'
-import { RESULT_MISMATCH_CP_THRESHOLD, MIN_ANALYSIS_MOVE } from '../constants'
+import { RESULT_MISMATCH_CP_THRESHOLD_Player, MIN_ANALYSIS_MOVE_Player } from '../constants'
 
 export interface PositionRow {
   pos_id: number
@@ -263,8 +263,8 @@ function mapPositionGameRow(r: any): PositionGameHit {
     : null
   const resultMismatch: 'lostWinning' | 'wonLosing' | null =
     playerEval == null ? null
-    : (playerResult === 'loss' || playerResult === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD ? 'lostWinning'
-    : playerResult === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD ? 'wonLosing'
+    : (playerResult === 'loss' || playerResult === 'draw') && playerEval >= RESULT_MISMATCH_CP_THRESHOLD_Player ? 'lostWinning'
+    : playerResult === 'win'  && playerEval <= -RESULT_MISMATCH_CP_THRESHOLD_Player ? 'wonLosing'
     : null
   return {
     player:         r.gd_player,
@@ -390,10 +390,10 @@ export async function getEvaluationForPosition(posId: number): Promise<Evaluatio
 //  getOrCreatePosition — look up tpos_positions by FEN; if missing, insert a new row.
 //  pos_color/pos_move_num are derived directly from the FEN's own active-color and
 //  fullmove-counter fields — same "derive from the FEN itself" pattern
-//  buildPositionTree.ts's syncTposFromTgam() already uses for pos_color. Used by
+//  buildPositionTree_Player.ts's syncTposFromTgam_Player() already uses for pos_color. Used by
 //  upgradePositionEvaluation's createIfMissing path to write back evaluations for
-//  positions outside the normal position-tree build range (MIN_ANALYSIS_MOVE..
-//  MAX_ANALYSIS_MOVE) — those rows are exempted from purgeStaleReachOnePositions by
+//  positions outside the normal position-tree build range (MIN_ANALYSIS_MOVE_Player..
+//  MAX_ANALYSIS_MOVE_Player) — those rows are exempted from purgeStaleReachOnePositions by
 //  pos_move_num, since they were never part of the reach-tracked habit system.
 //----------------------------------------------------------------------------------
 async function getOrCreatePosition(truncatedFen: string): Promise<number> {
@@ -502,13 +502,13 @@ export async function upgradePositionEvaluation(data: {
   // header above for the hard constraint on when this may be passed.
   gameContext?: { gdid: number; ply: number; san: string }
 }): Promise<boolean> {
-  // tpose_positions_eval deliberately never caches opening theory (moves 1..MIN_ANALYSIS_MOVE-1) —
+  // tpose_positions_eval deliberately never caches opening theory (moves 1..MIN_ANALYSIS_MOVE_Player-1) —
   // checked here, centrally, so every caller gets this exclusion automatically rather than
   // each write-back site needing to remember it. The FEN's own fullmove-counter field (6th
   // token) is used directly, same "derive from the FEN itself" pattern as pos_color/pos_move_num
   // in getOrCreatePosition.
   const moveNum = parseInt(data.fen.split(' ')[5] ?? '', 10)
-  if (Number.isFinite(moveNum) && moveNum < MIN_ANALYSIS_MOVE) return false
+  if (Number.isFinite(moveNum) && moveNum < MIN_ANALYSIS_MOVE_Player) return false
 
   const truncated = truncateFen(data.fen)
   const posResult = await table_query({

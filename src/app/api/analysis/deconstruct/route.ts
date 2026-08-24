@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { deconstructGames } from '@/src/lib/actions/deconstruct'
+import { deconstructGames_Player } from '@/src/lib/actions/deconstructGames_Player'
 import { getPlayers } from '@/src/lib/actions/players'
 
-// Deconstruct-only route — reads tgr_gamesraw, writes tgd_gamesdecon.
+// Deconstruct-only route — reads wk_gr_gamesraw, writes tgd_gamesdecon.
 // Does NOT sync from chess.com. Safe to run any time.
 // GET /api/analysis/deconstruct                  → all players, all games
 // GET /api/analysis/deconstruct?player=stricade  → one player
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       const acc = { processed: 0, skipped: 0, errors: 0 }
 
       while (true) {
-        const res = await deconstructGames(p.player, batchSize)
+        const res = await deconstructGames_Player(p.player, batchSize)
         acc.processed += res.processed
         acc.skipped   += res.skipped
         acc.errors    += res.errors

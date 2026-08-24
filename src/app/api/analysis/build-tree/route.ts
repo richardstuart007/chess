@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { buildPositionTree } from '@/src/lib/analysis/buildPositionTree'
-import { DEFAULT_BATCH_SIZE } from '@/src/lib/constants'
+import { buildPositionTree_Player } from '@/src/lib/analysis/buildPositionTree_Player'
+import { POSITION_TREE_LIMIT_Player } from '@/src/lib/constants'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const limit    = Number(searchParams.get('limit')   ?? String(DEFAULT_BATCH_SIZE))
+  const limit    = Number(searchParams.get('limit')   ?? String(POSITION_TREE_LIMIT_Player))
   const player   = searchParams.get('player')   ?? undefined
   const skipSync = searchParams.get('skipSync') === 'true'
   const forceNewRun = searchParams.get('newRun') === 'true'
 
   try {
-    const result = await buildPositionTree({ limit, player, skipSync, forceNewRun })
+    const result = await buildPositionTree_Player({ limit, player, skipSync, forceNewRun })
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('build-tree route error', err)

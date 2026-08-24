@@ -8,7 +8,7 @@ import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { logStart, logEnd } from '../logStep'
-import { MIN_REACH_TO_KEEP, DEFAULT_BATCH_SIZE, GAME_ENDINGS_CONCURRENCY, POSITION_INSERT_CHUNK_SIZE, POPULAR_POSITION_DEPTH_TIERS, PIPELINE_TYPE_GAMES } from '../constants'
+import { MIN_REACH_TO_KEEP_Player, DEFAULT_BATCH_SIZE_Player, GAME_ENDINGS_CONCURRENCY_Player, POSITION_INSERT_CHUNK_SIZE_Player, POPULAR_POSITION_DEPTH_TIERS_Player, PIPELINE_TYPE_GAMES } from '../constants'
 import { truncateFen } from '../fen'
 
 //----------------------------------------------------------------------------------
@@ -139,7 +139,7 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
     query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
       LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
       WHERE e.pose_pos_id IS NULL
-        AND p.pos_reached > ${MIN_REACH_TO_KEEP}`,
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player}`,
     params: [],
     level,
     severity: 'I',
@@ -172,7 +172,7 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
       FROM tgam_game_positions gp
       JOIN tpos_positions p ON p.pos_id = gp.gam_resulting_pos_id
       WHERE gp.gam_resulting_pos_id IS NOT NULL
-        AND p.pos_reached > ${MIN_REACH_TO_KEEP}
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player}
         AND NOT EXISTS (
           SELECT 1 FROM tpose_positions_eval WHERE pose_pos_id = gp.gam_resulting_pos_id
         )
@@ -274,7 +274,7 @@ export async function enrichPositionsStockfish(opts: {
       FROM tpos_positions p
       LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
       WHERE e.pose_pos_id IS NULL
-        AND p.pos_reached > ${MIN_REACH_TO_KEEP}
+        AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player}
       ORDER BY p.pos_reached DESC
       ${limit > 0 ? `LIMIT $${posParams.length}` : ''}
     `,
@@ -357,21 +357,21 @@ export async function enrichPositionsStockfish(opts: {
 
 //----------------------------------------------------------------------------------
 //  popularPositionTierSql — builds the shared CASE expression + lowest reach
-//  threshold from POPULAR_POSITION_DEPTH_TIERS, so the backlog-count query
+//  threshold from POPULAR_POSITION_DEPTH_TIERS_Player, so the backlog-count query
 //  (pipelineStatus.ts) and the actual batch (deepenPopularPositions below)
 //  can never drift out of sync with each other or with the constant.
 //----------------------------------------------------------------------------------
 function popularPositionTierSql(): { caseSql: string; lowestMinReach: number } {
-  const caseSql = POPULAR_POSITION_DEPTH_TIERS
+  const caseSql = POPULAR_POSITION_DEPTH_TIERS_Player
     .map(t => `WHEN p.pos_reached >= ${t.minReach} THEN ${t.depth}`)
     .join('\n            ')
-  const lowestMinReach = POPULAR_POSITION_DEPTH_TIERS[POPULAR_POSITION_DEPTH_TIERS.length - 1].minReach
+  const lowestMinReach = POPULAR_POSITION_DEPTH_TIERS_Player[POPULAR_POSITION_DEPTH_TIERS_Player.length - 1].minReach
   return { caseSql, lowestMinReach }
 }
 
 //----------------------------------------------------------------------------------
 //  deepenPopularPositions — re-evaluates already-evaluated positions at a deeper
-//  depth when their pos_reached qualifies for a higher POPULAR_POSITION_DEPTH_TIERS
+//  depth when their pos_reached qualifies for a higher POPULAR_POSITION_DEPTH_TIERS_Player
 //  tier than their current tpose_positions_eval.pose_depth. Reuses
 //  upgradePositionEvaluation's existing depth-guard, gam_cp_change cascade, and
 //  cache-clear — this function only selects which positions qualify and at what
@@ -384,7 +384,7 @@ export async function deepenPopularPositions(opts: {
 }): Promise<{ processed: number; errors: number; remaining: number }> {
   const binPath = process.env.STOCKFISH_PATH ?? ''
 
-  const limit = opts.limit ?? DEFAULT_BATCH_SIZE
+  const limit = opts.limit ?? DEFAULT_BATCH_SIZE_Player
   const level = opts.level ?? 1
 
   await logStart('deepenPopularPositions', 'deepenPopularPositionsRoute', `deepening popular positions, limit ${limit}`, level)
@@ -515,14 +515,14 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
 
 //----------------------------------------------------------------------------------
 //  countRemainingPopularPositionsByTier — same backlog as countRemainingPopularPositions
-//  above, broken out per POPULAR_POSITION_DEPTH_TIERS entry instead of summed into one
+//  above, broken out per POPULAR_POSITION_DEPTH_TIERS_Player entry instead of summed into one
 //  number, so the UI can show which tiers still have work outstanding. Built dynamically
 //  from the constant (one FILTER per tier) so it can never drift from the tiers the
 //  batch itself uses.
 //----------------------------------------------------------------------------------
 export async function countRemainingPopularPositionsByTier(level: number = 1): Promise<{ depth: number; remaining: number }[]> {
   const { caseSql, lowestMinReach } = popularPositionTierSql()
-  const filterSql = POPULAR_POSITION_DEPTH_TIERS
+  const filterSql = POPULAR_POSITION_DEPTH_TIERS_Player
     .map(t => `COUNT(*) FILTER (WHERE sub.target_depth = ${t.depth}) AS d${t.depth}`)
     .join(',\n        ')
   const rows = await table_query({
@@ -554,10 +554,10 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
       lg_msg: 'Failed to count remaining popular positions by tier: ' + rows.error,
       lg_severity: 'E'
     })
-    return POPULAR_POSITION_DEPTH_TIERS.map(t => ({ depth: t.depth, remaining: 0 }))
+    return POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({ depth: t.depth, remaining: 0 }))
   }
   const r = rows.data[0] ?? {}
-  return POPULAR_POSITION_DEPTH_TIERS.map(t => ({
+  return POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({
     depth: t.depth,
     remaining: parseInt(r[`d${t.depth}`] ?? '0')
   }))
@@ -567,8 +567,8 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
 //  getGamesNeedingFinalEval — games whose actual final position hasn't been evaluated
 //  yet, latest games first. Independent of the position-tree pipeline (tpos_positions /
 //  tgam_game_positions) entirely — reads/writes tgd_gamesdecon directly, since the
-//  final position of most games falls well past MAX_ANALYSIS_MOVE, the position tree's
-//  own tracking ceiling. No gd_pgn IS NULL check needed — deconstructGames() already
+//  final position of most games falls well past MAX_ANALYSIS_MOVE_Player, the position tree's
+//  own tracking ceiling. No gd_pgn IS NULL check needed — deconstructGames_Player() already
 //  skips any raw game with no PGN before it's ever written to tgd_gamesdecon.
 //----------------------------------------------------------------------------------
 async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{ gdid: number; pgn: string }[]> {
@@ -660,9 +660,9 @@ export async function evaluateGameEndings(opts: {
   const binPath = process.env.STOCKFISH_PATH ?? ''
 
   const depth       = opts.depth ?? 16
-  const limit       = opts.limit ?? DEFAULT_BATCH_SIZE
+  const limit       = opts.limit ?? DEFAULT_BATCH_SIZE_Player
   const level       = opts.level ?? 1
-  const concurrency = binPath ? GAME_ENDINGS_CONCURRENCY : 1
+  const concurrency = binPath ? GAME_ENDINGS_CONCURRENCY_Player : 1
 
   await logStart('evaluateGameEndings', 'evaluateGameEndingsRoute', `evaluating game endings at depth ${depth}`, level)
   const t0 = Date.now()
@@ -711,10 +711,10 @@ export async function evaluateGameEndings(opts: {
   }
 
   // Phase 1c — one batched, chunked multi-row UPDATE for every reuse match, instead of
-  // one UPDATE per game (mirrors insertGamePositions' chunked bulk-write pattern)
+  // one UPDATE per game (mirrors insertGamePositions_Player' chunked bulk-write pattern)
   let reused = 0
-  for (let start = 0; start < reuseUpdates.length; start += POSITION_INSERT_CHUNK_SIZE) {
-    const chunk = reuseUpdates.slice(start, start + POSITION_INSERT_CHUNK_SIZE)
+  for (let start = 0; start < reuseUpdates.length; start += POSITION_INSERT_CHUNK_SIZE_Player) {
+    const chunk = reuseUpdates.slice(start, start + POSITION_INSERT_CHUNK_SIZE_Player)
     const params: number[] = []
     const valueRows = chunk.map(u => {
       params.push(u.gdid, u.cp)

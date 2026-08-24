@@ -12,7 +12,7 @@ import { getPlayers } from '@/src/lib/actions/players'
 import { runGameSync } from '@/src/lib/actions/sync'
 import { refreshStep1, refreshStep3, refreshTposStatus, refreshStep4, refreshCpChangeStatus, refreshPurgeStatus, refreshHabitsStatus, refreshGameEndingsStatus, refreshDeepenPopularStatus } from '@/src/lib/actions/pipelineStatus'
 import { getPipelineRates, getLatestPipelineRuns, getRecentRunIds } from '@/src/lib/actions/pipelineLog'
-import { DEFAULT_BATCH_SIZE, MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, STOCKFISH_DEPTH, PIPELINE_CRON_SCHEDULE, PIPELINE_TYPE_GAMES } from '@/src/lib/constants'
+import { DEFAULT_BATCH_SIZE_Player, MIN_REACH_TO_KEEP_Player, PURGE_REACH_GRACE_DAYS_Player, MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player, STOCKFISH_DEPTH, PIPELINE_CRON_SCHEDULE_Player, PIPELINE_TYPE_GAMES } from '@/src/lib/constants'
 
 type LatestRun = {
   pip_step:         number
@@ -31,7 +31,7 @@ type LatestRun = {
 //  Job group order matches the scheduled cron order in vercel.json (3:00am-5:00am, 20min apart). Each group
 //  is one scheduled/schedulable macro step; its subJobs are the individual table-writes
 //  within it, run together and sharing one pip_run_id. Display schedule times come from
-//  PIPELINE_CRON_SCHEDULE, not a copy hardcoded here.
+//  PIPELINE_CRON_SCHEDULE_Player, not a copy hardcoded here.
 //
 const JOB_GROUPS: {
   step: number
@@ -87,7 +87,7 @@ function eta(remaining: number | undefined, msPerItem: number | null): string {
 }
 
 const SQL_STATUS_1 =
-`SELECT COUNT(*) AS pending FROM tgr_gamesraw r
+`SELECT COUNT(*) AS pending FROM wk_gr_gamesraw r
 WHERE NOT EXISTS (
   SELECT 1 FROM tgd_gamesdecon d
   WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
@@ -107,7 +107,7 @@ const SQL_STATUS_3B =
 const SQL_STATUS_4 =
 `SELECT COUNT(*) AS remaining FROM tpos_positions p
 LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP};`
+WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player};`
 
 const SQL_STATUS_CP =
 `SELECT COUNT(*) AS pending
@@ -115,7 +115,7 @@ FROM tgam_game_positions gp
 JOIN tpos_positions pb ON pb.pos_id = gp.gam_pos_id
 JOIN tpos_positions pa ON pa.pos_id = gp.gam_resulting_pos_id
 WHERE gp.gam_cp_change IS NULL
-  AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP};`
+  AND pb.pos_reached > ${MIN_REACH_TO_KEEP_Player} AND pa.pos_reached > ${MIN_REACH_TO_KEEP_Player};`
 
 const SQL_STATUS_HABITS =
 `WITH candidates AS (
@@ -123,10 +123,10 @@ const SQL_STATUS_HABITS =
   FROM tgam_game_positions gp
   JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
   JOIN tpos_positions p ON p.pos_id = gp.gam_pos_id
-  WHERE gp.gam_move_num >= ${MIN_ANALYSIS_MOVE}
+  WHERE gp.gam_move_num >= ${MIN_ANALYSIS_MOVE_Player}
     AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
   GROUP BY d.gd_player, gp.gam_pos_id, gp.gam_move_played
-  HAVING COUNT(*) >= ${HABITS_MIN_REACH_FLOOR}
+  HAVING COUNT(*) >= ${HABITS_MIN_REACH_FLOOR_Player}
 )
 SELECT
   (SELECT COUNT(*) FROM thab_habits) AS total,
@@ -161,20 +161,20 @@ ORDER BY MIN(p.pos_reached) DESC;`
 const SQL_STATUS_PURGE =
 `SELECT COUNT(*) AS eligible
 FROM tpos_positions p
-WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
+WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP_Player}
   AND NOT EXISTS (
     SELECT 1
     FROM tgam_game_positions g
     JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
     WHERE g.gam_pos_id = p.pos_id
-      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS_Player} days'))::integer
   )
   AND NOT EXISTS (
     SELECT 1
     FROM tgam_game_positions g
     JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
     WHERE g.gam_resulting_pos_id = p.pos_id
-      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+      AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS_Player} days'))::integer
   );`
 
 function StatusBadge({ complete }: { complete: boolean | null }) {
@@ -193,7 +193,7 @@ export default function PipelinePage() {
 
   // ── Global parameters (shared by all steps) ────────────────────────────────
   const [globalDepth,     setGlobalDepth]     = useState(STOCKFISH_DEPTH)
-  const [globalBatchSize, setGlobalBatchSize] = useState(DEFAULT_BATCH_SIZE)
+  const [globalBatchSize, setGlobalBatchSize] = useState(DEFAULT_BATCH_SIZE_Player)
 
   // ── Per-step status state ──────────────────────────────────────────────────
   const [s1, setS1] = useState<{ pending: number; allDecon: number } | null>(null)
@@ -575,7 +575,7 @@ export default function PipelinePage() {
                     <td className='px-2 py-1 text-center text-gray-800'>{group.step}</td>
                     <td className='px-2 py-1 text-center text-gray-800'></td>
                     <td className='px-2 py-1 text-gray-800'>{group.groupLabel}</td>
-                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE[group.step]}</td>
+                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE_Player[group.step]}</td>
                     <td className='px-2 py-1 text-gray-500'>{run ? new Date(run.pip_created).toLocaleString() : '—'}</td>
                     <td className='px-2 py-1 text-gray-500'>{run ? run.pip_input_table : '—'}</td>
                     <td className='px-2 py-1 text-right'>{run ? run.pip_input_recs.toLocaleString() : '—'}</td>
@@ -592,7 +592,7 @@ export default function PipelinePage() {
                     <td className='px-2 py-1 text-center text-gray-800'>{group.step}</td>
                     <td className='px-2 py-1'></td>
                     <td className='px-2 py-1 text-gray-800'>{group.groupLabel}</td>
-                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE[group.step]}</td>
+                    <td className='px-2 py-1 text-gray-500'>{PIPELINE_CRON_SCHEDULE_Player[group.step]}</td>
                     <td className='px-2 py-1' colSpan={7}></td>
                   </tr>
                   {group.subJobs.map(subJob => {
@@ -667,14 +667,14 @@ export default function PipelinePage() {
                   <MyHelpStep
                     title='1. Game Sync — All Players'
                     input={['chess.com REST API — https://api.chess.com/pub/player/{username}/games/{year}/{month}']}
-                    processing="Downloads all new games from chess.com for every registered player. For each new game, inserts a raw record into tgr_gamesraw (full PGN + complete JSON response), then deconstructs it into tgd_gamesdecon, extracting opening name, ECO code, result, player and opponent ratings, time class and termination type. Updates each player's latest rating per time class in tplr_player_ratings. Skips games already in the database."
+                    processing="Downloads all new games from chess.com for every registered player. For each new game, inserts a raw record into wk_gr_gamesraw (full PGN + complete JSON response), then deconstructs it into tgd_gamesdecon, extracting opening name, ECO code, result, player and opponent ratings, time class and termination type. Updates each player's latest rating per time class in tplr_player_ratings. Skips games already in the database."
                     output={[
-                      'tgr_gamesraw — one row per game per player: raw PGN and complete JSON response from chess.com',
+                      'wk_gr_gamesraw — one row per game per player: raw PGN and complete JSON response from chess.com',
                       'tgd_gamesdecon — parsed game fields: opening name, ECO code, result, player / opponent ratings, time class, termination',
                       'tplr_player_ratings — latest rating per player per time class',
                     ]}
                     consumers={[
-                      'tgd_gamesdecon → Step 2 Build Position Tree (buildPositionTree), and analysis filters (opening, ECO, time class)',
+                      'tgd_gamesdecon → Step 2 Build Position Tree (buildPositionTree_Player), and analysis filters (opening, ECO, time class)',
                       'tplr_player_ratings → player rating lookups',
                     ]}
                   />
@@ -711,7 +711,7 @@ export default function PipelinePage() {
                       'tgam_game_positions — per-player, per-game record: position FEN, move played (SAN + UCI), resulting FEN, move number',
                     ]}
                     consumers={[
-                      'Step 2b Sync Position Tree (syncTposFromTgam) — derives tpos_positions from these rows',
+                      'Step 2b Sync Position Tree (syncTposFromTgam_Player) — derives tpos_positions from these rows',
                     ]}
                   />
                 </td>
@@ -743,7 +743,7 @@ export default function PipelinePage() {
                   <MyHelpStep
                     title='3. Sync Position Tree (tpos)'
                     input={['tgam_game_positions — rows with gam_pos_id / gam_resulting_pos_id still NULL']}
-                    processing='Idempotent derivation of tpos_positions from tgam_game_positions (syncTposFromTgam): inserts any tpos_positions row still missing for a referenced FEN, backfills gam_pos_id/gam_resulting_pos_id by FEN match, then recomputes pos_reached only for positions just touched. Safe to re-run any time — self-scoping via the NULL markers, never rescans already-resolved rows.'
+                    processing='Idempotent derivation of tpos_positions from tgam_game_positions (syncTposFromTgam_Player): inserts any tpos_positions row still missing for a referenced FEN, backfills gam_pos_id/gam_resulting_pos_id by FEN match, then recomputes pos_reached only for positions just touched. Safe to re-run any time — self-scoping via the NULL markers, never rescans already-resolved rows.'
                     output={[
                       'tpos_positions — unique FEN positions, with pos_reached',
                       'tgam_game_positions.gam_pos_id / gam_resulting_pos_id — backfilled',
@@ -780,7 +780,7 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='4. Purge Stale Positions'
-                    input={['tpos_positions — pos_reached <= MIN_REACH_TO_KEEP, all occurrences older than PURGE_REACH_GRACE_DAYS']}
+                    input={['tpos_positions — pos_reached <= MIN_REACH_TO_KEEP_Player, all occurrences older than PURGE_REACH_GRACE_DAYS_Player']}
                     processing='Deletes low-value positions once they age past the grace period without repeating: tpose_positions_eval, then tgam_game_positions rows whose own before-position is a candidate (full delete) or whose resulting-position is a candidate (just nulls that reference, keeps the row), then tpos_positions itself. Stamps tgd_gamesdecon.gd_positions_purged on any game left with zero tgam rows — resurrection guard so Build Game Positions never reprocesses a purged game. Runs before Evaluate Positions so Stockfish time is never spent on positions about to be deleted. Also runs unattended via its own scheduled cron (/api/analysis/purge). Deliberate exception to the "no destructive SQL in automation" rule — see .claude/CLAUDE.md.'
                     output={[
                       'tpose_positions_eval / tgam_game_positions / tpos_positions — rows removed',
@@ -817,8 +817,8 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='5. Evaluate Positions'
-                    input={['tpos_positions — unique FEN positions not yet in tpose_positions_eval, pos_reached > MIN_REACH_TO_KEEP']}
-                    processing="Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP (they're purge candidates, so evaluating them risks wasted work). Normalises the centipawn score to white's perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions across all history get evaluated first regardless of when they occurred. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-positions). Uses the native Stockfish binary on the server (faster than browser WASM, no tab required)."
+                    input={['tpos_positions — unique FEN positions not yet in tpose_positions_eval, pos_reached > MIN_REACH_TO_KEEP_Player']}
+                    processing="Evaluates each unique board position from the tree with Stockfish, skipping positions with pos_reached <= MIN_REACH_TO_KEEP_Player (they're purge candidates, so evaluating them risks wasted work). Normalises the centipawn score to white's perspective and records the best move. Date-independent — always ordered by pos_reached DESC, so the most commonly reached positions across all history get evaluated first regardless of when they occurred. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-positions). Uses the native Stockfish binary on the server (faster than browser WASM, no tab required)."
                     output={['tpose_positions_eval — one row per position: centipawn score (white perspective), best move (UCI notation), search depth']}
                     consumers={[
                       'Habits / Quiz pages — use CP scores and best moves for drill data',
@@ -886,8 +886,8 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='7. Build Habits'
-                    input={['tgam_game_positions joined to tgd_gamesdecon — every tracked-player move at move_num >= MIN_ANALYSIS_MOVE']}
-                    processing="Full recompute every run, not incremental — a habit's move_cp can change as new games arrive for a move already in the table, so there is no safe 'already processed' cursor the way row-insertion steps have one. Aggregates by (player, position, move played), keeping only moves reached HABITS_MIN_REACH_FLOOR+ times whose largest-magnitude occurrence is a negative CP change, then upserts into thab_habits keyed on (player, position, move). move_cp is that single largest-magnitude occurrence (sign kept), not an average. The upsert never touches hab_dismissed, so a habit dismissed on the Habits page stays dismissed across every future rebuild even as its stats keep refreshing. Also runs unattended via its own scheduled cron (/api/analysis/build-habits)."
+                    input={['tgam_game_positions joined to tgd_gamesdecon — every tracked-player move at move_num >= MIN_ANALYSIS_MOVE_Player']}
+                    processing="Full recompute every run, not incremental — a habit's move_cp can change as new games arrive for a move already in the table, so there is no safe 'already processed' cursor the way row-insertion steps have one. Aggregates by (player, position, move played), keeping only moves reached HABITS_MIN_REACH_FLOOR_Player+ times whose largest-magnitude occurrence is a negative CP change, then upserts into thab_habits keyed on (player, position, move). move_cp is that single largest-magnitude occurrence (sign kept), not an average. The upsert never touches hab_dismissed, so a habit dismissed on the Habits page stays dismissed across every future rebuild even as its stats keep refreshing. Also runs unattended via its own scheduled cron (/api/analysis/build-habits)."
                     output={['thab_habits — one row per player/position/move habit: times played, wins, losses, worst-occurrence CP change, dismissed flag']}
                     consumers={[
                       'Habits page (getHabitsData/getHabitsCount) — reads thab_habits directly instead of live-aggregating on every request',
@@ -921,7 +921,7 @@ export default function PipelinePage() {
                   <MyHelpStep
                     title='8. Evaluate Game Endings'
                     input={['tgd_gamesdecon — games with a PGN whose gd_final_eval is still NULL']}
-                    processing="Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE — then evaluates it with Stockfish and normalizes to white's perspective. Independent of tpos_positions/tgam_game_positions entirely: reads and writes tgd_gamesdecon directly. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings)."
+                    processing="Replays each game's full PGN with chess.js to its true final position — not capped like the position-tree pipeline, which stops at MAX_ANALYSIS_MOVE_Player — then evaluates it with Stockfish and normalizes to white's perspective. Independent of tpos_positions/tgam_game_positions entirely: reads and writes tgd_gamesdecon directly. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/evaluate-game-endings)."
                     output={['tgd_gamesdecon.gd_final_eval — Stockfish evaluation (white perspective) of each game\'s actual final position']}
                     consumers={[
                       'Analyze page — "Games From This Position" panel\'s Final Eval column',
@@ -955,7 +955,7 @@ export default function PipelinePage() {
                 <td className='py-1 pr-2'>
                   <MyHelpStep
                     title='9. Deepen Popular Positions'
-                    input={['tpos_positions/tpose_positions_eval — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS tier than their current pose_depth']}
+                    input={['tpos_positions/tpose_positions_eval — already-evaluated positions whose pos_reached qualifies for a deeper POPULAR_POSITION_DEPTH_TIERS_Player tier than their current pose_depth']}
                     processing="Popular positions (reached often) get re-evaluated at a greater depth than the default batch depth, in tiers: reach >= 50 -> depth 30, >= 30 -> depth 24, >= 20 -> depth 22, >= 10 -> depth 20. Each qualifying position is re-evaluated at its own tier's depth (not one uniform depth for the whole batch), then merged via upgradePositionEvaluation — the same guarded upgrade (only if deeper) and gam_cp_change cascade used by the Analyze page's Game/Position Analysis. Run in batches; repeat until remaining = 0. Also runs unattended via its own scheduled cron (/api/analysis/deepen-popular-positions)."
                     output={['tpose_positions_eval — pose_cp/pose_best_move/pose_depth upgraded for qualifying positions; tgam_game_positions.gam_cp_change recomputed for affected rows']}
                     consumers={[

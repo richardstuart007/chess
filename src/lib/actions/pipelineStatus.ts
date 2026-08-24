@@ -2,7 +2,7 @@
 
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
-import { MIN_REACH_TO_KEEP, PURGE_REACH_GRACE_DAYS, MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR } from '../constants'
+import { MIN_REACH_TO_KEEP_Player, PURGE_REACH_GRACE_DAYS_Player, MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player } from '../constants'
 import { countRemainingPopularPositionsByTier } from '../analysis/enrichPositionsStockfish'
 
 //----------------------------------------------------------------------------------
@@ -28,10 +28,10 @@ const EMPTY_PIPELINE_STATUS: PipelineStatus = {
 export async function getPipelineStatus(): Promise<PipelineStatus> {
   const queryResult = await table_query({
     caller: 'getPipelineStatus',
-    table: 'tgr_gamesraw',
+    table: 'wk_gr_gamesraw',
     query: `
       SELECT
-        (SELECT COUNT(*) FROM tgr_gamesraw r
+        (SELECT COUNT(*) FROM wk_gr_gamesraw r
          WHERE NOT EXISTS (
            SELECT 1 FROM tgd_gamesdecon d
            WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
@@ -89,9 +89,9 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
   const queryResult = await table_query({
-    caller: 'refreshStep1', table: 'tgr_gamesraw', params: [], skipCache: true,
+    caller: 'refreshStep1', table: 'wk_gr_gamesraw', params: [], skipCache: true,
     query: `SELECT
-      (SELECT COUNT(*) FROM tgr_gamesraw r
+      (SELECT COUNT(*) FROM wk_gr_gamesraw r
        WHERE NOT EXISTS (
          SELECT 1 FROM tgd_gamesdecon d
          WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
@@ -170,7 +170,7 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
       (SELECT COUNT(*) FROM tpose_positions_eval)                                      AS evaluated,
       (SELECT COUNT(*) FROM tpos_positions p
        LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-       WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP})               AS remaining`
+       WHERE e.pose_pos_id IS NULL AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player})               AS remaining`
   })
   if (!queryResult.ok) {
     write_logging({
@@ -197,7 +197,7 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
       JOIN tpos_positions pb ON pb.pos_id = gp.gam_pos_id
       JOIN tpos_positions pa ON pa.pos_id = gp.gam_resulting_pos_id
       WHERE gp.gam_cp_change IS NULL
-        AND pb.pos_reached > ${MIN_REACH_TO_KEEP} AND pa.pos_reached > ${MIN_REACH_TO_KEEP}`
+        AND pb.pos_reached > ${MIN_REACH_TO_KEEP_Player} AND pa.pos_reached > ${MIN_REACH_TO_KEEP_Player}`
   })
   if (!queryResult.ok) {
     write_logging({
@@ -220,7 +220,7 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  would actually purge: naive reach/age candidates. No refinement needed — the purge
 //  itself no longer excludes candidates based on cross-references, it nulls out the
 //  dangling reference instead (see purgePositions.ts). Read-only — does not touch
-//  tpur_workfile, which stays a snapshot of the last actual purge run.
+//  wk_pur_workfile, which stays a snapshot of the last actual purge run.
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 //  refreshHabitsStatus — total/dismissed row counts for thab_habits, plus a genuine
@@ -232,7 +232,7 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //----------------------------------------------------------------------------------
 export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number; remaining: number }> {
   const queryResult = await table_query({
-    caller: 'refreshHabitsStatus', table: 'tgam_game_positions', params: [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR], skipCache: true,
+    caller: 'refreshHabitsStatus', table: 'tgam_game_positions', params: [MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player], skipCache: true,
     query: `
       WITH candidates AS (
         SELECT d.gd_player AS player, gp.gam_pos_id AS pos_id, gp.gam_move_played AS move_san
@@ -302,7 +302,7 @@ export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; r
 //----------------------------------------------------------------------------------
 //  refreshDeepenPopularStatus — per-tier backlog breakdown for the Deepen Popular
 //  Positions step, delegating to the same tiered subquery the batch itself uses
-//  (single source of truth for the POPULAR_POSITION_DEPTH_TIERS-based WHERE clause).
+//  (single source of truth for the POPULAR_POSITION_DEPTH_TIERS_Player-based WHERE clause).
 //----------------------------------------------------------------------------------
 export async function refreshDeepenPopularStatus(): Promise<{ tiers: { depth: number; remaining: number }[] }> {
   const tiers = await countRemainingPopularPositionsByTier()
@@ -314,20 +314,20 @@ export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
     caller: 'refreshPurgeStatus_find', table: 'tpos_positions', params: [], skipCache: true,
     query: `SELECT COUNT(*) AS cnt
       FROM tpos_positions p
-      WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP}
+      WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP_Player}
         AND NOT EXISTS (
           SELECT 1
           FROM tgam_game_positions g
           JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
           WHERE g.gam_pos_id = p.pos_id
-            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS_Player} days'))::integer
         )
         AND NOT EXISTS (
           SELECT 1
           FROM tgam_game_positions g
           JOIN tgd_gamesdecon d ON d.gd_gdid = g.gam_gdid
           WHERE g.gam_resulting_pos_id = p.pos_id
-            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS} days'))::integer
+            AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS_Player} days'))::integer
         )`
   })
   if (!candidatesRes.ok) {

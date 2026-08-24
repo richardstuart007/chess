@@ -37,8 +37,8 @@ function n(val: number | undefined): string {
   return val === undefined ? '—' : val.toLocaleString()
 }
 
-const SQL_STATUS_ZIP = `SELECT COALESCE(octet_length(fzp_data), 0) AS bytes FROM tfzp_fide_zip LIMIT 1;`
-const SQL_STATUS_XML = `SELECT COUNT(*) AS chunks, COALESCE(SUM(LENGTH(fxm_data)), 0) AS chars FROM tfxm_fide_xml;`
+const SQL_STATUS_ZIP = `SELECT COALESCE(octet_length(fzp_data), 0) AS bytes FROM wk_fzp_fide_zip LIMIT 1;`
+const SQL_STATUS_XML = `SELECT COUNT(*) AS chunks, COALESCE(SUM(LENGTH(fxm_data)), 0) AS chars FROM wk_fxm_fide_xml;`
 const SQL_STATUS_PARSED = `SELECT COUNT(*) AS players FROM tfpl_fide_players;`
 const SQL_STATUS_TAGGED = `SELECT COUNT(*) AS tagged FROM tmst_master_players WHERE mst_fideid IS NOT NULL;`
 
@@ -316,8 +316,8 @@ export default function PipelineMastersPage() {
                 <MyHelpStep
                   title='1. Download FIDE Zip'
                   input={["FIDE's monthly standard rating list zip (external download)"]}
-                  processing='Downloads the zipped standard rating list and stores the raw bytes in tfzp_fide_zip (single row, truncated and refilled every run). A separate, independently re-runnable stage — nothing further down the pipeline needs to re-download if it fails.'
-                  output={['tfzp_fide_zip.fzp_data — the raw downloaded zip bytes']}
+                  processing='Downloads the zipped standard rating list and stores the raw bytes in wk_fzp_fide_zip (single row, truncated and refilled every run). A separate, independently re-runnable stage — nothing further down the pipeline needs to re-download if it fails.'
+                  output={['wk_fzp_fide_zip.fzp_data — the raw downloaded zip bytes']}
                   consumers={['Step 11 Unzip FIDE File']}
                 />
               </td>
@@ -342,9 +342,9 @@ export default function PipelineMastersPage() {
               <td className='py-1 pr-2'>
                 <MyHelpStep
                   title='2. Unzip FIDE File'
-                  input={['tfzp_fide_zip — the zip staged by step 10']}
-                  processing={`Decompresses the single entry and writes the decompressed text into tfxm_fide_xml in ${FIDE_XML_CHUNK_SIZE.toLocaleString()}-character chunks (a StringDecoder is used so a multi-byte UTF-8 character split across two incoming stream chunks is never corrupted). Chunked storage keeps both this stage's writes and step 12's reads bounded to roughly one chunk in memory at a time, rather than the full ~158MB file.`}
-                  output={['tfxm_fide_xml — decompressed XML text, one row per chunk (fxm_seq, fxm_data)']}
+                  input={['wk_fzp_fide_zip — the zip staged by step 10']}
+                  processing={`Decompresses the single entry and writes the decompressed text into wk_fxm_fide_xml in ${FIDE_XML_CHUNK_SIZE.toLocaleString()}-character chunks (a StringDecoder is used so a multi-byte UTF-8 character split across two incoming stream chunks is never corrupted). Chunked storage keeps both this stage's writes and step 12's reads bounded to roughly one chunk in memory at a time, rather than the full ~158MB file.`}
+                  output={['wk_fxm_fide_xml — decompressed XML text, one row per chunk (fxm_seq, fxm_data)']}
                   consumers={['Step 12 Parse FIDE XML']}
                 />
               </td>
@@ -369,7 +369,7 @@ export default function PipelineMastersPage() {
               <td className='py-1 pr-2'>
                 <MyHelpStep
                   title='3. Parse FIDE XML'
-                  input={['tfxm_fide_xml — chunks staged by step 11']}
+                  input={['wk_fxm_fide_xml — chunks staged by step 11']}
                   processing={`Reads the chunks back in ordered batches (never one giant SELECT of every chunk), feeding each into a streaming SAX parser as it arrives, and batch-inserts every qualifying player into tfpl_fide_players (truncated and fully repopulated every run) — filtered at this stage to active players rated >= ${FIDE_TOP_RATING_CUTOFF} (not the full ~562K-player FIDE list), so a player who later drops below the cutoff simply stops being refreshable by step 14.`}
                   output={['tfpl_fide_players — one row per qualifying FIDE player: fideid, first/last name, rating']}
                   consumers={['Step 13 Populate FIDE Top Players', 'Step 14 Refresh FIDE Ratings']}

@@ -4,13 +4,13 @@ import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 
 //----------------------------------------------------------------------------------
-//  refreshFideZipStatus — size of the zip currently staged in tfzp_fide_zip (stage
+//  refreshFideZipStatus — size of the zip currently staged in wk_fzp_fide_zip (stage
 //  1's own output), for its status row on /owner/pipelinemasters.
 //----------------------------------------------------------------------------------
 export async function refreshFideZipStatus(): Promise<{ bytes: number }> {
   const result = await table_query({
-    caller: 'refreshFideZipStatus', table: 'tfzp_fide_zip', params: [], skipCache: true,
-    query: `SELECT COALESCE(octet_length(fzp_data), 0) AS bytes FROM tfzp_fide_zip LIMIT 1`
+    caller: 'refreshFideZipStatus', table: 'wk_fzp_fide_zip', params: [], skipCache: true,
+    query: `SELECT COALESCE(octet_length(fzp_data), 0) AS bytes FROM wk_fzp_fide_zip LIMIT 1`
   })
   if (!result.ok) {
     write_logging({
@@ -26,12 +26,12 @@ export async function refreshFideZipStatus(): Promise<{ bytes: number }> {
 
 //----------------------------------------------------------------------------------
 //  refreshFideXmlStatus — chunk count / total characters currently staged in
-//  tfxm_fide_xml (stage 2's own output).
+//  wk_fxm_fide_xml (stage 2's own output).
 //----------------------------------------------------------------------------------
 export async function refreshFideXmlStatus(): Promise<{ chunks: number; chars: number }> {
   const result = await table_query({
-    caller: 'refreshFideXmlStatus', table: 'tfxm_fide_xml', params: [], skipCache: true,
-    query: `SELECT COUNT(*) AS chunks, COALESCE(SUM(LENGTH(fxm_data)), 0) AS chars FROM tfxm_fide_xml`
+    caller: 'refreshFideXmlStatus', table: 'wk_fxm_fide_xml', params: [], skipCache: true,
+    query: `SELECT COUNT(*) AS chunks, COALESCE(SUM(LENGTH(fxm_data)), 0) AS chars FROM wk_fxm_fide_xml`
   })
   if (!result.ok) {
     write_logging({

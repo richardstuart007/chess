@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { evaluateGameEndings } from '@/src/lib/analysis/enrichPositionsStockfish'
-import { DEFAULT_BATCH_SIZE, STOCKFISH_DEPTH } from '@/src/lib/constants'
+import { DEFAULT_BATCH_SIZE_Player, STOCKFISH_DEPTH } from '@/src/lib/constants'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const limit    = Number(searchParams.get('limit')  ?? String(DEFAULT_BATCH_SIZE))
+  const limit    = Number(searchParams.get('limit')  ?? String(DEFAULT_BATCH_SIZE_Player))
   const depth    = Number(searchParams.get('depth')  ?? String(STOCKFISH_DEPTH))
   const forceNewRun = searchParams.get('newRun') === 'true'
 

@@ -27,7 +27,7 @@ export type GameEvalRow = {
   depth: number
 }
 
-const GAMES_TABLE = 'tgr_gamesraw'
+const GAMES_TABLE = 'wk_gr_gamesraw'
 const DECON_TABLE = 'tgd_gamesdecon'
 
 // -----------------------------------------------------------------------
@@ -196,9 +196,9 @@ export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRo
 //  gev's own value otherwise. Driven by the game's own FEN sequence (derived from its
 //  PGN), not by tgev row count — a game that's never had "Analyze Game" run on it has
 //  zero tgev rows, but a position it shares with an already-analyzed game (moves
-//  MIN_ANALYSIS_MOVE..MAX_ANALYSIS_MOVE, pose's normal build range) can still have
+//  MIN_ANALYSIS_MOVE_Player..MAX_ANALYSIS_MOVE_Player, pose's normal build range) can still have
 //  real pose data, which would otherwise never surface. Resolved per ply, independently
-//  — a gap at one ply (e.g. moves 1..MIN_ANALYSIS_MOVE-1, deliberately never cached in
+//  — a gap at one ply (e.g. moves 1..MIN_ANALYSIS_MOVE_Player-1, deliberately never cached in
 //  pose) does NOT truncate the rest of the array the way it used to; only that one ply
 //  comes back undefined, so moves after a gap still show whatever's actually known.
 //  Reads only — never creates a tpose_positions_eval or tgev_game_evals row. Only cp/depth
@@ -362,7 +362,7 @@ export async function getDeconGameCount(player: string): Promise<number> {
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import type { Filter } from 'nextjs-shared/structures'
-import { GAMES_ITEMS_PER_PAGE, TERMINATION_CHART_TYPES } from '../constants'
+import { GAMES_ITEMS_PER_PAGE_Player, TERMINATION_CHART_TYPES_Player } from '../constants'
 
 export type GameFilters = {
   gdid?: number
@@ -439,7 +439,7 @@ export async function fetchFilteredGames(
   players: string[],
   filters: GameFilters,
   page: number,
-  itemsPerPage: number = GAMES_ITEMS_PER_PAGE
+  itemsPerPage: number = GAMES_ITEMS_PER_PAGE_Player
 ) {
   const filterArray = buildFilters(players, filters)
   const offset = (page - 1) * itemsPerPage
@@ -470,7 +470,7 @@ export async function fetchFilteredGames(
 export async function getGamesPageCount(
   players: string[],
   filters: GameFilters,
-  itemsPerPage: number = GAMES_ITEMS_PER_PAGE
+  itemsPerPage: number = GAMES_ITEMS_PER_PAGE_Player
 ): Promise<number> {
   const filterArray = buildFilters(players, filters)
   const result = await fetchTotalPages({
@@ -577,7 +577,7 @@ export async function getTerminationStats(
     .map(u => { params.push(u.toLowerCase()); return `$${params.length}` })
     .join(', ')
   const playerFilter = players.length > 0 ? `AND gd_player IN (${playerPlaceholders})` : ''
-  const terminationPlaceholders = TERMINATION_CHART_TYPES
+  const terminationPlaceholders = TERMINATION_CHART_TYPES_Player
     .map(t => { params.push(t); return `$${params.length}` })
     .join(', ')
   let filters = ''

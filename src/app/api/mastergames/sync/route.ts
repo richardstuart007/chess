@@ -7,13 +7,14 @@ export async function GET(req: NextRequest) {
   const year = Number(searchParams.get('year') ?? '')
   const level = Number(searchParams.get('level') ?? '1')
   const forceNewRun = searchParams.get('newRun') === 'true'
+  const truncateFirst = searchParams.get('truncateFirst') === 'true'
 
   if (!player || !year) {
     return NextResponse.json({ ok: false, error: 'player and year query params are required' }, { status: 400 })
   }
 
   try {
-    const result = await syncMasterGames(player, year, level, forceNewRun)
+    const result = await syncMasterGames(player, year, level, forceNewRun, truncateFirst)
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('mastergames sync route error', err)

@@ -21,7 +21,7 @@ import { upgradePositionEvaluation, getPositionEvaluationsBulk, getMovePlayCount
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
 import { searchChessComGames, ChessComSearchGame, ChessComSearchFilters } from '@/src/lib/actions/chesscomSearch'
 import { getMasterPlayerNames } from '@/src/lib/actions/masterPlayers'
-import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS } from '@/src/lib/constants'
+import { MOVE_COUNT_MIN_MOVE_Player, POSITION_GAMES_ROWS_DEFAULT_Player, POSITION_GAMES_ROWS_OPTIONS_Player } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -141,7 +141,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const [positionGames, setPositionGames] = useState<PositionGameHit[]>([])
   const [positionGamesTotalRows, setPositionGamesTotalRows] = useState(0)
   const [positionGamesPage, setPositionGamesPage] = useState(1)
-  const [positionGamesRowsPerPage, setPositionGamesRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT)
+  const [positionGamesRowsPerPage, setPositionGamesRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT_Player)
   const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
   const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
   const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
@@ -152,7 +152,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
 
   // Analysis state
   // Can have gaps (undefined) — tpose_positions_eval deliberately doesn't cache every move
-  // (e.g. moves before MIN_ANALYSIS_MOVE), so getGameEvals now resolves per-ply instead
+  // (e.g. moves before MIN_ANALYSIS_MOVE_Player), so getGameEvals now resolves per-ply instead
   // of truncating the whole array at the first unknown position
   const [plyEvals, setPlyEvals] = useState<(PlyEvaluation | undefined)[]>([])
   const [analyzing, setAnalyzing] = useState(false)
@@ -242,7 +242,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   }, [])
 
   // -----------------------------------------------------------------------
-  // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE
+  // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE_Player
   // onward, main line + every variation) was played from its position, across
   // this player's own synced games. One batched lookup per tree change.
   // -----------------------------------------------------------------------
@@ -250,7 +250,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
     if (!tree) { setMoveCounts({}); return }
     let cancelled = false
 
-    const nodes = collectNodesFromMove(tree.root, MOVE_COUNT_MIN_MOVE)
+    const nodes = collectNodesFromMove(tree.root, MOVE_COUNT_MIN_MOVE_Player)
     const fens = nodes.map(n => truncateFen(n.fenBefore))
 
     if (fens.length === 0) { setMoveCounts({}); return }
@@ -971,7 +971,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
   const evalPercent = Math.max(2, Math.min(98, 50 + evalCp / 8))
 
   // Summary counts — plyEvals can now have gaps (e.g. moves before
-  // MIN_ANALYSIS_MOVE, which pose deliberately never caches), so every entry must be
+  // MIN_ANALYSIS_MOVE_Player, which pose deliberately never caches), so every entry must be
   // null/undefined-checked before reading its fields
   const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
   const mistakes = plyEvals.filter(e => e?.classification === 'mistake').length
@@ -1374,7 +1374,7 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
                       setStateCurrentPage={setPositionGamesPage}
                       rowsPerPage={positionGamesRowsPerPage}
                       setRowsPerPage={v => { setPositionGamesRowsPerPage(v); setPositionGamesPage(1) }}
-                      rowsOptions={POSITION_GAMES_ROWS_OPTIONS}
+                      rowsOptions={POSITION_GAMES_ROWS_OPTIONS_Player}
                       totalRows={positionGamesTotalRows}
                     />
                   </div>

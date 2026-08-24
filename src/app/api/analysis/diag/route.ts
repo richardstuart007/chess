@@ -7,9 +7,9 @@ export async function GET(req: NextRequest) {
   const player = searchParams.get('player') ?? 'stricade'
 
   const [totalResult, forPlayerResult, sampleResult] = await Promise.all([
-    table_count({ caller: 'diag', table: 'tgr_gamesraw' }),
-    table_count({ caller: 'diag', table: 'tgr_gamesraw', whereColumnValuePairs: [{ column: 'gr_player', value: player }] }),
-    table_fetch({ caller: 'diag', table: 'tgr_gamesraw', distinct: true, columns: ['gr_player'], limit: 10 }),
+    table_count({ caller: 'diag', table: 'wk_gr_gamesraw' }),
+    table_count({ caller: 'diag', table: 'wk_gr_gamesraw', whereColumnValuePairs: [{ column: 'gr_player', value: player }] }),
+    table_fetch({ caller: 'diag', table: 'wk_gr_gamesraw', distinct: true, columns: ['gr_player'], limit: 10 }),
   ])
 
   if (!totalResult.ok || !forPlayerResult.ok || !sampleResult.ok) {

@@ -19,7 +19,7 @@ import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
 import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
 import {
-  GAME_LIST_ROWS_DEFAULT, GAME_LIST_ROWS_OPTIONS, DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX,
+  GAME_LIST_ROWS_DEFAULT_Player, GAME_LIST_ROWS_OPTIONS_Player, DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX,
   WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
   WIDTH_GAME_NUMBER, WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
@@ -68,11 +68,11 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
   //  Date From, Opening, and ECO are also global (shared via URL with every other page that has
   //  these filters) — but unlike timeClass, they stay gated behind the Filter button below (a
   //  date picker/typed text shouldn't fire a query on every change). Absent dateFrom still
-  //  defaults to DEFAULT_DATE_FROM, matching today's behavior (user-decided — URL params can't
+  //  defaults to DEFAULT_DATE_FROM_Player, matching today's behavior (user-decided — URL params can't
   //  distinguish "never set" from "explicitly cleared" the way sessionStorage could).
   //
   const [rawDateFromFilter] = useGlobalFilter('dateFrom')
-  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
   const [openingFilter] = useGlobalFilter('opening')
   const [ecoFilter] = useGlobalFilter('eco')
   //
@@ -100,7 +100,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
   const [draftOpening, setDraftOpening] = useState(openingFilter)
   const [draftEco, setDraftEco] = useState(ecoFilter)
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Player)
   const [hydrated, setHydrated] = useState(false)
 
   //
@@ -133,7 +133,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     setDraftFilters(hydratedDraft)
     setFilters(hydratedFilters)
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}gl-page`, 1))
-    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ROWS_DEFAULT))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ROWS_DEFAULT_Player))
     setHydrated(true)
   }, [])
 
@@ -529,7 +529,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
             setStateCurrentPage={setCurrentPage}
             rowsPerPage={rowsPerPage}
             setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
-            rowsOptions={GAME_LIST_ROWS_OPTIONS}
+            rowsOptions={GAME_LIST_ROWS_OPTIONS_Player}
             overrideClass='flex-1'
             totalRows={totalCount}
           />

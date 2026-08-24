@@ -10,7 +10,7 @@ import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
 import { getPlayers } from '@/src/lib/actions/players'
 import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
-import { MIN_ANALYSIS_MOVE, HABITS_ITEMS_PER_PAGE, HABITS_ROWS_OPTIONS, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM } from '@/src/lib/constants'
+import { MIN_ANALYSIS_MOVE_Player, HABITS_ITEMS_PER_PAGE_Player, HABITS_ROWS_OPTIONS_Player, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM_Player } from '@/src/lib/constants'
 
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
@@ -40,7 +40,7 @@ function HabitsContent() {
   const [color,       setColor]       = useState<Color>('all')
   const [quality,     setQuality]     = useState<Quality>('bad')
   const [sortBy,      setSortBy]      = useState<SortBy>('cpLoss')
-  const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE)
+  const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE_Player)
   const [minReached,  setMinReached]  = useState(3)
   const [showDismissed, setShowDismissed] = useState(false)
   //
@@ -49,10 +49,10 @@ function HabitsContent() {
   //  click, not instantly like the filters above — draftDateFrom/draftOpening/draftEco track the
   //  inputs as typed/picked, dateFromFilter/openingFilter/ecoFilter (the applied, global values)
   //  drive the actual query and only change when the Filter button is clicked. Absent dateFrom
-  //  still defaults to DEFAULT_DATE_FROM, matching every other consumer of this global filter.
+  //  still defaults to DEFAULT_DATE_FROM_Player, matching every other consumer of this global filter.
   //
   const [rawDateFromFilter] = useGlobalFilter('dateFrom')
-  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
   const [openingFilter] = useGlobalFilter('opening')
   const [ecoFilter]     = useGlobalFilter('eco')
   //
@@ -72,7 +72,7 @@ function HabitsContent() {
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(HABITS_ITEMS_PER_PAGE)
+  const [rowsPerPage, setRowsPerPage] = useState(HABITS_ITEMS_PER_PAGE_Player)
   const [totalCount,  setTotalCount]  = useState(0)
   const [hydrated,    setHydrated]    = useState(false)
 
@@ -90,7 +90,7 @@ function HabitsContent() {
       } catch { /* ignore corrupt storage */ }
     }
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}habits-page`, 1))
-    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}habits-rows`, HABITS_ITEMS_PER_PAGE))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}habits-rows`, HABITS_ITEMS_PER_PAGE_Player))
     setHydrated(true)
   }, [])
 
@@ -258,7 +258,7 @@ function HabitsContent() {
               setStateCurrentPage={setCurrentPage}
               rowsPerPage={rowsPerPage}
               setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
-              rowsOptions={HABITS_ROWS_OPTIONS}
+              rowsOptions={HABITS_ROWS_OPTIONS_Player}
               overrideClass='flex-1'
               totalRows={totalCount}
             />

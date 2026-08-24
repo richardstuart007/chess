@@ -4,12 +4,12 @@ import * as path from 'path'
 dotenv.config({ path: path.join(process.cwd(), '.env') })
 
 import { deepenPopularPositions } from '../src/lib/analysis/enrichPositionsStockfish'
-import { CRON_DEEPEN_POPULAR_BATCH_SIZE } from '../src/lib/constants'
+import { CRON_DEEPEN_POPULAR_BATCH_SIZE_Player } from '../src/lib/constants'
 
 console.log('Running deepenPopularPositions() directly ...')
 
 async function main() {
-  const result = await deepenPopularPositions({ limit: CRON_DEEPEN_POPULAR_BATCH_SIZE, forceNewRun: false })
+  const result = await deepenPopularPositions({ limit: CRON_DEEPEN_POPULAR_BATCH_SIZE_Player, forceNewRun: false })
   console.log(JSON.stringify(result, null, 2))
 }
 

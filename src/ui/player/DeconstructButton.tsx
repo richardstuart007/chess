@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MySelect from 'nextjs-shared/MySelect'
 import MyBox from 'nextjs-shared/MyBox'
-import { deconstructGames, getUndeconstructedCount, getDeconstructedCount } from '@/src/lib/actions/deconstruct'
+import { deconstructGames_Player, getUndeconstructedCount, getDeconstructedCount } from '@/src/lib/actions/deconstructGames_Player'
 import { getPlayerTimeClasses } from '@/src/lib/constants'
 
 interface DeconstructButtonProps {
@@ -32,7 +32,7 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
 
     try {
       const numLimit = limit === 'All' ? 0 : parseInt(limit, 10)
-      const res = await deconstructGames(player, numLimit, getPlayerTimeClasses(player))
+      const res = await deconstructGames_Player(player, numLimit, getPlayerTimeClasses(player))
       setResult(res)
       await handleCheckCounts()
       onComplete()

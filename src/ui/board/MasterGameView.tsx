@@ -305,7 +305,7 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
         </MyBox>
       </div>
 
-      <div className='space-y-4 w-[360px]'>
+      <div className='space-y-4 w-[600px]'>
         <MyBox title='Moves'>
           <MoveTree tree={tree} currentNode={currentNode} onSelectNode={goToNode} />
         </MyBox>

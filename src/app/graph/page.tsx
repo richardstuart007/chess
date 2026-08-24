@@ -12,7 +12,7 @@ import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
 import { getPlayers } from '@/src/lib/actions/players'
 import { getEarliestGameDate, GameFilters } from '@/src/lib/actions/games'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
-import { DEFAULT_DATE_FROM, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, WIDTH_GRAPH_LIMIT, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, WIDTH_GRAPH_LIMIT, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}graph_filters`
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -39,10 +39,10 @@ function GraphContent() {
   //
   //  Date From is also global (shared via URL with every other page that has this filter) —
   //  but unlike timeClass, stays gated behind Refresh below. Absent still defaults to
-  //  DEFAULT_DATE_FROM, matching today's behavior.
+  //  DEFAULT_DATE_FROM_Player, matching today's behavior.
   //
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
-  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM
+  const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
   //
   //  Initialized to plain defaults (matching the server render) rather than reading

@@ -17,7 +17,7 @@ import TerminationMultiSelect from '@/src/ui/filters/TerminationMultiSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { fetchFilteredMasterGames, getMasterGamesPageCount, MasterGameFilters } from '@/src/lib/master/masterGamesList'
 import {
-  MASTER_GAME_LIST_ROWS_DEFAULT, MASTER_GAME_LIST_ROWS_OPTIONS, SESSION_STORAGE_PREFIX,
+  GAME_LIST_ROWS_DEFAULT_Master, GAME_LIST_ROWS_OPTIONS_Master, SESSION_STORAGE_PREFIX,
   WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
   WIDTH_GAME_NUMBER, WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER
 } from '@/src/lib/constants'
@@ -43,14 +43,14 @@ export default function MasterGameList() {
   const [draftFilters, setDraftFilters] = useState<MasterGameFilters>({})
   const [filters, setFilters] = useState<MasterGameFilters>({})
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(MASTER_GAME_LIST_ROWS_DEFAULT)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Master)
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     setDraftFilters(ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-draftFilters`, {}))
     setFilters(ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-filters`, {}))
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}mgl-page`, 1))
-    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}mgl-rows`, MASTER_GAME_LIST_ROWS_DEFAULT))
+    setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}mgl-rows`, GAME_LIST_ROWS_DEFAULT_Master))
     setHydrated(true)
   }, [])
 
@@ -288,7 +288,7 @@ export default function MasterGameList() {
               <tr>
                 <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>
                   No master games found. Try adjusting your filters, or run the master games
-                  pipeline first (Owner → Pipeline (Master Games POC)).
+                  pipeline first (Owner → Pipeline (Master Games)).
                 </td>
               </tr>
             )}
@@ -353,7 +353,7 @@ export default function MasterGameList() {
             setStateCurrentPage={setCurrentPage}
             rowsPerPage={rowsPerPage}
             setRowsPerPage={v => { setRowsPerPage(v); setCurrentPage(1) }}
-            rowsOptions={MASTER_GAME_LIST_ROWS_OPTIONS}
+            rowsOptions={GAME_LIST_ROWS_OPTIONS_Master}
             overrideClass='flex-1'
             totalRows={totalCount}
           />

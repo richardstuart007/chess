@@ -4,70 +4,67 @@ import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { parsePgnHeaders, parsePgnOpening, countMoves, normalizeTermination } from '../parsePgn'
-import { upsertEcoReference } from '../actions/deconstruct'
-import { logPipelineStep } from '../actions/pipelineLog'
+import { upsertEcoReference } from '../actions/deconstructGames_Player'
 import { logStart, logEnd } from '../logStep'
-import { MASTER_MIN_ANALYSIS_MOVE, PIPELINE_TYPE_MASTERGAMES } from '../constants'
+import { MIN_ANALYSIS_MOVE_Master } from '../constants'
 
-const MASTER_RAW_TABLE = 'tmgr_mastergamesraw'
-const MASTER_DECON_TABLE = 'tmgd_mastergamesdecon'
+const MASTER_RAW_TABLE = 'wk_mgr_gamesraw'
+const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 
 //
 //  A game with fewer half-moves than this can never produce a trackable position
-//  (buildMasterPositionTree's analysis window starts at MASTER_MIN_ANALYSIS_MOVE) —
+//  (buildPositionTree_Master's analysis window starts at MIN_ANALYSIS_MOVE_Master) —
 //  mirrors deconstruct.ts's MIN_TRACKABLE_HALF_MOVES, own constant since master and
 //  player pipelines never share tuning values.
 //
-const MASTER_MIN_TRACKABLE_HALF_MOVES = (MASTER_MIN_ANALYSIS_MOVE - 1) * 2
+const MASTER_MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Master - 1) * 2
 
 //----------------------------------------------------------------------------------
-//  deconstructMasterGames — POC scope: processes every tmgr_mastergamesraw row for
-//  one master player not yet in tmgd_mastergamesdecon. Mirrors deconstructGames, but
-//  reads/writes the master-games tables (secondary database) — tec_ecoreference stays
-//  shared in the primary database, reused via upsertEcoReference unchanged.
+//  deconstructGames_Master — processes every wk_mgr_gamesraw row (every player,
+//  no filter) not yet in tmgd_gamesdecon (matched on mgd_chesscom_uuid alone —
+//  globally unique across chess.com, no player qualifier needed). Called internally
+//  by syncMasterGames right after each player's own download — never a standalone
+//  pipeline step, so (mirroring deconstructGames_Player) it does not log its own
+//  logPipelineStep entry; the caller does. Reads/writes the master-games tables
+//  (secondary database) — tec_ecoreference stays shared in the primary database,
+//  reused via upsertEcoReference unchanged.
 //----------------------------------------------------------------------------------
-export async function deconstructMasterGames(
-  chesscomHandle: string,
-  level: number = 1,
-  forceNewRun?: boolean
-): Promise<{ processed: number; skipped: number; errors: number }> {
-  const player = chesscomHandle.toLowerCase()
-  await logStart('deconstructMasterGames', 'masterGamesPipelineRoute', `deconstructing raw games for ${player}`, level)
-  const t0 = Date.now()
+export async function deconstructGames_Master(
+  level: number = 1
+): Promise<{ processed: number; skipped: number; errors: number; rawScanned: number }> {
+  await logStart('deconstructGames_Master', 'masterGamesPipelineRoute', 'deconstructing all outstanding raw games', level)
 
   const rawResult = await table_fetch({
-    caller: 'deconstructMasterGames',
+    caller: 'deconstructGames_Master',
     table: MASTER_RAW_TABLE,
-    whereColumnValuePairs: [{ column: 'mgr_player', value: player }],
     skipCache: true
   })
   if (!rawResult.ok) {
     write_logging({
-      lg_functionname: 'deconstructMasterGames',
-      lg_caller: 'deconstructMasterGames',
-      lg_msg: 'Failed to fetch master raw games for ' + player + ': ' + rawResult.error,
+      lg_functionname: 'deconstructGames_Master',
+      lg_caller: 'deconstructGames_Master',
+      lg_msg: 'Failed to fetch master raw games: ' + rawResult.error,
       lg_severity: 'E'
     })
-    await logEnd('deconstructMasterGames', 'masterGamesPipelineRoute', 'failed to fetch raw games', level)
-    return { processed: 0, skipped: 0, errors: 0 }
+    await logEnd('deconstructGames_Master', 'masterGamesPipelineRoute', 'failed to fetch raw games', level)
+    return { processed: 0, skipped: 0, errors: 0, rawScanned: 0 }
   }
 
   const existingResult = await table_fetch({
-    caller: 'deconstructMasterGames_existing',
+    caller: 'deconstructGames_Master_existing',
     table: MASTER_DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'mgd_player', value: player }],
     columns: ['mgd_chesscom_uuid'],
     skipCache: true
   })
   if (!existingResult.ok) {
     write_logging({
-      lg_functionname: 'deconstructMasterGames',
-      lg_caller: 'deconstructMasterGames_existing',
-      lg_msg: 'Failed to fetch existing master decon rows for ' + player + ': ' + existingResult.error,
+      lg_functionname: 'deconstructGames_Master',
+      lg_caller: 'deconstructGames_Master_existing',
+      lg_msg: 'Failed to fetch existing master decon rows: ' + existingResult.error,
       lg_severity: 'E'
     })
-    await logEnd('deconstructMasterGames', 'masterGamesPipelineRoute', 'failed to fetch existing decon rows', level)
-    return { processed: 0, skipped: 0, errors: 0 }
+    await logEnd('deconstructGames_Master', 'masterGamesPipelineRoute', 'failed to fetch existing decon rows', level)
+    return { processed: 0, skipped: 0, errors: 0, rawScanned: 0 }
   }
   const existingUuids = new Set(existingResult.data.map((r: any) => r.mgd_chesscom_uuid))
 
@@ -94,6 +91,7 @@ export async function deconstructMasterGames(
       }
 
       const headers = parsePgnHeaders(pgn)
+      const player = row.mgr_player
 
       const whiteUsername = (rawData.white?.username ?? '').toLowerCase()
       const blackUsername = (rawData.black?.username ?? '').toLowerCase()
@@ -107,7 +105,7 @@ export async function deconstructMasterGames(
       else if (opponentSide?.result === 'win') playerResult = 'loss'
 
       const writeResult = await table_write({
-        caller: 'deconstructMasterGames',
+        caller: 'deconstructGames_Master',
         table: MASTER_DECON_TABLE,
         columnValuePairs: [
           { column: 'mgd_white_username', value: whiteUsername },
@@ -135,8 +133,8 @@ export async function deconstructMasterGames(
       })
       if (!writeResult.ok) {
         write_logging({
-          lg_functionname: 'deconstructMasterGames',
-          lg_caller: 'deconstructMasterGames',
+          lg_functionname: 'deconstructGames_Master',
+          lg_caller: 'deconstructGames_Master',
           lg_msg: 'Failed to write master decon row for ' + row.mgr_chesscom_uuid + ': ' + writeResult.error,
           lg_severity: 'E'
         })
@@ -151,8 +149,8 @@ export async function deconstructMasterGames(
       processed++
     } catch (err) {
       write_logging({
-        lg_functionname: 'deconstructMasterGames',
-        lg_caller: 'deconstructMasterGames',
+        lg_functionname: 'deconstructGames_Master',
+        lg_caller: 'deconstructGames_Master',
         lg_msg: `Error deconstructing master game ${row.mgr_chesscom_uuid}: ` + (err as Error).message,
         lg_severity: 'E'
       })
@@ -161,19 +159,13 @@ export async function deconstructMasterGames(
   }
 
   write_logging({
-    lg_functionname: 'deconstructMasterGames',
-    lg_caller: 'deconstructMasterGames',
-    lg_msg: `${player}: ${processed} ${MASTER_DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`,
+    lg_functionname: 'deconstructGames_Master',
+    lg_caller: 'deconstructGames_Master',
+    lg_msg: `${processed} ${MASTER_DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`,
     lg_severity: 'I'
   })
 
-  await logPipelineStep({
-    step: 2, subStep: 'a', stepName: 'Deconstruct Master Games', pipelineType: PIPELINE_TYPE_MASTERGAMES,
-    inputTable: MASTER_RAW_TABLE, inputRecs: rawResult.data.length,
-    outputTable: MASTER_DECON_TABLE, outputRecs: processed,
-    durationMs: Date.now() - t0, forceNewRun
-  })
-  await logEnd('deconstructMasterGames', 'masterGamesPipelineRoute', `${processed} processed, ${skipped} skipped, ${errors} errors`, level)
+  await logEnd('deconstructGames_Master', 'masterGamesPipelineRoute', `${processed} processed, ${skipped} skipped, ${errors} errors`, level)
 
-  return { processed, skipped, errors }
+  return { processed, skipped, errors, rawScanned: rawResult.data.length }
 }

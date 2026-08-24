@@ -174,11 +174,13 @@ ALTER TABLE ONLY public.tgev_game_evals
 CREATE INDEX idx_tgev_gdid ON public.tgev_game_evals USING btree (gev_gdid);
 
 --
--- Name: tgr_gamesraw; Type: TABLE;
+-- Name: wk_gr_gamesraw; Type: TABLE;
 -- Canonical source: nextjs-shared/src/chess/schema.sql — keep this block in sync with it.
+-- Workfile table (wk_ prefix) — truncated and refilled fresh at the start of every sync,
+-- safe to clear in application code (see ~/.claude/CLAUDE.md's table-naming convention).
 --
 
-CREATE TABLE public.tgr_gamesraw (
+CREATE TABLE public.wk_gr_gamesraw (
     gr_player character varying(64) NOT NULL,
     gr_chesscom_uuid character varying(64) NOT NULL,
     gr_raw_data jsonb NOT NULL,
@@ -187,12 +189,12 @@ CREATE TABLE public.tgr_gamesraw (
     gr_time_class character varying(16)
 );
 
-ALTER TABLE ONLY public.tgr_gamesraw
+ALTER TABLE ONLY public.wk_gr_gamesraw
     ADD CONSTRAINT tgr_gamesraw_pkey PRIMARY KEY (gr_chesscom_uuid, gr_player);
 
-CREATE INDEX idx_tgr_end_time ON public.tgr_gamesraw USING btree (gr_end_time DESC);
+CREATE INDEX idx_tgr_end_time ON public.wk_gr_gamesraw USING btree (gr_end_time DESC);
 
-CREATE INDEX idx_tgr_player ON public.tgr_gamesraw USING btree (gr_player);
+CREATE INDEX idx_tgr_player ON public.wk_gr_gamesraw USING btree (gr_player);
 
 --
 -- Name: thab_habits; Type: TABLE;
@@ -263,25 +265,6 @@ ALTER TABLE ONLY public.tmst_master_players
     ADD CONSTRAINT tmst_master_players_mst_fideid_key UNIQUE (mst_fideid);
 
 CREATE INDEX idx_tmst_last_name ON public.tmst_master_players USING btree (mst_last_name);
-
---
--- Name: tfzp_fide_zip; Type: TABLE;
---
-
-CREATE TABLE public.tfzp_fide_zip (
-    fzp_data text NOT NULL
-);
-
---
--- Name: tfxm_fide_xml; Type: TABLE;
---
-
-CREATE TABLE public.tfxm_fide_xml (
-    fxm_seq integer NOT NULL,
-    fxm_data text NOT NULL
-);
-
-CREATE INDEX idx_tfxm_seq ON public.tfxm_fide_xml USING btree (fxm_seq);
 
 --
 -- Name: tfpl_fide_players; Type: TABLE;
@@ -429,16 +412,18 @@ ALTER TABLE ONLY public.tpose_positions_eval
     ADD CONSTRAINT tpose_positions_eval_pkey PRIMARY KEY (pose_pos_id);
 
 --
--- Name: tpur_workfile; Type: TABLE;
+-- Name: wk_pur_workfile; Type: TABLE;
+-- Workfile table (wk_ prefix) — truncated at the start of every purge run, safe to clear
+-- in code.
 --
 
-CREATE TABLE public.tpur_workfile (
+CREATE TABLE public.wk_pur_workfile (
     pur_pos_id integer NOT NULL,
     pur_pos_fen text NOT NULL,
     pur_pos_reached integer NOT NULL
 );
 
-CREATE INDEX idx_tpur_pos_id ON public.tpur_workfile USING btree (pur_pos_id);
+CREATE INDEX idx_tpur_pos_id ON public.wk_pur_workfile USING btree (pur_pos_id);
 
 --
 -- Name: tqui_quiz; Type: TABLE;
@@ -497,19 +482,23 @@ ALTER TABLE ONLY public.xlg_logging
     ADD CONSTRAINT xlg_logging_pkey PRIMARY KEY (lg_lgid);
 
 --
--- Master games position database (secondary database — routed via xrtg_routing,
--- see .claude/CLAUDE.md and CONSUMING_PROJECTS.md §2a). Not present in the primary
--- database's schema at all — these tables physically live in local_chess_masters
--- (POSTGRES_URL1) / its production equivalent, listed here only because
--- scripts/schema.sql is the single source of truth for this project's full
--- structure across both databases.
+-- Secondary database tables (routed via xrtg_routing, see .claude/CLAUDE.md and
+-- CONSUMING_PROJECTS.md §2a). Not present in the primary database's schema at all —
+-- these tables physically live in local_chess_masters (POSTGRES_URL1) / its
+-- production equivalent, listed here only because scripts/schema.sql is the single
+-- source of truth for this project's full structure across both databases. Covers
+-- both the master-games position database tables and the FIDE zip/XML staging
+-- tables (moved here from the primary database — see this project's PLAN archive
+-- for the migration).
 --
 
 --
--- Name: tmgr_mastergamesraw; Type: TABLE;
+-- Name: wk_mgr_gamesraw; Type: TABLE;
+-- Workfile table (wk_ prefix) — truncated and refilled fresh at the start of every sync,
+-- safe to clear in application code.
 --
 
-CREATE TABLE public.tmgr_mastergamesraw (
+CREATE TABLE public.wk_mgr_gamesraw (
     mgr_player character varying(64) NOT NULL,
     mgr_chesscom_uuid character varying(64) NOT NULL,
     mgr_raw_data jsonb NOT NULL,
@@ -518,18 +507,18 @@ CREATE TABLE public.tmgr_mastergamesraw (
     mgr_time_class character varying(16)
 );
 
-ALTER TABLE ONLY public.tmgr_mastergamesraw
-    ADD CONSTRAINT tmgr_mastergamesraw_pkey PRIMARY KEY (mgr_chesscom_uuid, mgr_player);
+ALTER TABLE ONLY public.wk_mgr_gamesraw
+    ADD CONSTRAINT wk_mgr_gamesraw_pkey PRIMARY KEY (mgr_chesscom_uuid, mgr_player);
 
-CREATE INDEX idx_tmgr_end_time ON public.tmgr_mastergamesraw USING btree (mgr_end_time DESC);
+CREATE INDEX idx_mgr_end_time ON public.wk_mgr_gamesraw USING btree (mgr_end_time DESC);
 
-CREATE INDEX idx_tmgr_player ON public.tmgr_mastergamesraw USING btree (mgr_player);
+CREATE INDEX idx_mgr_player ON public.wk_mgr_gamesraw USING btree (mgr_player);
 
 --
--- Name: tmgd_mastergamesdecon; Type: TABLE;
+-- Name: tmgd_gamesdecon; Type: TABLE;
 --
 
-CREATE TABLE public.tmgd_mastergamesdecon (
+CREATE TABLE public.tmgd_gamesdecon (
     mgd_mgdid integer NOT NULL,
     mgd_white_username character varying(64) NOT NULL,
     mgd_black_username character varying(64) NOT NULL,
@@ -553,8 +542,8 @@ CREATE TABLE public.tmgd_mastergamesdecon (
     mgd_chesscom_uuid character varying(64)
 );
 
-ALTER TABLE public.tmgd_mastergamesdecon ALTER COLUMN mgd_mgdid ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME public.tmgd_mastergamesdecon_mgd_mgdid_seq
+ALTER TABLE public.tmgd_gamesdecon ALTER COLUMN mgd_mgdid ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.tmgd_gamesdecon_mgd_mgdid_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -562,29 +551,29 @@ ALTER TABLE public.tmgd_mastergamesdecon ALTER COLUMN mgd_mgdid ADD GENERATED BY
     CACHE 1
 );
 
-ALTER TABLE ONLY public.tmgd_mastergamesdecon
-    ADD CONSTRAINT tmgd_mastergamesdecon_pkey PRIMARY KEY (mgd_mgdid);
+ALTER TABLE ONLY public.tmgd_gamesdecon
+    ADD CONSTRAINT tmgd_gamesdecon_pkey PRIMARY KEY (mgd_mgdid);
 
-CREATE INDEX idx_tmgd_eco ON public.tmgd_mastergamesdecon USING btree (mgd_eco_code);
+CREATE INDEX idx_tmgd_eco ON public.tmgd_gamesdecon USING btree (mgd_eco_code);
 
-CREATE INDEX idx_tmgd_end_time ON public.tmgd_mastergamesdecon USING btree (mgd_end_time DESC);
+CREATE INDEX idx_tmgd_end_time ON public.tmgd_gamesdecon USING btree (mgd_end_time DESC);
 
-CREATE INDEX idx_tmgd_player ON public.tmgd_mastergamesdecon USING btree (mgd_player);
+CREATE INDEX idx_tmgd_player ON public.tmgd_gamesdecon USING btree (mgd_player);
 
 --
--- Name: tmps_masterpositions; Type: TABLE;
+-- Name: tmpos_positions; Type: TABLE;
 --
 
-CREATE TABLE public.tmps_masterpositions (
-    mps_id integer NOT NULL,
-    mps_fen text NOT NULL,
-    mps_reached integer DEFAULT 0,
-    mps_color character(1),
-    mps_move_num integer
+CREATE TABLE public.tmpos_positions (
+    mpos_id integer NOT NULL,
+    mpos_fen text NOT NULL,
+    mpos_reached integer DEFAULT 0,
+    mpos_color character(1),
+    mpos_move_num integer
 );
 
-ALTER TABLE public.tmps_masterpositions ALTER COLUMN mps_id ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME public.tmps_masterpositions_mps_id_seq
+ALTER TABLE public.tmpos_positions ALTER COLUMN mpos_id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.tmpos_positions_mpos_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -592,32 +581,32 @@ ALTER TABLE public.tmps_masterpositions ALTER COLUMN mps_id ADD GENERATED BY DEF
     CACHE 1
 );
 
-ALTER TABLE ONLY public.tmps_masterpositions
-    ADD CONSTRAINT tmps_masterpositions_pkey PRIMARY KEY (mps_id);
+ALTER TABLE ONLY public.tmpos_positions
+    ADD CONSTRAINT tmpos_positions_pkey PRIMARY KEY (mpos_id);
 
-ALTER TABLE ONLY public.tmps_masterpositions
-    ADD CONSTRAINT tmps_masterpositions_mps_fen_key UNIQUE (mps_fen);
+ALTER TABLE ONLY public.tmpos_positions
+    ADD CONSTRAINT tmpos_positions_mpos_fen_key UNIQUE (mpos_fen);
 
-CREATE INDEX idx_tmps_reached ON public.tmps_masterpositions USING btree (mps_reached DESC);
+CREATE INDEX idx_tmpos_reached ON public.tmpos_positions USING btree (mpos_reached DESC);
 
 --
--- Name: tmgp_mastergamepositions; Type: TABLE;
+-- Name: tmgam_game_positions; Type: TABLE;
 --
 
-CREATE TABLE public.tmgp_mastergamepositions (
-    mgp_mgpid integer NOT NULL,
-    mgp_move_played text NOT NULL,
-    mgp_move_uci text,
-    mgp_move_num integer,
-    mgp_pos_id integer,
-    mgp_mgdid integer,
-    mgp_resulting_pos_id integer,
-    mgp_pos_fen text,
-    mgp_resulting_fen text
+CREATE TABLE public.tmgam_game_positions (
+    mgam_mgamid integer NOT NULL,
+    mgam_move_played text NOT NULL,
+    mgam_move_uci text,
+    mgam_move_num integer,
+    mgam_pos_id integer,
+    mgam_mgdid integer,
+    mgam_resulting_pos_id integer,
+    mgam_pos_fen text,
+    mgam_resulting_fen text
 );
 
-ALTER TABLE public.tmgp_mastergamepositions ALTER COLUMN mgp_mgpid ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME public.tmgp_mastergamepositions_mgp_mgpid_seq
+ALTER TABLE public.tmgam_game_positions ALTER COLUMN mgam_mgamid ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.tmgam_game_positions_mgam_mgamid_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -625,11 +614,32 @@ ALTER TABLE public.tmgp_mastergamepositions ALTER COLUMN mgp_mgpid ADD GENERATED
     CACHE 1
 );
 
-ALTER TABLE ONLY public.tmgp_mastergamepositions
-    ADD CONSTRAINT tmgp_mastergamepositions_pkey PRIMARY KEY (mgp_mgpid);
+ALTER TABLE ONLY public.tmgam_game_positions
+    ADD CONSTRAINT tmgam_game_positions_pkey PRIMARY KEY (mgam_mgamid);
 
-CREATE INDEX idx_tmgp_mgdid ON public.tmgp_mastergamepositions USING btree (mgp_mgdid);
+CREATE INDEX idx_tmgam_mgdid ON public.tmgam_game_positions USING btree (mgam_mgdid);
 
-CREATE INDEX idx_tmgp_pos_id ON public.tmgp_mastergamepositions USING btree (mgp_pos_id);
+CREATE INDEX idx_tmgam_pos_id ON public.tmgam_game_positions USING btree (mgam_pos_id);
 
-CREATE INDEX idx_tmgp_resulting_pos_id ON public.tmgp_mastergamepositions USING btree (mgp_resulting_pos_id);
+CREATE INDEX idx_tmgam_resulting_pos_id ON public.tmgam_game_positions USING btree (mgam_resulting_pos_id);
+
+--
+-- Name: wk_fzp_fide_zip; Type: TABLE;
+-- Workfile table (wk_ prefix) — truncated and refilled every run, safe to clear in code.
+--
+
+CREATE TABLE public.wk_fzp_fide_zip (
+    fzp_data text NOT NULL
+);
+
+--
+-- Name: wk_fxm_fide_xml; Type: TABLE;
+-- Workfile table (wk_ prefix) — truncated and refilled every run, safe to clear in code.
+--
+
+CREATE TABLE public.wk_fxm_fide_xml (
+    fxm_seq integer NOT NULL,
+    fxm_data text NOT NULL
+);
+
+CREATE INDEX idx_tfxm_seq ON public.wk_fxm_fide_xml USING btree (fxm_seq);

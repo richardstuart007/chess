@@ -20,7 +20,7 @@ function TplPlayersSection() {
       <h4 className={H4}>Purpose</h4>
       <p className={P}>
         One row per tracked player: identity, display metadata, and the sync resume cutoff
-        (<Code>pl_last_synced_end_time</Code>) that lets <Code>tgr_gamesraw</Code> be wiped every
+        (<Code>pl_last_synced_end_time</Code>) that lets <Code>wk_gr_gamesraw</Code> be wiped every
         run without losing incremental-sync progress.
       </p>
 
@@ -55,10 +55,10 @@ function TplPlayersSection() {
         <Code>?player=</Code> URL query param, which <Code>HomeDashboard</Code>, the Habits page,
         and the Graph page all read instead of each keeping their own player-selection state.
       </p>
-      <h5 className={H5}>tgr_gamesraw</h5>
+      <h5 className={H5}>wk_gr_gamesraw</h5>
       <p className={P}>
         <Code>initSync</Code> reads <Code>pl_last_synced_end_time</Code> to decide where to resume
-        (see <Code>tgr_gamesraw</Code>&apos;s Processing).
+        (see <Code>wk_gr_gamesraw</Code>&apos;s Processing).
       </p>
 
       <h4 className={H4}>Rules/gotchas</h4>
@@ -119,7 +119,7 @@ function ChessComApiSection() {
       <h5 className={H5}>Game sync</h5>
       <p className={P}>
         <Code>sync.ts</Code>&apos;s <Code>initSync</Code>/<Code>syncArchive</Code> — feeds{' '}
-        <Code>tgr_gamesraw</Code>.
+        <Code>wk_gr_gamesraw</Code>.
       </p>
       <h5 className={H5}>Add player</h5>
       <p className={P}>
@@ -165,13 +165,13 @@ function TgrGamesrawSection() {
 
       <h4 className={H4}>Output</h4>
       <p className={P}>
-        <Code>tgr_gamesraw</Code> itself: one row per game — raw JSON, PGN, end time, time class.
+        <Code>wk_gr_gamesraw</Code> itself: one row per game — raw JSON, PGN, end time, time class.
       </p>
 
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>tgd_gamesdecon</h5>
       <p className={P}>
-        <Code>deconstructGames</Code> reads every row not yet present there.
+        <Code>deconstructGames_Player</Code> reads every row not yet present there.
       </p>
       <h5 className={H5}>Maintenance page</h5>
       <p className={P}>
@@ -205,7 +205,7 @@ function TgdGamesdeconSection() {
       </p>
 
       <h4 className={H4}>Input</h4>
-      <p className={P}><Code>tgr_gamesraw</Code></p>
+      <p className={P}><Code>wk_gr_gamesraw</Code></p>
 
       <h4 className={H4}>Processing</h4>
       <h5 className={H5}>Summary</h5>
@@ -216,7 +216,7 @@ function TgdGamesdeconSection() {
       <h5 className={H5}>Details</h5>
       <ol className={OL}>
         <li>Select - rows not yet in <Code>tgd_gamesdecon</Code> (matched on <Code>gd_chesscom_uuid</Code> + <Code>gd_player</Code>)</li>
-        <li>Skip - no <Code>pgn</Code> field, or 6 or fewer half-moves (can never reach <Code>MIN_ANALYSIS_MOVE</Code>)</li>
+        <li>Skip - no <Code>pgn</Code> field, or 6 or fewer half-moves (can never reach <Code>MIN_ANALYSIS_MOVE_Player</Code>)</li>
         <li>Parse + insert - PGN headers, opening, termination, per-player color/result/opponent</li>
       </ol>
 
@@ -230,7 +230,7 @@ function TgdGamesdeconSection() {
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>tgam_game_positions</h5>
       <p className={P}>
-        <Code>buildPositionTree</Code> replays <Code>gd_pgn</Code>.
+        <Code>buildPositionTree_Player</Code> replays <Code>gd_pgn</Code>.
       </p>
       <h5 className={H5}>Home dashboard</h5>
       <p className={P}>
@@ -259,7 +259,7 @@ function TgdGamesdeconSection() {
       <h4 className={H4}>Rules/gotchas</h4>
       <p className={P}>
         A game is skipped once it&apos;s 6 or fewer half-moves — not just true zero-move games.
-        The threshold is derived from <Code>MIN_ANALYSIS_MOVE</Code>, not hardcoded, so it moves
+        The threshold is derived from <Code>MIN_ANALYSIS_MOVE_Player</Code>, not hardcoded, so it moves
         automatically if that constant changes.
       </p>
     </div>
@@ -304,14 +304,14 @@ function TgamGamePositionsSection() {
       <ol className={OL}>
         <li>
           <em>Insert (Phase A)</em> — Replays <Code>gd_pgn</Code> move-by-move with chess.js (
-          <Code>getPositionsFromGame</Code>), deriving the before/after FEN for every ply in the
+          <Code>getPositionsFromGame_Player</Code>), deriving the before/after FEN for every ply in the
           analysis window (both sides). Writes one <Code>INSERT</Code> per whole game (chunked by
           game, not row count, so it stays atomic per game). FEN text goes straight into{' '}
           <Code>gam_pos_fen</Code>/<Code>gam_resulting_fen</Code>; <Code>gam_pos_id</Code>/
           <Code>gam_resulting_pos_id</Code> are left <Code>NULL</Code>.
         </li>
         <li>
-          <em>Backfill (Phase B, <Code>syncTposFromTgam</Code>)</em> — idempotent, re-runnable any
+          <em>Backfill (Phase B, <Code>syncTposFromTgam_Player</Code>)</em> — idempotent, re-runnable any
           time. Fills <Code>gam_pos_id</Code>/<Code>gam_resulting_pos_id</Code> by FEN match
           against <Code>tpos_positions</Code>, creating missing <Code>tpos_positions</Code> rows
           as needed.
@@ -437,7 +437,7 @@ function TposPositionsSection() {
       <h5 className={H5}>Purge</h5>
       <p className={P}>
         <Code>purgePositions.ts</Code> — candidate query starts from{' '}
-        <Code>pos_reached &lt;= MIN_REACH_TO_KEEP</Code>.
+        <Code>pos_reached &lt;= MIN_REACH_TO_KEEP_Player</Code>.
       </p>
       <h5 className={H5}>Position Detail page</h5>
       <p className={P}><Code>getPositionDetail</Code> (<Code>chessdb.ts</Code>).</p>
@@ -492,7 +492,7 @@ function PurgeSection() {
       <h4 className={H4}>Input</h4>
       <p className={P}>
         <Code>tpos_positions</Code> — candidates start from{' '}
-        <Code>pos_reached &lt;= MIN_REACH_TO_KEEP</Code>.
+        <Code>pos_reached &lt;= MIN_REACH_TO_KEEP_Player</Code>.
       </p>
 
       <h4 className={H4}>Processing</h4>
@@ -506,7 +506,7 @@ function PurgeSection() {
       <ol className={OL}>
         <li>
           Candidate query - indexed filter on <Code>pos_reached</Code> first, then confirm every
-          occurrence is older than <Code>PURGE_REACH_GRACE_DAYS</Code> by joining through{' '}
+          occurrence is older than <Code>PURGE_REACH_GRACE_DAYS_Player</Code> by joining through{' '}
           <Code>tgam_game_positions</Code> → <Code>tgd_gamesdecon</Code> (capped to{' '}
           <Code>PURGE_ROW_CAP</Code> rows, plain <Code>LIMIT</Code> on the seed — safe, since no
           candidate&apos;s eligibility depends on which other candidates are in the same batch)
@@ -531,7 +531,7 @@ function PurgeSection() {
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>tgam_game_positions (Build Position Tree)</h5>
       <p className={P}>
-        <Code>buildPositionTree</Code> checks <Code>gd_positions_purged</Code> alongside its own{' '}
+        <Code>buildPositionTree_Player</Code> checks <Code>gd_positions_purged</Code> alongside its own{' '}
         <Code>NOT EXISTS</Code> check, so a purged game is never mistaken for an unprocessed one
         (see Rules/gotchas).
       </p>
@@ -597,7 +597,7 @@ function PoseEvaluationsSection() {
       </p>
       <h5 className={H5}>Details</h5>
       <ol className={OL}>
-        <li>Phase 1 - straight from <Code>tpos_positions</Code>, <Code>pos_reached &gt; MIN_REACH_TO_KEEP</Code>, most-reached first</li>
+        <li>Phase 1 - straight from <Code>tpos_positions</Code>, <Code>pos_reached &gt; MIN_REACH_TO_KEEP_Player</Code>, most-reached first</li>
         <li>Phase 2 - resulting positions discovered via <Code>gam_resulting_pos_id</Code>, not reach-ordered</li>
         <li>Normalize - Stockfish reports from the side-to-move&apos;s perspective; flipped to white&apos;s here</li>
       </ol>
@@ -636,7 +636,7 @@ function PoseEvaluationsSection() {
           called.
         </li>
         <li>
-          Both evaluation phases filter out <Code>pos_reached &lt;= MIN_REACH_TO_KEEP</Code> —
+          Both evaluation phases filter out <Code>pos_reached &lt;= MIN_REACH_TO_KEEP_Player</Code> —
           belt-and-suspenders alongside running after Purge: Purge already removes old, low-reach
           positions before this step runs, and the filter here also protects a low-reach position
           still inside its grace period (not yet purge-eligible, but not worth spending Stockfish
@@ -715,7 +715,7 @@ function ThabHabitsSection() {
       <p className={P}>
         <Code>tgam_game_positions</Code> joined to <Code>tgd_gamesdecon</Code> (player/color/
         result) and <Code>tpos_positions</Code> (color match) — every tracked-player move at{' '}
-        <Code>move_num &gt;= MIN_ANALYSIS_MOVE</Code>.
+        <Code>move_num &gt;= MIN_ANALYSIS_MOVE_Player</Code>.
       </p>
 
       <h4 className={H4}>Processing</h4>
@@ -729,7 +729,7 @@ function ThabHabitsSection() {
       <ol className={OL}>
         <li>
           Aggregate - group by <Code>(player, pos_id, move_san)</Code>, keep only groups reached{' '}
-          <Code>HABITS_MIN_REACH_FLOOR</Code>+ times, filtered to the position&apos;s own color
+          <Code>HABITS_MIN_REACH_FLOOR_Player</Code>+ times, filtered to the position&apos;s own color
           matching the player&apos;s color (so opponent moves are excluded)
         </li>
         <li>
@@ -773,7 +773,7 @@ function ThabHabitsSection() {
           2026-07-19).
         </li>
         <li>
-          <Code>hab_move_cp</Code> is clamped to ±<Code>HABITS_MOVE_CP_CLAMP</Code> to stay within
+          <Code>hab_move_cp</Code> is clamped to ±<Code>HABITS_MOVE_CP_CLAMP_Player</Code> to stay within
           its <Code>numeric(6,2)</Code> column precision, since mate scores are normalized to
           ±10000 and can exceed it.
         </li>
@@ -798,7 +798,7 @@ function EvaluateGameEndingsSection() {
       <h4 className={H4}>Purpose</h4>
       <p className={P}>
         Evaluate each game&apos;s <strong>actual final position</strong> — not capped at{' '}
-        <Code>MAX_ANALYSIS_MOVE</Code> like the rest of the pipeline — the only place in the app
+        <Code>MAX_ANALYSIS_MOVE_Player</Code> like the rest of the pipeline — the only place in the app
         that reflects how a game actually ended, rather than its early tracked moves.
       </p>
 
@@ -822,13 +822,13 @@ function EvaluateGameEndingsSection() {
           Reuse (Phase 1) - one batched exact-FEN lookup against{' '}
           <Code>tpos_positions</Code>/<Code>tpose_positions_eval</Code> for the whole run; if a
           game&apos;s final position is already tracked/evaluated (common for games ending within
-          the first <Code>MAX_ANALYSIS_MOVE</Code> moves), its <Code>pose_cp</Code> is copied
+          the first <Code>MAX_ANALYSIS_MOVE_Player</Code> moves), its <Code>pose_cp</Code> is copied
           directly via one batched multi-row <Code>UPDATE</Code> — no Stockfish call
         </li>
         <li>
           Fresh evaluate (Phase 2) - whatever wasn&apos;t reused is evaluated with Stockfish,
           normalized to white&apos;s perspective, spread across{' '}
-          <Code>GAME_ENDINGS_CONCURRENCY</Code> concurrent engine instances on the native-binary
+          <Code>GAME_ENDINGS_CONCURRENCY_Player</Code> concurrent engine instances on the native-binary
           path (real OS-process parallelism); single-instance on the WASM path (production), since{' '}
           <Code>lite-single</Code> has no worker-thread offload
         </li>
@@ -888,7 +888,7 @@ function DeepenPopularPositionsSection() {
       <p className={P}>
         <Code>tpos_positions</Code> joined to <Code>tpose_positions_eval</Code> — positions already
         evaluated whose <Code>pos_reached</Code> qualifies for a deeper{' '}
-        <Code>POPULAR_POSITION_DEPTH_TIERS</Code> tier than their current <Code>pose_depth</Code>.
+        <Code>POPULAR_POSITION_DEPTH_TIERS_Player</Code> tier than their current <Code>pose_depth</Code>.
       </p>
 
       <h4 className={H4}>Processing</h4>
@@ -900,7 +900,7 @@ function DeepenPopularPositionsSection() {
       <h5 className={H5}>Details</h5>
       <ol className={OL}>
         <li>
-          <Code>POPULAR_POSITION_DEPTH_TIERS</Code> (<Code>src/lib/constants.ts</Code>) —{' '}
+          <Code>POPULAR_POSITION_DEPTH_TIERS_Player</Code> (<Code>src/lib/constants.ts</Code>) —{' '}
           <Code>pos_reached &gt;= 50</Code> → depth 30, <Code>&gt;= 30</Code> → depth 24,{' '}
           <Code>&gt;= 10</Code> → depth 22
         </li>
@@ -946,7 +946,7 @@ function DeepenPopularPositionsSection() {
           The backlog-count query (<Code>/owner/pipelinegames</Code> panel, step 9) and the batch&apos;s
           own selection query share the same tier-derived SQL (<Code>popularPositionTierSql()</Code>{' '}
           in <Code>enrichPositionsStockfish.ts</Code>), so they can&apos;t drift out of sync with
-          each other or with <Code>POPULAR_POSITION_DEPTH_TIERS</Code>.
+          each other or with <Code>POPULAR_POSITION_DEPTH_TIERS_Player</Code>.
         </li>
       </ul>
     </div>
@@ -958,7 +958,7 @@ export type DataflowSection = { id: string; label: string; content: ReactNode }
 export const SECTIONS: DataflowSection[] = [
   { id: 'tpl_players',              label: 'tpl_players',              content: <TplPlayersSection /> },
   { id: 'chess-com-api',            label: 'chess.com API',            content: <ChessComApiSection /> },
-  { id: 'tgr_gamesraw',             label: 'tgr_gamesraw',             content: <TgrGamesrawSection /> },
+  { id: 'wk_gr_gamesraw',             label: 'wk_gr_gamesraw',             content: <TgrGamesrawSection /> },
   { id: 'tgd_gamesdecon',           label: 'tgd_gamesdecon',           content: <TgdGamesdeconSection /> },
   { id: 'tgam_game_positions',      label: 'tgam_game_positions',      content: <TgamGamePositionsSection /> },
   { id: 'tpos_positions',           label: 'tpos_positions',           content: <TposPositionsSection /> },

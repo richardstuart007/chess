@@ -5,7 +5,7 @@ import { table_query } from 'nextjs-shared/table_query'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
 import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
-import { MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR, HABITS_MOVE_CP_CLAMP, POSITION_INSERT_CHUNK_SIZE, PIPELINE_TYPE_GAMES } from '../constants'
+import { MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player, HABITS_MOVE_CP_CLAMP_Player, POSITION_INSERT_CHUNK_SIZE_Player, PIPELINE_TYPE_GAMES } from '../constants'
 
 interface HabitAggregate {
   player:           string
@@ -24,7 +24,7 @@ interface HabitAggregate {
 }
 
 //----------------------------------------------------------------------------------
-//  chunkRows — plain fixed-size chunking; unlike buildPositionTree's chunkByGame,
+//  chunkRows — plain fixed-size chunking; unlike buildPositionTree_Player's chunkByGame,
 //  each habit row is independent so no grouping constraint is needed.
 //----------------------------------------------------------------------------------
 function chunkRows<T>(rows: T[], maxRows: number): T[][] {
@@ -46,7 +46,7 @@ function chunkRows<T>(rows: T[], maxRows: number): T[][] {
 //  deterministic value today (same before/after positions, one evaluation each), so
 //  this only behaves differently from an average if that ever stops holding (e.g. a
 //  position gets re-evaluated at a different depth later). Clamped to
-//  +-HABITS_MOVE_CP_CLAMP to stay within hab_move_cp's numeric(6,2) precision — mate
+//  +-HABITS_MOVE_CP_CLAMP_Player to stay within hab_move_cp's numeric(6,2) precision — mate
 //  scores are normalized to +-10000, so a single real swing can still exceed it.
 //
 //  Both good and bad recurring moves are stored (no WHERE move_cp < 0 filter) — a
@@ -71,7 +71,7 @@ function chunkRows<T>(rows: T[], maxRows: number): T[][] {
 //  position-scoped variant to keep in sync with.
 //----------------------------------------------------------------------------------
 async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
-  const params: number[] = [MIN_ANALYSIS_MOVE, HABITS_MIN_REACH_FLOOR]
+  const params: number[] = [MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player]
 
   const selectRes = await table_query({
     caller: 'fetchHabitAggregates_select',
@@ -134,7 +134,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
     moveTimes:      Number(r.move_times),
     moveWins:       Number(r.move_wins),
     moveLosses:     Number(r.move_losses),
-    moveCp:         Math.max(-HABITS_MOVE_CP_CLAMP, Math.min(HABITS_MOVE_CP_CLAMP, Number(r.move_cp))),
+    moveCp:         Math.max(-HABITS_MOVE_CP_CLAMP_Player, Math.min(HABITS_MOVE_CP_CLAMP_Player, Number(r.move_cp))),
     resultingPosId: r.resulting_pos_id != null ? Number(r.resulting_pos_id) : null,
     openingName:    r.opening_name ?? null,
     ecoCode:        r.eco_code ?? null,
@@ -148,7 +148,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
 //----------------------------------------------------------------------------------
 async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number): Promise<number> {
   let built = 0
-  for (const chunk of chunkRows(aggregates, POSITION_INSERT_CHUNK_SIZE)) {
+  for (const chunk of chunkRows(aggregates, POSITION_INSERT_CHUNK_SIZE_Player)) {
     const values = chunk.map((_, i) => {
       const b = i * 13
       return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10},$${b+11},$${b+12},$${b+13})`

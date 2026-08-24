@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { syncTposFromTgam } from '@/src/lib/analysis/buildPositionTree'
+import { syncTposFromTgam_Player } from '@/src/lib/analysis/buildPositionTree_Player'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const forceNewRun = searchParams.get('newRun') === 'true'
 
   try {
-    const result = await syncTposFromTgam(level, forceNewRun)
+    const result = await syncTposFromTgam_Player(level, forceNewRun)
     return NextResponse.json({ ok: true, ...result })
   } catch (err: any) {
     console.error('sync-tpos route error', err)

@@ -7,20 +7,19 @@ import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS, PIPELINE_TYPE_MASTERGAMES }
 type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | typeof PIPELINE_TYPE_MASTERGAMES
 
 //----------------------------------------------------------------------------------
-//  resolvePipRunId — step 1a (the very first sub-step of Fetch & Insert Raw Games)
-//  always allocates a new run id (max + 1), same as any standalone manual step click
-//  (forceNew) since neither forms part of a coordinated run. Every other invocation
-//  joins the current run by reusing the highest run id already allocated — this is
-//  what ties the daily scheduled cron's independent, uncoordinated invocations
-//  together, and also what lets Run All's later steps join the run id 1a just
-//  allocated moments earlier.
+//  resolvePipRunId — allocates a new run id (max + 1) when forceNew is true, same as
+//  any standalone manual step click, since it doesn't form part of a coordinated run.
+//  Every other invocation joins the current run by reusing the highest run id already
+//  allocated — this is what ties a pipeline's own steps (or a daily scheduled cron's
+//  independent, uncoordinated invocations) together. Every download-step function
+//  (the first step of its own pipeline) is responsible for passing forceNewRun: true
+//  itself, unconditionally — this function has no step-number knowledge of its own.
 //----------------------------------------------------------------------------------
-async function resolvePipRunId(step: number, subStep: string, pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
-  const isAllocator = step === 1 && subStep === 'a'
+async function resolvePipRunId(pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
   const result = await table_query({
     caller:       'resolvePipRunId',
     table:        'tpip_pipelinelog',
-    query:        (isAllocator || forceNew)
+    query:        forceNew
       ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`
       : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`,
     params:       [pipelineType],
@@ -55,7 +54,7 @@ export async function logPipelineStep(params: {
   durationMs:   number
   forceNewRun?: boolean
 }): Promise<number> {
-  const runId = await resolvePipRunId(params.step, params.subStep, params.pipelineType, params.forceNewRun)
+  const runId = await resolvePipRunId(params.pipelineType, params.forceNewRun)
   const result = await table_query({
     caller:       'logPipelineStep',
     table:        'tpip_pipelinelog',

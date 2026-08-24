@@ -11,7 +11,7 @@ import FilterActionButton from '@/src/ui/filters/FilterActionButton'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import MiniBoard from '@/src/ui/board/MiniBoard'
 import {
-  MIN_ANALYSIS_MOVE, WIDTH_POSITION_COLOR, WIDTH_QUALITY, WIDTH_MIN_MOVE,
+  MIN_ANALYSIS_MOVE_Player, WIDTH_POSITION_COLOR, WIDTH_QUALITY, WIDTH_MIN_MOVE,
   WIDTH_MIN_REACHED, WIDTH_SORT_BY, WIDTH_HABITS_OPENING, WIDTH_ECO, WIDTH_DATE_FROM,
   PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
@@ -198,7 +198,7 @@ export default function HabitsTable({
             <th className="px-3 py-1.5">
               <div className="flex justify-end">
                 <FilterSelect
-                  options={[{ value: String(MIN_ANALYSIS_MOVE), label: `From ${MIN_ANALYSIS_MOVE}` }]}
+                  options={[{ value: String(MIN_ANALYSIS_MOVE_Player), label: `From ${MIN_ANALYSIS_MOVE_Player}` }]}
                   value={String(minMove)}
                   onChange={v => onMinMoveChange(Number(v))}
                   width={WIDTH_MIN_MOVE}

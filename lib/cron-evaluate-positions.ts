@@ -4,12 +4,12 @@ import * as path from 'path'
 dotenv.config({ path: path.join(process.cwd(), '.env') })
 
 import { enrichPositionsStockfish } from '../src/lib/analysis/enrichPositionsStockfish'
-import { DEFAULT_BATCH_SIZE, STOCKFISH_DEPTH } from '../src/lib/constants'
+import { DEFAULT_BATCH_SIZE_Player, STOCKFISH_DEPTH } from '../src/lib/constants'
 
 console.log('Running enrichPositionsStockfish() directly ...')
 
 async function main() {
-  const result = await enrichPositionsStockfish({ limit: DEFAULT_BATCH_SIZE, depth: STOCKFISH_DEPTH, forceNewRun: false })
+  const result = await enrichPositionsStockfish({ limit: DEFAULT_BATCH_SIZE_Player, depth: STOCKFISH_DEPTH, forceNewRun: false })
   console.log(JSON.stringify(result, null, 2))
 }
 

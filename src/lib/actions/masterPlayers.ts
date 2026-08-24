@@ -4,9 +4,11 @@ import * as cheerio from 'cheerio'
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { ColumnValuePair } from 'nextjs-shared/structures'
 import { table_update } from 'nextjs-shared/table_update'
+import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 
 const MASTER_PLAYERS_TABLE = 'tmst_master_players'
+const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 
 export type MasterPlayerRow = {
   mstid:           number
@@ -55,7 +57,7 @@ export async function getMasterPlayerNames(): Promise<string[]> {
 //----------------------------------------------------------------------------------
 //  getMasterHandleNameMap — chess.com handle (lowercased) → display name, for every
 //  master player that has a handle. Used to attach a real name onto master-games rows
-//  (tmgd_mastergamesdecon, secondary database) in app code, since that table only
+//  (tmgd_gamesdecon, secondary database) in app code, since that table only
 //  stores the handle and the two tables can never be SQL-joined across databases.
 //----------------------------------------------------------------------------------
 export async function getMasterHandleNameMap(): Promise<Record<string, string>> {
@@ -201,4 +203,38 @@ export async function setMasterPlayerPriority(mstid: number, priority: boolean):
     columnValuePairs: [{ column: 'mst_priority', value: priority }],
     whereColumnValuePairs: [{ column: 'mst_mstid', value: mstid }]
   })
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterSyncYearStatus — chess.com handles (lowercased) that already have 1+ rows
+//  in tmgd_gamesdecon with an end_time falling within the given calendar year.
+//  "Already downloaded" means any games at all for that year, not a comparison
+//  against chess.com's own archive counts. Used by MasterPlayerMultiSelect to mark
+//  which players still need syncing for the selected year.
+//
+//  Deliberately reads tmgd_gamesdecon (permanent), not wk_mgr_gamesraw (the transient
+//  raw workfile, truncated before every sync run) — the workfile only ever reflects the
+//  most recently run player(s), not true sync history.
+//----------------------------------------------------------------------------------
+export async function getMasterSyncYearStatus(year: number): Promise<Set<string>> {
+  const yearStart = Math.floor(Date.UTC(year, 0, 1) / 1000)
+  const yearEnd = Math.floor(Date.UTC(year + 1, 0, 1) / 1000)
+
+  const result = await table_query({
+    caller: 'getMasterSyncYearStatus',
+    table: MASTER_DECON_TABLE,
+    params: [yearStart, yearEnd],
+    skipCache: true,
+    query: `SELECT DISTINCT mgd_player FROM ${MASTER_DECON_TABLE} WHERE mgd_end_time >= $1 AND mgd_end_time < $2`
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getMasterSyncYearStatus',
+      lg_caller: 'getMasterSyncYearStatus',
+      lg_msg: `Failed to fetch master sync status for ${year}: ` + result.error,
+      lg_severity: 'E'
+    })
+    return new Set()
+  }
+  return new Set(result.data.map((r: any) => r.mgd_player as string))
 }
