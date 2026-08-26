@@ -3,7 +3,7 @@
 import { spawn } from 'child_process'
 import { createInterface } from 'readline'
 import { Chess } from 'chess.js'
-import { saveEvaluation, upgradePositionEvaluation } from './chessdb'
+import { saveEvaluation_shared, upgradePositionEvaluation_shared } from './chessdb_shared'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
@@ -328,7 +328,7 @@ export async function enrichPositionsStockfish(opts: {
       // Normalize to white's perspective: Stockfish reports from side-to-move perspective.
       const fenColor = item.color ?? 'w'
       const whiteCp = fenColor === 'b' ? -stockCp : stockCp
-      await saveEvaluation({
+      await saveEvaluation_shared({
         posId:    item.posId,
         cp:       whiteCp,
         bestMove: stockBestMove ?? null,
@@ -448,7 +448,7 @@ export async function deepenPopularPositions(opts: {
       const { cp: stockCp, bestMove: stockBestMove } = await sf.evaluate(item.fen, item.targetDepth)
       const fenColor = item.color ?? 'w'
       const whiteCp = fenColor === 'b' ? -stockCp : stockCp
-      await upgradePositionEvaluation({
+      await upgradePositionEvaluation_shared({
         fen:      item.fen,
         cp:       whiteCp,
         bestMove: stockBestMove ?? null,

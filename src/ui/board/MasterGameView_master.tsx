@@ -2,20 +2,44 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    MasterGameView — board/move-list view for one synced master game, plus a live, unsaved
-//    Stockfish analysis panel (StockfishEngine.analyzeGame is pure client-side computation — no
-//    DB read/write at all, so results exist only in this component's own state and are
-//    recomputed on every visit).
+//    MasterGameView_master — board/move-list view for one synced master game, plus a Stockfish
+//    analysis panel. On mount, hydrates any already-computed evaluations from
+//    tmgev_game_evals (this game's own durable cache, secondary database) and the primary
+//    database's shared tpos_positions/tpose_positions_eval cache — no Stockfish is run
+//    automatically. "Analyze Game" runs Stockfish only for whatever isn't already cached, then
+//    persists the full result back to tmgev_game_evals.
 //
 //    Parameters:
 //      row — the master game row to display
 //
 //  2) NOTES
-//    Deliberately never imports saveGameEvaluations/upgradePositionEvaluation/
-//    getMovePlayCounts/fetchGamesForPosition — those write into or read from the tracked
-//    player's own primary-database position tree, which a master game has no business touching.
-//    This component is structurally incapable of it, not just gated by a flag. See
-//    PLAN_table-layer-and-master-games (task 6) for the full reasoning.
+//    Read-only lookups against tpos_positions/tpose_positions_eval
+//    (getPositionEvaluationsBulk_shared) and top-up-only writes via
+//    upgradePositionEvaluation_shared (createIfMissing:false, inside
+//    saveMasterGameEvaluations_master) are allowed — a master game may benefit from, and deepen,
+//    a position the tracked player has already reached, but never creates a new tpos_positions
+//    row of its own. Still never imports the chessdb_player functions (player-scoped joins into
+//    tgam_game_positions/tgd_gamesdecon — no player context here) or anything that would create a
+//    new tpos_positions row. See PLAN_master-games-fen-eval-reuse for the full design discussion.
+//    Still missing, relative to ChessBoardView_shared, the draggable board, deep/infinite
+//    analysis panel, and Chess.com Games search panel — a deliberately deferred follow-up, not a
+//    silent cut (see the project's .claude/CLAUDE.md Outstanding items).
+//
+//  3) CHANGE HISTORY
+//    2026-08-26 — added tmgev_game_evals read/write (getMasterGameEvals/
+//                 saveMasterGameEvaluations) and primary-DB cache top-up
+//                 (getPositionEvaluationsBulk/upgradePositionEvaluation); analysis results
+//                 are no longer discarded on navigation away.
+//    2026-08-26 — Game Analysis panel extracted to the shared GameAnalysisPanel component
+//                 (variant='master'); runAnalysis now supports a From/To re-analyze move
+//                 range and reports existingDepthRange/analysisResultMessage, mirroring
+//                 ChessBoardView's player-side runAnalysis exactly, except
+//                 createIfMissing stays false throughout (never creates a new
+//                 tpos_positions row) where the player side uses true.
+//    2026-08-26 — renamed MasterGameView -> MasterGameView_master;
+//                 GameAnalysisPanel/DepthInput/MoveTree/AlternativeLines -> _shared;
+//                 getMasterGameEvals/saveMasterGameEvaluations -> _master; chessdb.ts split
+//                 into chessdb_shared.ts/chessdb_player.ts, imports updated accordingly.
 //==================================================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -28,8 +52,11 @@ import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
 import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 import { MoveNode, AnalysisTree, buildTree, replayToNode, findMainLineAncestor, isOnMainLine } from '@/src/lib/analysisTree'
-import MoveTree from './MoveTree'
-import DepthInput from './DepthInput'
+import { getPositionEvaluationsBulk_shared, upgradePositionEvaluation_shared } from '@/src/lib/analysis/chessdb_shared'
+import { getMasterGameEvals_master, saveMasterGameEvaluations_master } from '@/src/lib/master/masterGamesList'
+import { truncateFen } from '@/src/lib/fen'
+import MoveTree_shared from './MoveTree_shared'
+import GameAnalysisPanel_shared from './GameAnalysisPanel_shared'
 import MasterMovesDbPanel from './MasterMovesDbPanel'
 import MasterGamesDbPanel from './MasterGamesDbPanel'
 
@@ -55,7 +82,7 @@ interface MasterGameViewProps {
   row: MasterGameRow
 }
 
-export default function MasterGameView({ row }: MasterGameViewProps) {
+export default function MasterGameView_master({ row }: MasterGameViewProps) {
   const playerColor = row.mgd_player_color
   const result = row.mgd_player_result
 
@@ -66,16 +93,24 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
   const [selectedMastersMove, setSelectedMastersMove] = useState<string | null>(null)
   const displayGame = useRef(new Chess())
 
-  // Live Stockfish analysis — never saved anywhere, recomputed fresh every visit
+  // Stockfish analysis — hydrated from tmgev_game_evals/tpose_positions_eval on mount,
+  // persisted back to tmgev_game_evals after each run
   const [plyEvals, setPlyEvals] = useState<(PlyEvaluation | undefined)[]>([])
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; move?: string }>({ current: 0, total: 0 })
   const [analysisError, setAnalysisError] = useState('')
+  const [analysisResultMessage, setAnalysisResultMessage] = useState('')
   const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.reanalyzeDepth)
   const engineRef = useRef<StockfishEngine | null>(null)
 
+  // Re-analyze move range (full move numbers, White-anchored) — defaults to the whole game
+  const [fromMove, setFromMove] = useState(1)
+  const [toMove, setToMove] = useState(1)
+
   // -----------------------------------------------------------------------
-  // Parse PGN on mount → build a plain main-line tree, no Stockfish evals
+  // Parse PGN on mount → build a plain main-line tree, then hydrate any already-
+  // computed evaluations (tmgev_game_evals + the shared tpos_positions_eval cache) —
+  // no Stockfish run here, just a cache read
   // -----------------------------------------------------------------------
   useEffect(() => {
     const g = new Chess()
@@ -91,12 +126,36 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
       fens.push(g2.fen())
     }
 
-    setTree(buildTree(history, fens, []))
+    const newTree = buildTree(history, fens, [])
+    const totalFullMovesForRow = Math.max(1, Math.ceil(newTree.mainLine.length / 2))
+    setTree(newTree)
     setCurrentNode(null)
     setPlyEvals([])
     setAnalysisError('')
+    setAnalysisResultMessage('')
+    setFromMove(1)
+    setToMove(totalFullMovesForRow)
     displayGame.current = new Chess()
     setBoardKey(k => k + 1)
+
+    let cancelled = false
+    async function hydrateCachedEvals() {
+      const cached = await getMasterGameEvals_master(row.mgd_mgdid)
+      if (cancelled) return
+      const hydrated: (PlyEvaluation | undefined)[] = []
+      cached.forEach((e, i) => {
+        if (!e) return
+        hydrated[i] = e as PlyEvaluation
+        if (newTree.mainLine[i]) newTree.mainLine[i].evaluation = e as PlyEvaluation
+      })
+      if (hydrated.some(e => e !== undefined)) {
+        setPlyEvals(hydrated)
+        setTree({ ...newTree })
+        setFromMove(Math.min(5, totalFullMovesForRow))
+      }
+    }
+    hydrateCachedEvals()
+    return () => { cancelled = true }
   }, [row])
 
   // -----------------------------------------------------------------------
@@ -157,14 +216,20 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
   }, [currentNode])
 
   // -----------------------------------------------------------------------
-  // Run full-game Stockfish analysis — StockfishEngine.analyzeGame is pure client-side
-  // computation, no DB cache passed in (nothing to check) and no save afterward. Results
-  // live only in plyEvals/tree state for this session.
+  // Run full-game Stockfish analysis. On re-analysis (plyEvals already exist), only
+  // the selected From/To move range is (re-)analyzed — existing plyEvals outside that
+  // range are preserved, both in state and in tmgev_game_evals. Mirrors
+  // ChessBoardView's player-side runAnalysis exactly, except every
+  // upgradePositionEvaluation call here keeps createIfMissing:false (never creates a
+  // new tpos_positions row) where the player side uses true, and there's no
+  // refreshPositionPanels equivalent — MasterMovesDbPanel/MasterGamesDbPanel read from
+  // tmpos_positions/tmgam_game_positions, unrelated to Stockfish eval data.
   // -----------------------------------------------------------------------
   async function runAnalysis() {
     if (!tree) return
     setAnalyzing(true)
     setAnalysisError('')
+    setAnalysisResultMessage('')
 
     try {
       let engine = engineRef.current
@@ -173,22 +238,84 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
         engineRef.current = engine
       }
 
-      const fens = [tree.root.fen, ...tree.mainLine.map(n => n.fen)]
-      const sans = tree.mainLine.map(n => n.san)
+      const isReanalyze = plyEvals.length > 0
+      const totalFullMoves = Math.max(1, Math.ceil(tree.mainLine.length / 2))
+      const rangeFromMove = isReanalyze ? fromMove : 1
+      const rangeToMove = isReanalyze ? toMove : totalFullMoves
 
-      const mergedPlyEvals: (PlyEvaluation | undefined)[] = []
-      await engine.analyzeGame(
+      const sliceStart = (rangeFromMove - 1) * 2
+      const sliceEnd = Math.min(rangeToMove * 2, tree.mainLine.length)
+      const sliceNodes = tree.mainLine.slice(sliceStart, sliceEnd)
+
+      const anchorFen = sliceStart === 0 ? tree.root.fen : tree.mainLine[sliceStart - 1].fen
+      const fens = [anchorFen, ...sliceNodes.map(n => n.fen)]
+      const sans = sliceNodes.map(n => n.san)
+
+      const poseEvals = await getPositionEvaluationsBulk_shared(fens)
+
+      // Skip overwriting any ply whose existing depth is already >= this run's depth —
+      // mirrors tpose_positions_eval's own guard, so re-analyzing at a shallower depth
+      // never downgrades a ply saved deeper previously.
+      const mergedPlyEvals = [...plyEvals]
+      let updatedPlies = 0
+      let skippedPlies = 0
+
+      const { finalPosition } = await engine.analyzeGame(
         fens, sans,
         progress => setAnalysisProgress(progress),
         stockfishDepth,
-        undefined,
+        poseEvals,
         (plyEval, i) => {
-          mergedPlyEvals[i] = plyEval
-          tree.mainLine[i].evaluation = plyEval
+          const idx = sliceStart + i
+          const existing = mergedPlyEvals[idx]
+          if (existing && existing.depth >= plyEval.depth) {
+            skippedPlies++
+            return
+          }
+          mergedPlyEvals[idx] = plyEval
+          tree.mainLine[idx].evaluation = plyEval
+          updatedPlies++
           setPlyEvals([...mergedPlyEvals])
           setTree({ ...tree })
+          upgradePositionEvaluation_shared({ fen: plyEval.fenBefore, cp: plyEval.cpBefore, bestMove: plyEval.bestMove, depth: plyEval.depth, createIfMissing: false })
+            .catch(() => {
+              // Non-critical — a failed top-up doesn't block the rest
+            })
         }
       )
+
+      setAnalysisResultMessage(
+        skippedPlies > 0
+          ? `Updated ${updatedPlies} plies, kept ${skippedPlies} at deeper depth`
+          : `Updated ${updatedPlies} plies`
+      )
+
+      // First-time full analysis just completed — default the next re-analyze range to
+      // start at move 5, since re-checking opening theory is rarely useful
+      if (!isReanalyze) {
+        setFromMove(Math.min(5, totalFullMoves))
+      }
+
+      // Save the full merged plyEvals to DB — saveMasterGameEvaluations_master deletes and
+      // re-inserts by array position, so a partial array would wipe out the plyEvals
+      // for every move outside the re-analyzed range
+      try {
+        await saveMasterGameEvaluations_master(row.mgd_mgdid, mergedPlyEvals)
+      } catch {
+        // Non-critical — DB save failure doesn't block UI
+      }
+
+      // The range's final resulting position is never any ply's "before" position
+      // (nothing after it in this run), so it needs its own explicit upgrade call —
+      // everything else was already upgraded live, ply by ply, above.
+      const finalPoseEval = poseEvals[truncateFen(finalPosition.fen)]
+      if (!finalPoseEval || finalPoseEval.depth < stockfishDepth) {
+        try {
+          await upgradePositionEvaluation_shared({ fen: finalPosition.fen, cp: finalPosition.cp, bestMove: finalPosition.bestMove, depth: stockfishDepth, createIfMissing: false })
+        } catch {
+          // Non-critical
+        }
+      }
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
@@ -197,9 +324,24 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
   }
 
   const onMainLine = !currentNode || isOnMainLine(currentNode)
-  const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
-  const mistakes = plyEvals.filter(e => e?.classification === 'mistake').length
-  const inaccuracies = plyEvals.filter(e => e?.classification === 'inaccuracy').length
+
+  // Full move numbers for the re-analyze range selector
+  const totalFullMoves = tree ? Math.max(1, Math.ceil(tree.mainLine.length / 2)) : 1
+
+  // Existing saved depth for the currently-selected From/To range — mirrors
+  // ChessBoardView's identical computation
+  const existingDepthRange = (() => {
+    if (plyEvals.length === 0) return null
+    const rangeSliceStart = (Math.min(fromMove, totalFullMoves) - 1) * 2
+    const rangeSliceEnd = Math.min(Math.min(toMove, totalFullMoves) * 2, plyEvals.length)
+    const depths = plyEvals.slice(rangeSliceStart, rangeSliceEnd)
+      .filter((e): e is PlyEvaluation => e != null)
+      .map(e => e.depth)
+    if (depths.length === 0) return null
+    const minDepth = Math.min(...depths)
+    const maxDepth = Math.max(...depths)
+    return minDepth === maxDepth ? String(minDepth) : `${minDepth}–${maxDepth}`
+  })()
 
   if (!tree) return null
 
@@ -282,34 +424,29 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
           </MyButton>
         </div>
 
-        {/* Game Analysis — live Stockfish, never saved */}
-        <MyBox title='Game Analysis'>
-          <div className='space-y-2'>
-            <div className='flex items-center justify-between'>
-              {plyEvals.length > 0 ? (
-                <div className='flex gap-2 text-xs'>
-                  <span className='rounded bg-red-500 px-2 py-0.5 text-white'>{blunders} blunders</span>
-                  <span className='rounded bg-orange-500 px-2 py-0.5 text-white'>{mistakes} mistakes</span>
-                  <span className='rounded bg-yellow-400 px-2 py-0.5 text-black'>{inaccuracies} inaccuracies</span>
-                </div>
-              ) : (
-                <span className='text-xs text-gray-400'>No analysis yet</span>
-              )}
-            </div>
-            <div className='flex items-center gap-2'>
-              <DepthInput value={stockfishDepth} onChange={setStockfishDepth} />
-              <MyButton onClick={runAnalysis} disabled={analyzing} overrideClass='text-xs'>
-                {analyzing ? `Analyzing ${analysisProgress.current}/${analysisProgress.total}...` : 'Analyze Game'}
-              </MyButton>
-            </div>
-            {analysisError && <p className='text-xs text-red-600'>{analysisError}</p>}
-          </div>
-        </MyBox>
+        {/* Game Analysis */}
+        <GameAnalysisPanel_shared
+          variant='master'
+          plyEvals={plyEvals}
+          analyzing={analyzing}
+          analysisProgress={analysisProgress}
+          depth={stockfishDepth}
+          onDepthChange={setStockfishDepth}
+          existingDepthRange={existingDepthRange}
+          fromMove={fromMove}
+          toMove={toMove}
+          totalFullMoves={totalFullMoves}
+          onFromMoveChange={setFromMove}
+          onToMoveChange={setToMove}
+          onRunAnalysis={runAnalysis}
+          analysisResultMessage={analysisResultMessage}
+          analysisError={analysisError}
+        />
       </div>
 
       <div className='space-y-4 w-[600px]'>
         <MyBox title='Moves'>
-          <MoveTree tree={tree} currentNode={currentNode} onSelectNode={goToNode} />
+          <MoveTree_shared tree={tree} currentNode={currentNode} onSelectNode={goToNode} />
         </MyBox>
 
         {currentNode && (

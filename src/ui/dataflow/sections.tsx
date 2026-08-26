@@ -333,8 +333,8 @@ function TgamGamePositionsSection() {
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>Position Detail / Analyze page</h5>
       <p className={P}>
-        <Code>chessdb.ts</Code> — <Code>getMovesForPosition</Code>/
-        <Code>getMoveSummaryForPosition</Code> query <Code>tgam_game_positions</Code> directly and
+        <Code>chessdb_player.ts</Code> — <Code>getMovesForPosition_player</Code>/
+        <Code>getMoveSummaryForPosition_player</Code> query <Code>tgam_game_positions</Code> directly and
         live for per-move win/loss/CP breakdowns (<Code>mov_wins</Code>, <Code>mov_losses</Code>,{' '}
         <Code>pose_cp</Code> — the resulting position&apos;s own Stockfish eval, looked up
         directly via <Code>gam_resulting_pos_id</Code>, not averaged). Used by the Position Detail
@@ -440,7 +440,7 @@ function TposPositionsSection() {
         <Code>pos_reached &lt;= MIN_REACH_TO_KEEP_Player</Code>.
       </p>
       <h5 className={H5}>Position Detail page</h5>
-      <p className={P}><Code>getPositionDetail</Code> (<Code>chessdb.ts</Code>).</p>
+      <p className={P}><Code>getPositionDetail_player</Code> (<Code>chessdb_player.ts</Code>).</p>
 
       <h4 className={H4}>Rules/gotchas</h4>
       <ul className={UL}>
@@ -629,10 +629,10 @@ function PoseEvaluationsSection() {
           Two separate places trigger this evaluation logic: the server batch pipeline (
           <Code>enrichPositionsStockfish</Code>) and a browser-run alternative (
           <Code>EvalProgress.tsx</Code>, also on <Code>/owner/pipelinegames</Code>) — both write through
-          the same <Code>saveEvaluation</Code> upsert.
+          the same <Code>saveEvaluation_shared</Code> upsert.
         </li>
         <li>
-          <Code>getEvaluationForPosition</Code> (<Code>chessdb.ts</Code>) is dead code — never
+          <Code>getEvaluationForPosition_shared</Code> (<Code>chessdb_shared.ts</Code>) is dead code — never
           called.
         </li>
         <li>
@@ -757,7 +757,7 @@ function ThabHabitsSection() {
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>Habits page</h5>
       <p className={P}>
-        <Code>getHabitsData</Code>/<Code>getHabitsCount</Code> (<Code>chessdb.ts</Code>) — read{' '}
+        <Code>getHabitsData_player</Code>/<Code>getHabitsCount_player</Code> (<Code>chessdb_player.ts</Code>) — read{' '}
         <Code>thab_habits</Code> directly. The Bad/Good quality filter (default Bad) reads{' '}
         <Code>hab_move_cp</Code>&apos;s sign; default sort is <Code>ABS(hab_move_cp) DESC</Code>{' '}
         (&quot;Biggest impact first&quot;). The displayed &quot;Eval&quot; column comes from a
@@ -843,8 +843,8 @@ function EvaluateGameEndingsSection() {
       <h4 className={H4}>Consumers</h4>
       <h5 className={H5}>Analyze page</h5>
       <p className={P}>
-        <Code>ChessBoardView.tsx</Code>&apos;s &quot;Games — <Code>&lt;move&gt;</Code>&quot;
-        panel&apos;s Final Eval column, via <Code>getGamesForPosition</Code> (<Code>chessdb.ts</Code>).
+        <Code>ChessBoardView_shared.tsx</Code>&apos;s &quot;Games — <Code>&lt;move&gt;</Code>&quot;
+        panel&apos;s Final Eval column, via <Code>getGamesForPosition</Code> (<Code>chessdb_player.ts</Code>).
       </p>
 
       <h4 className={H4}>Rules/gotchas</h4>

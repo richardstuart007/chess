@@ -2,7 +2,8 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    DepthInput — shared Depth number input for /analyze's Game Analysis and Stockfish panels.
+//    DepthInput_shared — shared Depth number input for the Game Analysis and Stockfish panels,
+//    used by both tracked-player and master-game analysis.
 //
 //    Parameters:
 //      value         — current depth value (can transiently be NaN mid-typing)
@@ -29,7 +30,7 @@ interface DepthInputProps {
   overrideClass?: string
 }
 
-export default function DepthInput({
+export default function DepthInput_shared({
   value,
   onChange,
   min = STOCKFISH_DEFAULTS.depth,

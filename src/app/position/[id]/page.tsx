@@ -3,7 +3,7 @@
 //==================================================================================================
 //  1) DESCRIPTION
 //    PositionPage — /position/[id]. Loads one position's detail (evaluation, per-move breakdown,
-//    occurrence games) via getPositionDetail and renders PositionDetail, behind a Suspense
+//    occurrence games) via getPositionDetail_player and renders PositionDetail, behind a Suspense
 //    boundary.
 //
 //    Parameters (from the URL):
@@ -15,7 +15,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import PositionDetail from '@/src/ui/analysis/PositionDetail'
-import { getPositionDetail } from '@/src/lib/analysis/chessdb'
+import { getPositionDetail_player } from '@/src/lib/analysis/chessdb_player'
 
 export default function PositionPage() {
   return (
@@ -38,7 +38,7 @@ function PositionDetailContent() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getPositionDetail(posId, player).then(d => {
+    getPositionDetail_player(posId, player).then(d => {
       setData(d)
       setLoading(false)
     })

@@ -14,7 +14,7 @@ import { MyHelp } from 'nextjs-shared/MyHelp'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
-import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/src/lib/analysis/chessdb'
+import { getHabitsData_player, getHabitsCount_player, dismissHabit_player, undismissHabit_player } from '@/src/lib/analysis/chessdb_player'
 import { getPlayers } from '@/src/lib/actions/players'
 import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
 import { MIN_ANALYSIS_MOVE_Player, HABITS_ITEMS_PER_PAGE_Player, HABITS_ROWS_OPTIONS_Player, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM_Player } from '@/src/lib/constants'
@@ -163,7 +163,7 @@ function HabitsContent() {
     if (!hydrated) return
     async function loadCount() {
       if (playersToFetch.length === 0) { setTotalCount(0); return }
-      const count = await getHabitsCount({
+      const count = await getHabitsCount_player({
         players: playerFilter ? [playerFilter] : undefined,
         color: color === 'all' ? undefined : color,
         quality,
@@ -184,7 +184,7 @@ function HabitsContent() {
     if (!hydrated || playersToFetch.length === 0) return
     setLoading(true)
     try {
-      const data = await getHabitsData({
+      const data = await getHabitsData_player({
         players:    playerFilter ? [playerFilter] : undefined,
         color:      color === 'all' ? undefined : color,
         quality,
@@ -214,9 +214,9 @@ function HabitsContent() {
   //
   const handleToggleDismiss = useCallback(async (posId: number, moveSan: string, rowPlayer: string) => {
     if (showDismissed) {
-      await undismissHabit(rowPlayer, posId, moveSan)
+      await undismissHabit_player(rowPlayer, posId, moveSan)
     } else {
-      await dismissHabit(rowPlayer, posId, moveSan)
+      await dismissHabit_player(rowPlayer, posId, moveSan)
     }
     setTotalCount(c => Math.max(0, c - 1))
     load()

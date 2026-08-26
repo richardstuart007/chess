@@ -10,7 +10,7 @@ import { write_logging } from 'nextjs-shared/write_logging'
 import { Chess } from 'chess.js'
 import { classifyMove } from '@/src/lib/stockfish'
 import { truncateFen } from '@/src/lib/fen'
-import { getPositionEvaluationsBulk } from '@/src/lib/analysis/chessdb'
+import { getPositionEvaluationsBulk_shared } from '@/src/lib/analysis/chessdb_shared'
 
 export type GameEvalRow = {
   san: string
@@ -147,7 +147,7 @@ export async function insertRawGame(data: {
 }
 
 //----------------------------------------------------------------------------------
-//  saveGameEvaluations — write per-move Stockfish evals from /analyze to tgev_game_evals.
+//  saveGameEvaluations_player — write per-move Stockfish evals from /analyze to tgev_game_evals.
 //  evaluations can have gaps (undefined) for plies with no real data — no row is written
 //  for those (matches "not actually analyzed"), rather than inserting a placeholder.
 //  Full delete-then-reinsert of this game's row set, batched into a single multi-row
@@ -155,9 +155,9 @@ export async function insertRawGame(data: {
 //  the old one-row-at-a-time loop, entirely DB round-trip overhead unrelated to
 //  Stockfish (which may not have run at all if everything was already cached).
 //----------------------------------------------------------------------------------
-export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
+export async function saveGameEvaluations_player(gdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
   await table_delete({
-    caller: 'saveGameEvaluations_delete',
+    caller: 'saveGameEvaluations_player_delete',
     table: 'tgev_game_evals',
     whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
     skipCache: true
@@ -177,7 +177,7 @@ export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRo
   ])
 
   await table_query({
-    caller: 'saveGameEvaluations_insert',
+    caller: 'saveGameEvaluations_player_insert',
     table: 'tgev_game_evals',
     query: `
       INSERT INTO tgev_game_evals
@@ -190,7 +190,7 @@ export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRo
 }
 
 //----------------------------------------------------------------------------------
-//  getGameEvals — per-ply evals for display, preferring tpose_positions_eval (the app's
+//  getGameEvals_player — per-ply evals for display, preferring tpose_positions_eval (the app's
 //  single source of truth for "the evaluation of a position") over tgev_game_evals'
 //  own stored value wherever pose has an equal-or-deeper record, falling back to
 //  gev's own value otherwise. Driven by the game's own FEN sequence (derived from its
@@ -207,9 +207,9 @@ export async function saveGameEvaluations(gdid: number, evaluations: (GameEvalRo
 //  position BEFORE this ply, not a property of this ply's own resulting position, so
 //  they always come from gev (blank if no tgev row exists for that ply).
 //----------------------------------------------------------------------------------
-export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefined)[]> {
+export async function getGameEvals_player(gdid: number): Promise<(GameEvalRow | undefined)[]> {
   const gameResult = await table_fetch({
-    caller: 'getGameEvals_pgn',
+    caller: 'getGameEvals_player_pgn',
     table: DECON_TABLE,
     whereColumnValuePairs: [{ column: 'gd_gdid', value: gdid }],
     columns: ['gd_pgn'],
@@ -217,8 +217,8 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
   })
   if (!gameResult.ok) {
     write_logging({
-      lg_functionname: 'getGameEvals',
-      lg_caller: 'getGameEvals_pgn',
+      lg_functionname: 'getGameEvals_player',
+      lg_caller: 'getGameEvals_player_pgn',
       lg_msg: 'Failed to fetch game PGN for ' + gdid + ': ' + gameResult.error,
       lg_severity: 'E'
     })
@@ -244,7 +244,7 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
   }
 
   const tgevResult = await table_fetch({
-    caller: 'getGameEvals',
+    caller: 'getGameEvals_player',
     table: 'tgev_game_evals',
     whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
     orderBy: 'gev_ply',
@@ -253,8 +253,8 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
   })
   if (!tgevResult.ok) {
     write_logging({
-      lg_functionname: 'getGameEvals',
-      lg_caller: 'getGameEvals',
+      lg_functionname: 'getGameEvals_player',
+      lg_caller: 'getGameEvals_player',
       lg_msg: 'Failed to fetch game evals for ' + gdid + ': ' + tgevResult.error,
       lg_severity: 'E'
     })
@@ -263,7 +263,7 @@ export async function getGameEvals(gdid: number): Promise<(GameEvalRow | undefin
   const tgevByPly = new Map<number, any>()
   for (const r of tgevResult.data) tgevByPly.set(Number(r.gev_ply), r)
 
-  const poseEvals = await getPositionEvaluationsBulk(fens)
+  const poseEvals = await getPositionEvaluationsBulk_shared(fens)
 
   const result: (GameEvalRow | undefined)[] = []
   // Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are

@@ -2,8 +2,9 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    MoveTree — main-line move table with inline variation branches, evaluation cells, and
+//    MoveTree_shared — main-line move table with inline variation branches, evaluation cells, and
 //    optional per-move occurrence counts. Scrolls the active move into view on selection change.
+//    Used by both tracked-player and master-game analysis.
 //
 //    Parameters:
 //      tree         — the analysis tree to render
@@ -32,7 +33,7 @@ const CLASSIFICATION_TEXT_COLORS: Record<string, string> = {
   good: 'text-blue-600'
 }
 
-export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }: MoveTreeProps) {
+export default function MoveTree_shared({ tree, currentNode, onSelectNode, moveCounts }: MoveTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

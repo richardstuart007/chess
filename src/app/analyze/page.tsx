@@ -4,7 +4,7 @@
 //  1) DESCRIPTION
 //    AnalyzePage — /analyze. Loads a single tracked-player game (by ?game= gdid) via getGameById,
 //    reconstructs it into a ChessComGame-shaped object, attaches any already-stored Stockfish ply
-//    evaluations, and renders ChessBoardView, behind a Suspense boundary.
+//    evaluations, and renders ChessBoardView_shared, behind a Suspense boundary.
 //
 //    Parameters (from the URL):
 //      game   — gdid of the game to load
@@ -16,9 +16,9 @@ import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import BackButton from '@/src/ui/BackButton'
-import ChessBoardView from '@/src/ui/board/ChessBoardView'
+import ChessBoardView_shared from '@/src/ui/board/ChessBoardView_shared'
 import { ChessComGame } from '@/src/lib/chesscom'
-import { getGameById, getGameEvals } from '@/src/lib/actions/games'
+import { getGameById, getGameEvals_player } from '@/src/lib/actions/games'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 
 export default function AnalyzePage() {
@@ -31,7 +31,7 @@ export default function AnalyzePage() {
 
 //----------------------------------------------------------------------------------
 //  AnalyzeContent — loads the game by ?game= gdid, reconstructs it into a ChessComGame-shaped
-//  object with any stored ply evaluations attached, then renders ChessBoardView
+//  object with any stored ply evaluations attached, then renders ChessBoardView_shared
 //----------------------------------------------------------------------------------
 function AnalyzeContent() {
   const searchParams = useSearchParams()
@@ -92,7 +92,7 @@ function AnalyzeContent() {
           finalEval:   row.gd_final_eval
         }
 
-        const storedPlyEvals = await getGameEvals(row.gd_gdid)
+        const storedPlyEvals = await getGameEvals_player(row.gd_gdid)
         setGame({
           ...raw,
           _plyEvals: storedPlyEvals.length > 0 ? storedPlyEvals : null
@@ -129,7 +129,7 @@ function AnalyzeContent() {
   }
 
   return (
-    <ChessBoardView
+    <ChessBoardView_shared
       game={game}
       gdid={gdid}
       player={player}

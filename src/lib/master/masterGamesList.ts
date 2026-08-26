@@ -4,11 +4,16 @@ import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_query } from 'nextjs-shared/table_query'
+import { table_delete } from 'nextjs-shared/table_delete'
 import { write_logging } from 'nextjs-shared/write_logging'
 import type { Filter } from 'nextjs-shared/structures'
+import { Chess } from 'chess.js'
 import { GAME_LIST_ROWS_DEFAULT_Master, MASTER_GAMES_FOR_FEN_LIMIT } from '../constants'
 import { getMasterHandleNameMap } from '../actions/masterPlayers'
 import { truncateFen } from '../fen'
+import { classifyMove } from '../stockfish'
+import { getPositionEvaluationsBulk_shared, upgradePositionEvaluation_shared } from '../analysis/chessdb_shared'
+import type { GameEvalRow } from '../actions/games'
 
 const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 
@@ -335,4 +340,173 @@ export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
     const handle = r.mgd_player as string
     return { handle, name: nameMap[handle.toLowerCase()] ?? handle }
   })
+}
+
+//----------------------------------------------------------------------------------
+//  saveMasterGameEvaluations_master — write per-move Stockfish evals from
+//  MasterGameView_master's "Analyze Game" to tmgev_game_evals (secondary database,
+//  this game's own durable cache — mirrors games.ts's saveGameEvaluations_player
+//  exactly). For any ply whose FEN already exists in the primary database's
+//  tpos_positions, also tops up tpose_positions_eval via
+//  upgradePositionEvaluation_shared with createIfMissing:false — a master game may
+//  deepen a position the tracked player has already reached, but never creates a
+//  new tpos_positions row of its own.
+//----------------------------------------------------------------------------------
+export async function saveMasterGameEvaluations_master(mgdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
+  await table_delete({
+    caller: 'saveMasterGameEvaluations_master_delete',
+    table: 'tmgev_game_evals',
+    whereColumnValuePairs: [{ column: 'mgev_mgdid', value: mgdid }],
+    skipCache: true
+  })
+
+  const rows = evaluations
+    .map((e, ply) => ({ e, ply }))
+    .filter((r): r is { e: GameEvalRow; ply: number } => r.e != null)
+  if (rows.length === 0) return
+
+  const values = rows.map((_, idx) => {
+    const b = idx * 10
+    return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`
+  }).join(',')
+  const params = rows.flatMap(({ e, ply }) => [
+    mgdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth
+  ])
+
+  await table_query({
+    caller: 'saveMasterGameEvaluations_master_insert',
+    table: 'tmgev_game_evals',
+    query: `
+      INSERT INTO tmgev_game_evals
+        (mgev_mgdid, mgev_ply, mgev_san, mgev_fen_after, mgev_cp, mgev_cp_change, mgev_best_move, mgev_best_move_san, mgev_best_line, mgev_depth)
+      VALUES ${values}
+    `,
+    params,
+    isupdate: true
+  })
+
+  for (const { e } of rows) {
+    await upgradePositionEvaluation_shared({
+      fen: e.fen,
+      cp: e.cp,
+      bestMove: e.bestMove || null,
+      depth: e.depth,
+      createIfMissing: false
+    })
+  }
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterGameEvals_master — per-ply evals for display, preferring
+//  tpose_positions_eval (the primary database's shared position cache) over
+//  tmgev_game_evals' own stored value wherever pose has an equal-or-deeper record,
+//  falling back to tmgev's own value otherwise. Mirrors games.ts's
+//  getGameEvals_player exactly, against this master game's own PGN/tmgev_game_evals
+//  (secondary database) — the getPositionEvaluationsBulk_shared call reaches the
+//  primary database separately, never in a single cross-database join.
+//----------------------------------------------------------------------------------
+export async function getMasterGameEvals_master(mgdid: number): Promise<(GameEvalRow | undefined)[]> {
+  const gameResult = await table_fetch({
+    caller: 'getMasterGameEvals_master_pgn',
+    table: MASTER_DECON_TABLE,
+    whereColumnValuePairs: [{ column: 'mgd_mgdid', value: mgdid }],
+    columns: ['mgd_pgn'],
+    skipCache: true
+  })
+  if (!gameResult.ok) {
+    write_logging({
+      lg_functionname: 'getMasterGameEvals_master',
+      lg_caller: 'getMasterGameEvals_master_pgn',
+      lg_msg: 'Failed to fetch master game PGN for ' + mgdid + ': ' + gameResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  const pgn = gameResult.data[0]?.mgd_pgn as string | undefined
+  if (!pgn) return []
+
+  const g = new Chess()
+  try {
+    g.loadPgn(pgn)
+  } catch {
+    return []
+  }
+  const sanMoves = g.history()
+  if (sanMoves.length === 0) return []
+
+  const g2 = new Chess()
+  const fens = [g2.fen()]
+  for (const san of sanMoves) {
+    g2.move(san)
+    fens.push(g2.fen())
+  }
+
+  const tmgevResult = await table_fetch({
+    caller: 'getMasterGameEvals_master',
+    table: 'tmgev_game_evals',
+    whereColumnValuePairs: [{ column: 'mgev_mgdid', value: mgdid }],
+    orderBy: 'mgev_ply',
+    columns: ['mgev_ply', 'mgev_cp', 'mgev_best_move', 'mgev_best_move_san', 'mgev_best_line', 'mgev_depth'],
+    skipCache: true
+  })
+  if (!tmgevResult.ok) {
+    write_logging({
+      lg_functionname: 'getMasterGameEvals_master',
+      lg_caller: 'getMasterGameEvals_master',
+      lg_msg: 'Failed to fetch master game evals for ' + mgdid + ': ' + tmgevResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+  const tmgevByPly = new Map<number, any>()
+  for (const r of tmgevResult.data) tmgevByPly.set(Number(r.mgev_ply), r)
+
+  const poseEvals = await getPositionEvaluationsBulk_shared(fens)
+
+  const result: (GameEvalRow | undefined)[] = []
+  // Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
+  // only meaningful relative to the immediately preceding ply, so a gap resets this
+  // rather than letting a stale cp leak across it.
+  let cpBefore = 0
+  let havePrevCp = false
+
+  for (let i = 0; i < sanMoves.length; i++) {
+    const tmgevRow = tmgevByPly.get(i)
+    const poseEval = poseEvals[truncateFen(fens[i + 1])]
+
+    if (!tmgevRow && !poseEval) {
+      result.push(undefined)
+      havePrevCp = false
+      continue
+    }
+
+    const mgevCp = tmgevRow?.mgev_cp ?? 0
+    const mgevDepth = tmgevRow?.mgev_depth ?? 0
+    const usePose = poseEval != null && poseEval.depth >= mgevDepth
+    const cp = usePose ? poseEval.cp : mgevCp
+    const depth = usePose ? poseEval.depth : mgevDepth
+
+    const isWhiteMove = i % 2 === 0
+    const cpChange = havePrevCp ? (isWhiteMove ? cp - cpBefore : cpBefore - cp) : 0
+    const cpLoss = Math.max(0, -cpChange)
+
+    result.push({
+      san:           sanMoves[i],
+      fen:           fens[i + 1],
+      fenBefore:     fens[i],
+      cp,
+      cpBefore:      havePrevCp ? cpBefore : cp,
+      bestMove:      tmgevRow?.mgev_best_move     ?? '',
+      bestMoveSan:   tmgevRow?.mgev_best_move_san ?? '',
+      bestLineSans:  Array.isArray(tmgevRow?.mgev_best_line) ? tmgevRow.mgev_best_line : [],
+      cpLoss,
+      cpChange,
+      classification: classifyMove(cpLoss),
+      depth
+    })
+    cpBefore = cp
+    havePrevCp = true
+  }
+
+  return result
 }

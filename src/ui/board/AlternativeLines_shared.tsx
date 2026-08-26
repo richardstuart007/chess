@@ -2,8 +2,8 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    AlternativeLines — Stockfish multi-PV engine lines panel; clicking a line explores it on
-//    the board.
+//    AlternativeLines_shared — Stockfish multi-PV engine lines panel; clicking a line explores it
+//    on the board. Used by both tracked-player and master-game analysis.
 //
 //    Parameters:
 //      results     — ranked engine lines to display
@@ -23,7 +23,7 @@ interface AlternativeLinesProps {
   onSelectLine: (line: MultiPvResult) => void
 }
 
-export default function AlternativeLines({
+export default function AlternativeLines_shared({
   results,
   loading,
   positionPly,

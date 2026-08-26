@@ -141,3 +141,25 @@ two-reference-pair problem shape.
   player-name list confirmed with the user (per the "never hardcode a list without confirmation"
   rule) and a decision on dropdown vs. free-text-with-
   autocomplete.
+
+- **Extract `ChessBoardView.tsx`'s remaining inline panels into separate components, then reuse
+  them from Master games analysis** (identified 2026-08-26, not to be done now) — `ChessBoardView.tsx`
+  (~1586 lines) still has six panels built as inline JSX rather than separate components:
+  Stockfish, Moves Played, Games Played, Master Moves (Lichess), Master Games (Lichess), and
+  Chess.com Games. Per the user's stated general rule: a panel showing data independent of the
+  other panels on a route should be its own component, both for readability (splits a large file
+  into legible chunks) and reusability (lets the same panel be dropped onto another route). Intent
+  confirmed by the user: all six of these should eventually also appear on the Master games
+  analysis view (`MasterGameView.tsx`/`/analyzemaster`) — they don't today, purely because this
+  extraction hasn't been done yet, not because they're considered player-only in principle. Note
+  some of these panels (Stockfish in particular) are currently tightly coupled to a dozen-plus
+  pieces of `ChessBoardView`'s own local state/handlers (`deepAnalysisDepth`, `deepAnalyzing`,
+  `saveAnalysisMessage`, `handleSelectPvLine`, `getCurrentPositionFen()`, `fenCopied`, etc.), so
+  extraction will need a real prop surface designed per panel, not just a mechanical JSX cut —
+  mirrors the `GameAnalysisPanel` extraction (see `docs/archive/PLAN_master-games-fen-eval-reuse.md`
+  once archived) as the precedent for how to do this. Not designed further yet — which panels get
+  full player-side feature parity on the master side (e.g. "Moves Played"/"Games Played" are
+  inherently player-scoped — tied to `tgam_game_positions`/`getMovePlayCounts`/
+  `fetchGamesForPosition`, which master games structurally cannot use, per this file's Critical
+  Lessons section — so those two would need a master-specific equivalent sourced from
+  `tmpos_positions`/`tmgam_game_positions`, not a literal reuse) needs its own design pass.
