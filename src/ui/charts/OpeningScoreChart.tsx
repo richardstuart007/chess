@@ -1,5 +1,16 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    OpeningScoreChart — bar chart of score% by opening, with click-through to a filterable game
+//    list for the selected opening. Filter/sort selections persist to sessionStorage.
+//
+//    Parameters:
+//      players       — tracked players to fetch openings for (narrowed by the global ?player=)
+//      onSelectGame  — optional; called with (game, player) when a game row's Analyse button is
+//                      clicked
+//==================================================================================================
+
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -38,16 +49,6 @@ const RESULT_STYLES: Record<string, string> = {
   win:  'text-green-600 font-bold',
   loss: 'text-red-600 font-bold',
   draw: 'text-gray-500 font-bold'
-}
-
-function barColor(score: number): string {
-  if (score >= 60) return '#16a34a'
-  if (score >= 40) return '#6b7280'
-  return '#dc2626'
-}
-
-function sso<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
 interface OpeningScoreChartProps {
@@ -494,4 +495,20 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
       )}
     </MyBox>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  sso — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------------------
+function sso<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+}
+
+//----------------------------------------------------------------------------------------------
+//  barColor — bar fill color by score percentage (green 60+, gray 40-59, red below 40)
+//----------------------------------------------------------------------------------------------
+function barColor(score: number): string {
+  if (score >= 60) return '#16a34a'
+  if (score >= 40) return '#6b7280'
+  return '#dc2626'
 }

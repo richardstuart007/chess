@@ -6,8 +6,9 @@ import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
 import type { Filter } from 'nextjs-shared/structures'
-import { GAME_LIST_ROWS_DEFAULT_Master } from '../constants'
+import { GAME_LIST_ROWS_DEFAULT_Master, MASTER_GAMES_FOR_FEN_LIMIT } from '../constants'
 import { getMasterHandleNameMap } from '../actions/masterPlayers'
+import { truncateFen } from '../fen'
 
 const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 
@@ -171,6 +172,134 @@ export async function getMasterGamesPageCount(
     return 0
   }
   return result.data
+}
+
+export type MasterFenMoveBreakdown = {
+  move_played: string
+  move_uci:    string | null
+  times:       number
+  wins:        number
+  losses:      number
+  draws:       number
+  avgOpponentRating: number
+}
+
+export type MasterFenGameHit = {
+  mgd_mgdid:      number
+  move_played:    string
+  white_username: string
+  black_username: string
+  year:           number
+  player:         string   // the tracked master's chess.com handle (matches white_username or black_username)
+  result:         string   // objective chess result: '1-0' | '0-1' | '½-½' — never player-perspective
+}
+
+//----------------------------------------------------------------------------------
+//  objectiveResult — derives '1-0'/'0-1'/'½-½' from the tracked master's own color +
+//  result, since mgd_player_result is stored relative to whichever side mgd_player
+//  played, which callers can't otherwise tell apart from White/Black in the UI.
+//----------------------------------------------------------------------------------
+function objectiveResult(playerColor: string, playerResult: string): string {
+  if (playerResult === 'draw') return '½-½'
+  const playerWon = playerResult === 'win'
+  const whiteWon = (playerColor === 'white' && playerWon) || (playerColor === 'black' && !playerWon)
+  return whiteWon ? '1-0' : '0-1'
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterGamesForFen — every recorded occurrence of an exact FEN across all synced
+//  master players, via tmpos_positions (mpos_fen, unique-indexed) -> tmgam_game_positions
+//  (mgam_pos_id, indexed) -> tmgd_gamesdecon (mgam_mgdid). Returns both a per-move
+//  breakdown (mirrors buildHabits' move-grouping shape) and the raw per-game rows,
+//  so callers can render either a summary table or a full game list from one fetch.
+//----------------------------------------------------------------------------------
+export async function getMasterGamesForFen(fen: string, limit: number = MASTER_GAMES_FOR_FEN_LIMIT): Promise<{
+  reached: number
+  moves:   MasterFenMoveBreakdown[]
+  games:   MasterFenGameHit[]
+}> {
+  const posResult = await table_query({
+    caller: 'getMasterGamesForFen_position',
+    table: 'tmpos_positions',
+    query: `SELECT mpos_id, mpos_reached FROM tmpos_positions WHERE mpos_fen = $1`,
+    params: [truncateFen(fen)],
+    skipCache: true
+  })
+  if (!posResult.ok || posResult.data.length === 0) {
+    if (!posResult.ok) {
+      write_logging({
+        lg_functionname: 'getMasterGamesForFen',
+        lg_caller: 'getMasterGamesForFen_position',
+        lg_msg: 'Failed to fetch master position: ' + posResult.error,
+        lg_severity: 'E'
+      })
+    }
+    return { reached: 0, moves: [], games: [] }
+  }
+  const posId   = posResult.data[0].mpos_id
+  const reached = parseInt(posResult.data[0].mpos_reached ?? '0')
+
+  const gamesResult = await table_query({
+    caller: 'getMasterGamesForFen_games',
+    table: 'tmgam_game_positions',
+    query: `
+      SELECT g.mgam_move_played, g.mgam_move_uci,
+             d.mgd_mgdid, d.mgd_white_username, d.mgd_black_username,
+             d.mgd_player, d.mgd_player_color, d.mgd_player_result,
+             d.mgd_opponent_rating, d.mgd_end_time
+      FROM tmgam_game_positions g
+      JOIN tmgd_gamesdecon d ON d.mgd_mgdid = g.mgam_mgdid
+      WHERE g.mgam_pos_id = $1
+      ORDER BY d.mgd_end_time DESC
+      LIMIT $2
+    `,
+    params: [posId, limit],
+    skipCache: true
+  })
+  if (!gamesResult.ok) {
+    write_logging({
+      lg_functionname: 'getMasterGamesForFen',
+      lg_caller: 'getMasterGamesForFen_games',
+      lg_msg: 'Failed to fetch master games for position: ' + gamesResult.error,
+      lg_severity: 'E'
+    })
+    return { reached, moves: [], games: [] }
+  }
+
+  const games: MasterFenGameHit[] = gamesResult.data.map((r: any) => ({
+    mgd_mgdid:      r.mgd_mgdid,
+    move_played:    r.mgam_move_played,
+    white_username: r.mgd_white_username,
+    black_username: r.mgd_black_username,
+    year:           new Date(r.mgd_end_time * 1000).getUTCFullYear(),
+    player:         r.mgd_player,
+    result:         objectiveResult(r.mgd_player_color, r.mgd_player_result)
+  }))
+
+  const byMove = new Map<string, { move_uci: string | null; times: number; wins: number; losses: number; draws: number; ratingSum: number }>()
+  for (const r of gamesResult.data) {
+    const key = r.mgam_move_played as string
+    const entry = byMove.get(key) ?? { move_uci: r.mgam_move_uci, times: 0, wins: 0, losses: 0, draws: 0, ratingSum: 0 }
+    entry.times++
+    entry.ratingSum += r.mgd_opponent_rating ?? 0
+    if (r.mgd_player_result === 'win') entry.wins++
+    else if (r.mgd_player_result === 'loss') entry.losses++
+    else if (r.mgd_player_result === 'draw') entry.draws++
+    byMove.set(key, entry)
+  }
+  const moves: MasterFenMoveBreakdown[] = [...byMove.entries()]
+    .map(([move_played, e]) => ({
+      move_played,
+      move_uci: e.move_uci,
+      times: e.times,
+      wins: e.wins,
+      losses: e.losses,
+      draws: e.draws,
+      avgOpponentRating: e.times > 0 ? Math.round(e.ratingSum / e.times) : 0
+    }))
+    .sort((a, b) => b.times - a.times)
+
+  return { reached, moves, games }
 }
 
 export type SyncedMasterPlayer = { handle: string; name: string }

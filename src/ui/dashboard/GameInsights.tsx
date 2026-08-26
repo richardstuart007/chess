@@ -1,5 +1,10 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    GameInsights — placeholder panel for a future AI-generated game-insights feature.
+//==================================================================================================
+
 import MyBox from 'nextjs-shared/MyBox'
 
 export default function GameInsights() {

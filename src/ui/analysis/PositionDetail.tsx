@@ -1,5 +1,19 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PositionDetail — full detail page for one FEN position: board, best move, and two tabs
+//    (your recurring moves from here, and the full game history of when it was reached).
+//    Clicking a move in the "Your Moves" tab filters "Game History" to just that move.
+//
+//    Parameters:
+//      position  — the position row, or null if not found
+//      moves     — this position's recurring-move breakdown
+//      posEval   — Stockfish evaluation for this position, if any
+//      gameCount — total games that reached this position
+//      games     — every game hit for this position (move played, result, date, game id)
+//==================================================================================================
+
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -14,6 +28,7 @@ import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
 import { pushBackTarget } from '@/src/lib/backNav'
 import { POSITION_BOARD_SIZE_PX } from '@/src/lib/constants'
+import { resultBadge } from '@/src/lib/resultBadge'
 
 interface GameHit {
   player:       string
@@ -33,13 +48,6 @@ interface PositionDetailProps {
 }
 
 type Tab = 'moves' | 'history'
-
-function resultBadge(playerResult: string | null): { label: string; cls: string } {
-  if (playerResult === 'win')  return { label: 'W', cls: 'bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (playerResult === 'loss') return { label: 'L', cls: 'bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  if (playerResult === 'draw') return { label: 'D', cls: 'bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs font-semibold' }
-  return { label: '—', cls: 'text-gray-400 text-xs' }
-}
 
 export default function PositionDetail({
   position,

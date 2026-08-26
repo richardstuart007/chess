@@ -1,12 +1,23 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    useGlobalFilter — reads/writes one URL search param, shared across every page via
+//    ?<key>=<value> (the mechanism player/timeClass/dateFrom/opening/eco all use).
+//
+//    Parameters:
+//      key — the URL search param name to read/write
+//
+//    Returns:
+//      [value, setValue] — current value ('' if unset) and a setter
+//
+//  2) NOTES
+//    Absence in the URL always means "unset" — there is no sessionStorage fallback, unlike
+//    page-local filters.
+//==================================================================================================
+
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
-//----------------------------------------------------------------------------------------------
-//  useGlobalFilter — reads/writes one URL search param, shared across every page via
-//  ?<key>=<value> (the mechanism player/timeClass/dateFrom/opening/eco all use). Absence in the
-//  URL always means "unset" — there is no sessionStorage fallback, unlike page-local filters.
-//----------------------------------------------------------------------------------------------
 export function useGlobalFilter(key: string): [string, (next: string) => void] {
   const setMultiple = useGlobalFilters()
   const searchParams = useSearchParams()

@@ -1,3 +1,14 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    RootLayout — the app's single root layout (App Router). Wraps every page in the html/body
+//    shell, loads the Geist fonts, mounts nuqs's adapter for URL-state query params, shows the
+//    shared dev-mode DB-location header banner, and renders AppShell (nav + player selector)
+//    around the page content.
+//
+//    Parameters:
+//      children — the page content for the current route
+//==================================================================================================
+
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'

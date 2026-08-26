@@ -1,5 +1,13 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    MasterGameList — browsable/filterable list of synced master players' games. Mirrors
+//    GameList, but every filter is local state (no shared global ?dateFrom=/?opening=/?eco= —
+//    master games are a separate dataset from the tracked player's own), and rows are clickable,
+//    navigating to /analyzemaster.
+//==================================================================================================
+
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
@@ -28,16 +36,6 @@ const RESULT_STYLES: Record<string, string> = {
   draw: 'text-gray-500 font-bold'
 }
 
-function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
-}
-
-//----------------------------------------------------------------------------------------------
-//  MasterGameList — browsable/filterable list of synced master players' games. Mirrors GameList,
-//  but every filter is local state (no shared global ?dateFrom=/?opening=/?eco= — master games are
-//  a separate dataset from the tracked player's own), no player-select filter (only one master
-//  player synced so far), and rows are not clickable (no master-game analyze page exists yet).
-//----------------------------------------------------------------------------------------------
 export default function MasterGameList() {
   const router = useRouter()
   const [draftFilters, setDraftFilters] = useState<MasterGameFilters>({})
@@ -361,4 +359,11 @@ export default function MasterGameList() {
       </div>
     </MyBox>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------------------
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }

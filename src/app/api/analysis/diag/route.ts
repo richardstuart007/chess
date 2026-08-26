@@ -1,3 +1,12 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/diag — ad hoc debug route reporting wk_gr_gamesraw row counts (total, for
+//    one player, and a sample of distinct players) to sanity-check the sync pipeline's raw table.
+//
+//    Parameters (query string):
+//      player — player to count rows for (default 'stricade')
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { table_count } from 'nextjs-shared/table_count'
 import { table_fetch } from 'nextjs-shared/table_fetch'

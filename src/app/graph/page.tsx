@@ -1,5 +1,12 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    GraphPage — /graph. Renders RatingChart behind Player/Date From/Time Class/Records filters,
+//    behind a Suspense boundary. Player and Time Class apply instantly (shared global URL state);
+//    Date From and Records are staged as drafts and only take effect on Refresh.
+//==================================================================================================
+
 import { Suspense, useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
@@ -22,10 +29,18 @@ const GRAPH_LIMIT_OPTIONS: { value: string; label: string }[] = [
   { value: '0', label: 'All' }
 ]
 
-function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+export default function GraphPage() {
+  return (
+    <Suspense fallback={<MyLoadingMessage message1='Loading…' />}>
+      <GraphContent />
+    </Suspense>
+  )
 }
 
+//----------------------------------------------------------------------------------
+//  GraphContent — holds all filter state (player/timeClass global via URL, dateFrom/limit
+//  staged as drafts) and renders RatingChart once players are loaded
+//----------------------------------------------------------------------------------
 function GraphContent() {
   const searchParams = useSearchParams()
   const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
@@ -186,10 +201,9 @@ function GraphContent() {
   )
 }
 
-export default function GraphPage() {
-  return (
-    <Suspense fallback={<MyLoadingMessage message1='Loading…' />}>
-      <GraphContent />
-    </Suspense>
-  )
+//----------------------------------------------------------------------------------
+//  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }

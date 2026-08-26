@@ -1,3 +1,9 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    Page — /owner/cache. Thin wrapper delegating entirely to nextjs-shared's own OwnerTableCache
+//    viewer.
+//==================================================================================================
+
 import OwnerTableCache from 'nextjs-shared/OwnerTableCache'
 import { Metadata } from 'next'
 

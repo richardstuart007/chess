@@ -1,5 +1,29 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    HabitsTable — filterable table of recurring player habits (moves played from the same
+//    position more than once), with per-column filter controls and a Dismiss/Restore toggle per
+//    row. Clicking a row navigates to that position's detail page.
+//
+//    Parameters:
+//      rows                      — habit rows to display
+//      dismissedView             — true when viewing dismissed habits instead of active ones
+//      onToggleDismiss           — called with (posId, moveSan, player) to dismiss/restore a row
+//      players                   — tracked players, for the Player filter
+//      color / onColorChange     — position-color filter state
+//      quality / onQualityChange — Bad/Good filter state
+//      minMove / onMinMoveChange — minimum move-number filter state
+//      minReached / onMinReachedChange — minimum times-reached filter state
+//      sortBy / onSortByChange   — sort mode ('cpLoss' | 'reached')
+//      onShowDismissedToggle     — toggles between active/dismissed views
+//      dateFrom / onDateFromChange — date-from filter state
+//      opening / onOpeningChange — opening-name filter state
+//      eco / onEcoChange         — ECO-code filter state
+//      onApplyFilters            — applies pending filter changes
+//      filtersPending            — true when filter changes haven't been applied yet
+//==================================================================================================
+
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -65,20 +89,6 @@ interface HabitsTableProps {
   onEcoChange: (v: string) => void
   onApplyFilters: () => void
   filtersPending: boolean
-}
-
-function formatLastOccurred(epochSeconds: number): string {
-  const date = new Date(epochSeconds * 1000)
-  const dd = String(date.getDate()).padStart(2, '0')
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const yy = String(date.getFullYear()).slice(2)
-  return `${dd}/${mm}/${yy}`
-}
-
-function cpClass(cp: number | null): string {
-  if (cp === null) return 'text-gray-400'
-  if (cp < 0) return 'text-red-600 font-semibold'
-  return 'text-green-700'
 }
 
 export default function HabitsTable({
@@ -368,4 +378,25 @@ export default function HabitsTable({
       </table>
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  formatLastOccurred — epoch seconds to dd/mm/yy
+//----------------------------------------------------------------------------------
+function formatLastOccurred(epochSeconds: number): string {
+  const date = new Date(epochSeconds * 1000)
+  const dd = String(date.getDate()).padStart(2, '0')
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const yy = String(date.getFullYear()).slice(2)
+  return `${dd}/${mm}/${yy}`
+}
+
+//----------------------------------------------------------------------------------
+//  cpClass — text color class for a centipawn value (gray if unknown, red if negative,
+//  green otherwise)
+//----------------------------------------------------------------------------------
+function cpClass(cp: number | null): string {
+  if (cp === null) return 'text-gray-400'
+  if (cp < 0) return 'text-red-600 font-semibold'
+  return 'text-green-700'
 }

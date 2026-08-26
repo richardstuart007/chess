@@ -1,5 +1,12 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    HabitsPage — /habits. Renders HabitsTable (recurring good/bad moves) with paging, behind a
+//    Suspense boundary. Color/Quality/Sort/Min Move/Min Reached apply instantly; Date From/
+//    Opening/ECO are global filters staged as drafts and only applied on Filter click.
+//==================================================================================================
+
 import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
@@ -11,10 +18,6 @@ import { getHabitsData, getHabitsCount, dismissHabit, undismissHabit } from '@/s
 import { getPlayers } from '@/src/lib/actions/players'
 import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
 import { MIN_ANALYSIS_MOVE_Player, HABITS_ITEMS_PER_PAGE_Player, HABITS_ROWS_OPTIONS_Player, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM_Player } from '@/src/lib/constants'
-
-function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
-}
 
 const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}habits_filters`
 
@@ -29,6 +32,18 @@ type Color   = 'all' | 'w' | 'b'
 type SortBy  = 'cpLoss' | 'reached'
 type Quality = 'bad' | 'good'
 
+export default function HabitsPage() {
+  return (
+    <Suspense fallback={<MyLoadingMessage message1="Loading…" />}>
+      <HabitsContent />
+    </Suspense>
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  HabitsContent — holds all filter/paging state (color/quality/sort/minMove/minReached
+//  instant; dateFrom/opening/eco global, staged as drafts) and renders HabitsTable
+//----------------------------------------------------------------------------------
 function HabitsContent() {
   const searchParams = useSearchParams()
   const [players,     setPlayers]     = useState<{ player: string; display_name: string | null }[]>([])
@@ -269,10 +284,9 @@ function HabitsContent() {
   )
 }
 
-export default function HabitsPage() {
-  return (
-    <Suspense fallback={<MyLoadingMessage message1="Loading…" />}>
-      <HabitsContent />
-    </Suspense>
-  )
+//----------------------------------------------------------------------------------
+//  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }

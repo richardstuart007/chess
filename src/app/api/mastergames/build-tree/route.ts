@@ -1,3 +1,15 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/mastergames/build-tree — pipeline UI route wrapper for buildPositionTree_Master.
+//
+//    Parameters (query string):
+//      limit    — max games to process this run (default POSITION_TREE_LIMIT_Master)
+//      level    — logging call-hierarchy depth (default 1)
+//      skipSync — 'true' to skip Phase B (debug/verification only)
+//      newRun   — 'true' to allocate a new pipeline run id instead of joining the current one
+//      player   — display-only tag for the logged step name — no filtering effect
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { buildPositionTree_Master } from '@/src/lib/master/buildPositionTree_Master'
 import { POSITION_TREE_LIMIT_Master } from '@/src/lib/constants'

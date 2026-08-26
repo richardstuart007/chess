@@ -1,5 +1,15 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    HomeDashboard — the "/" home page's main content: renders GameList for the tracked-player
+//    list, with the earliest-game date fetched once for the date-filter's min bound. Selecting a
+//    game pushes the current URL as a back-nav target and navigates to /analyze for that game.
+//
+//    Parameters:
+//      players — tracked players (player, display_name)
+//==================================================================================================
+
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import GameList from '@/src/ui/games/GameList'

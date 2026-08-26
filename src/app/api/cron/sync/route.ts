@@ -1,3 +1,11 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/cron/sync — the external Vercel-scheduled trigger for runGameSync (full player-
+//    games sync for every tracked player). Guards with CRON_SECRET (Bearer auth) when set;
+//    the pipeline UI's own "Run" buttons call runGameSync directly as a Server Action instead,
+//    bypassing this route entirely.
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { runGameSync } from '@/src/lib/actions/sync'

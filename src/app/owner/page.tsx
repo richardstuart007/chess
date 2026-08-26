@@ -1,3 +1,10 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    Page — /owner. Tab shell (via nextjs-shared's OwnerPage) hosting Logging, Cache, per-domain
+//    tool-launcher panels (Players/Masters/FIDE), Pipeline Log, Dataflow, Constants, Session
+//    Storage, and Routing Maintenance.
+//==================================================================================================
+
 import Link from 'next/link'
 import OwnerPage from 'nextjs-shared/OwnerPage'
 import OwnerTableLogging from 'nextjs-shared/OwnerTableLogging'
@@ -21,6 +28,29 @@ const TOOLS_FIDE = [
   { href: '/owner/pipelinemasters', label: 'Pipeline (FIDE)', description: 'Step-by-step control panel for the FIDE master-players pipeline (download, unzip, parse, populate, refresh) — each stage independently re-runnable.', step: '♛' }
 ]
 
+export default function Page() {
+  return (
+    <OwnerPage
+      persistKey='chess-owner-tab'
+      tabs={[
+        { label: 'Logging', content: <OwnerTableLogging /> },
+        { label: 'Cache', content: <OwnerTableCache /> },
+        { label: 'Players', content: <ToolsPanel tools={TOOLS_PLAYERS} /> },
+        { label: 'Masters', content: <ToolsPanel tools={TOOLS_MASTERS} /> },
+        { label: 'FIDE', content: <ToolsPanel tools={TOOLS_FIDE} /> },
+        { label: 'Pipeline Log', content: <div className='p-6 md:p-8'><PipelineLogTable /></div> },
+        { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
+        { label: 'Constants', content: <ConstantsPage /> },
+        { label: 'Session Storage', content: <OwnerTableSessionStorage /> },
+        { label: 'Routing Maintenance', content: <OwnerRoutingMaintenance /> }
+      ]}
+    />
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  ToolsPanel — renders a list of tool launcher cards (icon, label, description) as links
+//----------------------------------------------------------------------------------
 function ToolsPanel({ tools }: { tools: { href: string; label: string; description: string; step: string }[] }) {
   return (
     <div className='p-8 max-w-2xl'>
@@ -39,25 +69,5 @@ function ToolsPanel({ tools }: { tools: { href: string; label: string; descripti
         ))}
       </div>
     </div>
-  )
-}
-
-export default function Page() {
-  return (
-    <OwnerPage
-      persistKey='chess-owner-tab'
-      tabs={[
-        { label: 'Logging', content: <OwnerTableLogging /> },
-        { label: 'Cache', content: <OwnerTableCache /> },
-        { label: 'Players', content: <ToolsPanel tools={TOOLS_PLAYERS} /> },
-        { label: 'Masters', content: <ToolsPanel tools={TOOLS_MASTERS} /> },
-        { label: 'FIDE', content: <ToolsPanel tools={TOOLS_FIDE} /> },
-        { label: 'Pipeline Log', content: <div className='p-6 md:p-8'><PipelineLogTable /></div> },
-        { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
-        { label: 'Constants', content: <ConstantsPage /> },
-        { label: 'Session Storage', content: <OwnerTableSessionStorage /> },
-        { label: 'Routing Maintenance', content: <OwnerRoutingMaintenance /> }
-      ]}
-    />
   )
 }

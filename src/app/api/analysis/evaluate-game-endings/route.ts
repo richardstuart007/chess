@@ -1,3 +1,13 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/evaluate-game-endings — pipeline UI route wrapper for evaluateGameEndings.
+//
+//    Parameters (query string):
+//      limit  — max games to process this run (default DEFAULT_BATCH_SIZE_Player)
+//      depth  — Stockfish search depth (default STOCKFISH_DEPTH)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { evaluateGameEndings } from '@/src/lib/analysis/enrichPositionsStockfish'
 import { DEFAULT_BATCH_SIZE_Player, STOCKFISH_DEPTH } from '@/src/lib/constants'

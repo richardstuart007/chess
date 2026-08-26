@@ -1,5 +1,26 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    deconstructGames_Master — processes every wk_mgr_gamesraw row (every player, no filter) not
+//    yet in tmgd_gamesdecon (matched on mgd_chesscom_uuid alone — globally unique across
+//    chess.com, no player qualifier needed). Called internally by syncMasterGames right after
+//    each player's own download — never a standalone pipeline step, so (mirroring
+//    deconstructGames_Player) it does not log its own logPipelineStep entry; the caller does.
+//    Reads/writes the master-games tables (secondary database) — tec_ecoreference stays shared
+//    in the primary database, reused via upsertEcoReference unchanged.
+//
+//    Parameters:
+//      level — logging call-hierarchy depth
+//
+//    Returns:
+//      processed   — games successfully deconstructed
+//      skipped     — games skipped (no PGN, or too short to be trackable)
+//      errors      — games that failed to deconstruct
+//      rawScanned  — total wk_mgr_gamesraw rows scanned (the real workload, not just this
+//                    player's own newly-inserted rows)
+//==================================================================================================
+
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { write_logging } from 'nextjs-shared/write_logging'
@@ -19,16 +40,6 @@ const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 //
 const MASTER_MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Master - 1) * 2
 
-//----------------------------------------------------------------------------------
-//  deconstructGames_Master — processes every wk_mgr_gamesraw row (every player,
-//  no filter) not yet in tmgd_gamesdecon (matched on mgd_chesscom_uuid alone —
-//  globally unique across chess.com, no player qualifier needed). Called internally
-//  by syncMasterGames right after each player's own download — never a standalone
-//  pipeline step, so (mirroring deconstructGames_Player) it does not log its own
-//  logPipelineStep entry; the caller does. Reads/writes the master-games tables
-//  (secondary database) — tec_ecoreference stays shared in the primary database,
-//  reused via upsertEcoReference unchanged.
-//----------------------------------------------------------------------------------
 export async function deconstructGames_Master(
   level: number = 1
 ): Promise<{ processed: number; skipped: number; errors: number; rawScanned: number }> {

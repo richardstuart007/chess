@@ -1,3 +1,13 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/fide/download-zip — pipeline UI route wrapper for downloadFideZip (FIDE pipeline
+//    step 1).
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { downloadFideZip } from '@/src/lib/fide/fideStaging'
 

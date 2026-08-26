@@ -1,3 +1,13 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/sync-tpos — pipeline UI route wrapper for syncTposFromTgam_Player (Phase B
+//    catch-up pass, standalone re-runnable if Phase B ever fails to complete for some batch).
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { syncTposFromTgam_Player } from '@/src/lib/analysis/buildPositionTree_Player'
 

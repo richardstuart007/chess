@@ -1,3 +1,8 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    DataflowPage — /owner/dataflow. Thin wrapper delegating entirely to DataflowTabs.
+//==================================================================================================
+
 import { Metadata } from 'next'
 import DataflowTabs from '@/src/ui/dataflow/DataflowTabs'
 

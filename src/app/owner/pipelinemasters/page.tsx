@@ -1,5 +1,14 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineMastersPage — /owner/pipelinemasters. The FIDE Master Players pipeline UI: 5 steps
+//    (Download FIDE Zip → Unzip FIDE File → Parse FIDE XML → Populate FIDE Top Players → Refresh
+//    FIDE Ratings), each independently re-runnable via its own API route, plus a "Run All" that
+//    chains all 5 sharing one pipeline run id, and a Jobs summary table reading back the latest
+//    logged run per step.
+//==================================================================================================
+
 import { useState, useEffect } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -32,10 +41,6 @@ const STEPS = [
   { step: 4, label: 'Populate FIDE Top Players' },
   { step: 5, label: 'Refresh FIDE Ratings' },
 ]
-
-function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
-}
 
 const SQL_STATUS_ZIP = `SELECT COALESCE(octet_length(fzp_data), 0) AS bytes FROM wk_fzp_fide_zip LIMIT 1;`
 const SQL_STATUS_XML = `SELECT COUNT(*) AS chunks, COALESCE(SUM(LENGTH(fxm_data)), 0) AS chars FROM wk_fxm_fide_xml;`
@@ -448,4 +453,11 @@ export default function PipelineMastersPage() {
 
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  n — formats a count for display, or an em dash if not yet loaded
+//----------------------------------------------------------------------------------
+function n(val: number | undefined): string {
+  return val === undefined ? '—' : val.toLocaleString()
 }

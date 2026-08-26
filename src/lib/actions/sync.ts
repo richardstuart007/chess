@@ -1,5 +1,24 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    runGameSync — full game sync for all players. Called directly from the pipeline UI as a
+//    Server Action (no HTTP/auth layer needed) and from api/cron/sync/route.ts (which keeps its
+//    own CRON_SECRET check for the external scheduled trigger). For each tracked player: fetches
+//    chess.com archives since that player's own resume cutoff (initSync/syncArchive), inserts new
+//    raw games, deconstructs them, and updates the player's rating.
+//
+//    Returns:
+//      players            — per-player summary (player, inserted, deconstructed)
+//      totalInserted      — raw games inserted across all players
+//      totalDeconstructed — games deconstructed across all players
+//
+//  2) NOTES
+//    wk_gr_gamesraw is a workfile — truncated fresh at the start of every full run (not per
+//    player), then downloaded into for whichever players get synced. Safe because the resume
+//    cutoff comes from tpl_players.pl_last_synced_end_time, not this table's contents.
+//==================================================================================================
+
 import { table_write } from 'nextjs-shared/table_write'
 import { table_truncate } from 'nextjs-shared/table_truncate'
 import { write_logging } from 'nextjs-shared/write_logging'
@@ -11,49 +30,82 @@ import { deconstructGames_Player } from './deconstructGames_Player'
 
 const GAMES_TABLE = 'wk_gr_gamesraw'
 
-//----------------------------------------------------------------------------------
-//  insertRawGame — insert one raw game row; returns true if inserted, false if already existed
-//----------------------------------------------------------------------------------
-async function insertRawGame(data: {
-  player: string
-  chesscom_uuid: string
-  raw_data: object
-  pgn?: string | null
-  end_time: number
-  time_class: string
-}): Promise<boolean> {
-  const result = await table_write({
-    caller: 'insertRawGame',
-    table: GAMES_TABLE,
-    columnValuePairs: [
-      { column: 'gr_player', value: data.player.toLowerCase() },
-      { column: 'gr_chesscom_uuid', value: data.chesscom_uuid },
-      { column: 'gr_raw_data', value: JSON.stringify(data.raw_data) },
-      { column: 'gr_pgn', value: data.pgn ?? null },
-      { column: 'gr_end_time', value: data.end_time },
-      { column: 'gr_time_class', value: data.time_class }
-    ],
-    conflictColumn: 'gr_chesscom_uuid, gr_player',
-    skipCache: true
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'insertRawGame',
-      lg_caller: 'insertRawGame',
-      lg_msg: 'Failed to insert raw game ' + data.chesscom_uuid + ': ' + result.error,
-      lg_severity: 'E'
-    })
-    return false
-  }
-  return result.data.length > 0
-}
+export async function runGameSync(): Promise<{
+  players: { player: string; inserted: number; deconstructed: number }[]
+  totalInserted: number
+  totalDeconstructed: number
+}> {
+  const players = await getPlayers(true, 1, 'I')
+  await logStart('runGameSync', 'vercelCronSync', `game sync for ${players.length} players`, 1)
+  const summary: { player: string; inserted: number; deconstructed: number }[] = []
+  let errors = 0
+  let totalRead = 0
+  let queryMs = 0
+  let fetchMs = 0
+  let deconstructMs = 0
+  let ratingsMs = 0
 
-//----------------------------------------------------------------------------------
-//  getLatestGameEndTime — resume cutoff for a player, read from tpl_players
-//  (not wk_gr_gamesraw) so wk_gr_gamesraw can be archived/truncated independently
-//----------------------------------------------------------------------------------
-async function getLatestGameEndTime(player: string): Promise<number | null> {
-  return getPlayerLastSyncedEndTime(player)
+  //
+  //  wk_gr_gamesraw is a workfile — truncated fresh at the start of every full run
+  //  (not per player), then downloaded into for whichever players get synced below.
+  //  Safe because the resume cutoff comes from tpl_players.pl_last_synced_end_time,
+  //  not this table's contents.
+  //
+  await table_truncate(GAMES_TABLE, 'runGameSync', true)
+
+  for (const p of players) {
+    const player = p.player
+    let totalInserted = 0
+    await logStart('runGameSync', 'runGameSync', `syncing ${player}`, 2)
+
+    try {
+      const tQuery0 = Date.now()
+      const { archives, latestEndTime } = await initSync(player, 'refresh')
+      queryMs += Date.now() - tQuery0
+
+      const tFetch0 = Date.now()
+      for (const archiveUrl of archives) {
+        const result = await syncArchive({ player, archiveUrl, syncType: 'refresh', latestEndTime })
+        totalInserted += result.inserted
+        totalRead     += result.total
+      }
+      fetchMs += Date.now() - tFetch0
+
+      const tDecon0 = Date.now()
+      const { processed } = await deconstructGames_Player(player, 0)
+      deconstructMs += Date.now() - tDecon0
+
+      const tRatings0 = Date.now()
+      await updatePlayerRating(player)
+      ratingsMs += Date.now() - tRatings0
+
+      await markPlayerSynced(player, Math.floor(Date.now() / 1000))
+      summary.push({ player, inserted: totalInserted, deconstructed: processed })
+      await logEnd('runGameSync', 'runGameSync', `${player}: ${totalInserted} inserted, ${processed} deconstructed`, 2)
+    } catch (err) {
+      console.error(`runGameSync: failed for ${player}:`, err)
+      await write_logging({
+        lg_functionname: 'runGameSync',
+        lg_caller: 'runGameSync',
+        lg_msg: `runGameSync failed for ${player}: ` + (err as Error).message,
+        lg_severity: 'E'
+      })
+      summary.push({ player, inserted: totalInserted, deconstructed: 0 })
+      errors++
+      await logEnd('runGameSync', 'runGameSync', `${player}: failed — ` + (err as Error).message, 2)
+    }
+  }
+
+  const totalInserted       = summary.reduce((s, p) => s + p.inserted, 0)
+  const totalDeconstructed  = summary.reduce((s, p) => s + p.deconstructed, 0)
+
+  await logPipelineStep({ step: 1, subStep: 'a', stepName: 'Query chess.com API', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpl_players', inputRecs: players.length, outputTable: 'chess.com API', outputRecs: totalRead, durationMs: queryMs, forceNewRun: true })
+  await logPipelineStep({ step: 1, subStep: 'b', stepName: 'Fetch & Insert Raw Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'chess.com API', inputRecs: totalRead, outputTable: 'wk_gr_gamesraw', outputRecs: totalInserted, durationMs: fetchMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'c', stepName: 'Deconstruct Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'wk_gr_gamesraw', inputRecs: totalInserted, outputTable: 'tgd_gamesdecon', outputRecs: totalDeconstructed, durationMs: deconstructMs, forceNewRun: false })
+  await logPipelineStep({ step: 1, subStep: 'd', stepName: 'Update Player Ratings', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: totalDeconstructed, outputTable: 'tplr_player_ratings', outputRecs: players.length - errors, durationMs: ratingsMs, forceNewRun: false })
+  await logEnd('runGameSync', 'vercelCronSync', `${summary.length} players processed, ${totalInserted} inserted, ${totalDeconstructed} deconstructed`, 1)
+
+  return { players: summary, totalInserted, totalDeconstructed }
 }
 
 //----------------------------------------------------------------------------------
@@ -76,6 +128,14 @@ export async function initSync(
 
   await logEnd('initSync', 'gameSyncPipeline', `${archives.length} archives found, resume cutoff ${latestEndTime}`, 2)
   return { archives, latestEndTime }
+}
+
+//----------------------------------------------------------------------------------
+//  getLatestGameEndTime — resume cutoff for a player, read from tpl_players
+//  (not wk_gr_gamesraw) so wk_gr_gamesraw can be archived/truncated independently
+//----------------------------------------------------------------------------------
+async function getLatestGameEndTime(player: string): Promise<number | null> {
+  return getPlayerLastSyncedEndTime(player)
 }
 
 //----------------------------------------------------------------------------------
@@ -154,84 +214,38 @@ export async function syncArchive(params: {
 }
 
 //----------------------------------------------------------------------------------
-//  runGameSync — full game sync for all players. Called directly from the pipeline
-//  UI as a Server Action (no HTTP/auth layer needed) and from api/cron/sync/route.ts
-//  (which keeps its own CRON_SECRET check for the external scheduled trigger).
+//  insertRawGame — insert one raw game row; returns true if inserted, false if already existed
 //----------------------------------------------------------------------------------
-export async function runGameSync(): Promise<{
-  players: { player: string; inserted: number; deconstructed: number }[]
-  totalInserted: number
-  totalDeconstructed: number
-}> {
-  const players = await getPlayers(true, 1, 'I')
-  await logStart('runGameSync', 'vercelCronSync', `game sync for ${players.length} players`, 1)
-  const summary: { player: string; inserted: number; deconstructed: number }[] = []
-  let errors = 0
-  let totalRead = 0
-  let queryMs = 0
-  let fetchMs = 0
-  let deconstructMs = 0
-  let ratingsMs = 0
-
-  //
-  //  wk_gr_gamesraw is a workfile — truncated fresh at the start of every full run
-  //  (not per player), then downloaded into for whichever players get synced below.
-  //  Safe because the resume cutoff comes from tpl_players.pl_last_synced_end_time,
-  //  not this table's contents.
-  //
-  await table_truncate(GAMES_TABLE, 'runGameSync', true)
-
-  for (const p of players) {
-    const player = p.player
-    let totalInserted = 0
-    await logStart('runGameSync', 'runGameSync', `syncing ${player}`, 2)
-
-    try {
-      const tQuery0 = Date.now()
-      const { archives, latestEndTime } = await initSync(player, 'refresh')
-      queryMs += Date.now() - tQuery0
-
-      const tFetch0 = Date.now()
-      for (const archiveUrl of archives) {
-        const result = await syncArchive({ player, archiveUrl, syncType: 'refresh', latestEndTime })
-        totalInserted += result.inserted
-        totalRead     += result.total
-      }
-      fetchMs += Date.now() - tFetch0
-
-      const tDecon0 = Date.now()
-      const { processed } = await deconstructGames_Player(player, 0)
-      deconstructMs += Date.now() - tDecon0
-
-      const tRatings0 = Date.now()
-      await updatePlayerRating(player)
-      ratingsMs += Date.now() - tRatings0
-
-      await markPlayerSynced(player, Math.floor(Date.now() / 1000))
-      summary.push({ player, inserted: totalInserted, deconstructed: processed })
-      await logEnd('runGameSync', 'runGameSync', `${player}: ${totalInserted} inserted, ${processed} deconstructed`, 2)
-    } catch (err) {
-      console.error(`runGameSync: failed for ${player}:`, err)
-      await write_logging({
-        lg_functionname: 'runGameSync',
-        lg_caller: 'runGameSync',
-        lg_msg: `runGameSync failed for ${player}: ` + (err as Error).message,
-        lg_severity: 'E'
-      })
-      summary.push({ player, inserted: totalInserted, deconstructed: 0 })
-      errors++
-      await logEnd('runGameSync', 'runGameSync', `${player}: failed — ` + (err as Error).message, 2)
-    }
+async function insertRawGame(data: {
+  player: string
+  chesscom_uuid: string
+  raw_data: object
+  pgn?: string | null
+  end_time: number
+  time_class: string
+}): Promise<boolean> {
+  const result = await table_write({
+    caller: 'insertRawGame',
+    table: GAMES_TABLE,
+    columnValuePairs: [
+      { column: 'gr_player', value: data.player.toLowerCase() },
+      { column: 'gr_chesscom_uuid', value: data.chesscom_uuid },
+      { column: 'gr_raw_data', value: JSON.stringify(data.raw_data) },
+      { column: 'gr_pgn', value: data.pgn ?? null },
+      { column: 'gr_end_time', value: data.end_time },
+      { column: 'gr_time_class', value: data.time_class }
+    ],
+    conflictColumn: 'gr_chesscom_uuid, gr_player',
+    skipCache: true
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'insertRawGame',
+      lg_caller: 'insertRawGame',
+      lg_msg: 'Failed to insert raw game ' + data.chesscom_uuid + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return false
   }
-
-  const totalInserted       = summary.reduce((s, p) => s + p.inserted, 0)
-  const totalDeconstructed  = summary.reduce((s, p) => s + p.deconstructed, 0)
-
-  await logPipelineStep({ step: 1, subStep: 'a', stepName: 'Query chess.com API', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tpl_players', inputRecs: players.length, outputTable: 'chess.com API', outputRecs: totalRead, durationMs: queryMs, forceNewRun: true })
-  await logPipelineStep({ step: 1, subStep: 'b', stepName: 'Fetch & Insert Raw Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'chess.com API', inputRecs: totalRead, outputTable: 'wk_gr_gamesraw', outputRecs: totalInserted, durationMs: fetchMs, forceNewRun: false })
-  await logPipelineStep({ step: 1, subStep: 'c', stepName: 'Deconstruct Games', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'wk_gr_gamesraw', inputRecs: totalInserted, outputTable: 'tgd_gamesdecon', outputRecs: totalDeconstructed, durationMs: deconstructMs, forceNewRun: false })
-  await logPipelineStep({ step: 1, subStep: 'd', stepName: 'Update Player Ratings', pipelineType: PIPELINE_TYPE_GAMES, inputTable: 'tgd_gamesdecon', inputRecs: totalDeconstructed, outputTable: 'tplr_player_ratings', outputRecs: players.length - errors, durationMs: ratingsMs, forceNewRun: false })
-  await logEnd('runGameSync', 'vercelCronSync', `${summary.length} players processed, ${totalInserted} inserted, ${totalDeconstructed} deconstructed`, 1)
-
-  return { players: summary, totalInserted, totalDeconstructed }
+  return result.data.length > 0
 }

@@ -1,5 +1,12 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    OpeningsPage — /openings. Loads the tracked-player list client-side and renders
+//    OpeningScoreChart, behind a Suspense boundary. Selecting a game pushes the current URL as a
+//    back-nav target and navigates to /analyze for that game.
+//==================================================================================================
+
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
@@ -8,6 +15,17 @@ import { getPlayers } from '@/src/lib/actions/players'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { pushBackTarget } from '@/src/lib/backNav'
 
+export default function OpeningsPage() {
+  return (
+    <Suspense fallback={<MyLoadingMessage message1='Loading…' />}>
+      <OpeningsContent />
+    </Suspense>
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  OpeningsContent — loads players, then renders OpeningScoreChart once loaded
+//----------------------------------------------------------------------------------
 function OpeningsContent() {
   const router = useRouter()
   const pathname = usePathname()
@@ -40,13 +58,5 @@ function OpeningsContent() {
         />
       )}
     </div>
-  )
-}
-
-export default function OpeningsPage() {
-  return (
-    <Suspense fallback={<MyLoadingMessage message1='Loading…' />}>
-      <OpeningsContent />
-    </Suspense>
   )
 }

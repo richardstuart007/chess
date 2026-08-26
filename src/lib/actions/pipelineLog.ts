@@ -7,37 +7,6 @@ import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS, PIPELINE_TYPE_MASTERGAMES }
 type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | typeof PIPELINE_TYPE_MASTERGAMES
 
 //----------------------------------------------------------------------------------
-//  resolvePipRunId — allocates a new run id (max + 1) when forceNew is true, same as
-//  any standalone manual step click, since it doesn't form part of a coordinated run.
-//  Every other invocation joins the current run by reusing the highest run id already
-//  allocated — this is what ties a pipeline's own steps (or a daily scheduled cron's
-//  independent, uncoordinated invocations) together. Every download-step function
-//  (the first step of its own pipeline) is responsible for passing forceNewRun: true
-//  itself, unconditionally — this function has no step-number knowledge of its own.
-//----------------------------------------------------------------------------------
-async function resolvePipRunId(pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
-  const result = await table_query({
-    caller:       'resolvePipRunId',
-    table:        'tpip_pipelinelog',
-    query:        forceNew
-      ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`
-      : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`,
-    params:       [pipelineType],
-    skipCache:    true
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'resolvePipRunId',
-      lg_caller: 'resolvePipRunId',
-      lg_msg: 'Failed to resolve pipeline run id: ' + result.error,
-      lg_severity: 'E'
-    })
-    return 0
-  }
-  return result.data[0].run_id as number
-}
-
-//----------------------------------------------------------------------------------
 //  logPipelineStep — single INSERT once a step (or one table-write within a
 //  multi-table step) has finished; every column is already known by then, so there's
 //  no need for the old two-phase start/complete design.
@@ -81,6 +50,37 @@ export async function logPipelineStep(params: {
     return 0
   }
   return result.data[0].pip_pipid as number
+}
+
+//----------------------------------------------------------------------------------
+//  resolvePipRunId — allocates a new run id (max + 1) when forceNew is true, same as
+//  any standalone manual step click, since it doesn't form part of a coordinated run.
+//  Every other invocation joins the current run by reusing the highest run id already
+//  allocated — this is what ties a pipeline's own steps (or a daily scheduled cron's
+//  independent, uncoordinated invocations) together. Every download-step function
+//  (the first step of its own pipeline) is responsible for passing forceNewRun: true
+//  itself, unconditionally — this function has no step-number knowledge of its own.
+//----------------------------------------------------------------------------------
+async function resolvePipRunId(pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
+  const result = await table_query({
+    caller:       'resolvePipRunId',
+    table:        'tpip_pipelinelog',
+    query:        forceNew
+      ? `SELECT COALESCE(MAX(pip_run_id), 0) + 1 AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`
+      : `SELECT COALESCE(MAX(pip_run_id), 1) AS run_id FROM tpip_pipelinelog WHERE pip_pipeline_type = $1`,
+    params:       [pipelineType],
+    skipCache:    true
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'resolvePipRunId',
+      lg_caller: 'resolvePipRunId',
+      lg_msg: 'Failed to resolve pipeline run id: ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data[0].run_id as number
 }
 
 //----------------------------------------------------------------------------------

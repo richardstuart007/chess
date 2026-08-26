@@ -1,5 +1,14 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    AnalyzeMasterPage — /analyzemaster. Loads a single master game (by ?game= mgdid) via
+//    getMasterGameById and renders MasterGameView, behind a Suspense boundary.
+//
+//    Parameters (from the URL):
+//      game — mgdid of the master game to load
+//==================================================================================================
+
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
@@ -7,6 +16,17 @@ import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MasterGameView, { MasterGameRow } from '@/src/ui/board/MasterGameView'
 import { getMasterGameById } from '@/src/lib/master/masterGamesList'
 
+export default function AnalyzeMasterPage() {
+  return (
+    <Suspense fallback={<MyLoadingMessage message1='Loading...' />}>
+      <AnalyzeMasterContent />
+    </Suspense>
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  AnalyzeMasterContent — loads the master game by ?game= mgdid, then renders MasterGameView
+//----------------------------------------------------------------------------------
 function AnalyzeMasterContent() {
   const searchParams = useSearchParams()
   const mgdidParam = searchParams.get('game')
@@ -58,12 +78,4 @@ function AnalyzeMasterContent() {
   }
 
   return <MasterGameView row={row} />
-}
-
-export default function AnalyzeMasterPage() {
-  return (
-    <Suspense fallback={<MyLoadingMessage message1='Loading...' />}>
-      <AnalyzeMasterContent />
-    </Suspense>
-  )
 }

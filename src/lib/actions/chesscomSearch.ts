@@ -1,5 +1,28 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    searchChessComGames — live lookup of chess.com's own /games/search results for the given
+//    position (fen), optionally narrowed by filters. Chess.com exposes no public API for this
+//    search, so the server-rendered results table is parsed directly with cheerio.
+//
+//    Parameters:
+//      fen     — position to search for
+//      filters — chess.com search filter values (see ChessComSearchFilters)
+//      page    — result page, 2+ (page 1 is the implicit default)
+//
+//    Returns:
+//      games — matched games
+//      url   — the chess.com search URL that was fetched
+//
+//  2) NOTES
+//    opening/openingId are always left blank — combining fen with an opening filter returned
+//    zero results in testing, while fen alone (opening blank) returns real exact-position
+//    matches. Returns [] on any failure (network error, no matching games, or chess.com changing
+//    its markup). page (2+) pages through chess.com's own result pages — live-tested: page 1 is
+//    the implicit default (no `page` param), `&page=N` for N>1 returns genuinely different games.
+//==================================================================================================
+
 import * as cheerio from 'cheerio'
 
 export interface ChessComSearchGame {
@@ -32,16 +55,6 @@ export interface ChessComSearchFilters {
   sort:       string
 }
 
-//----------------------------------------------------------------------------------
-//  searchChessComGames — live lookup of chess.com's own /games/search results for the given
-//  position (fen), optionally narrowed by filters. opening/openingId are always left blank —
-//  combining fen with an opening filter returned zero results in testing, while fen alone
-//  (opening blank) returns real exact-position matches. Chess.com exposes no public API for
-//  this search, so the server-rendered results table is parsed directly with cheerio; returns
-//  [] on any failure (network error, no matching games, or chess.com changing its markup).
-//  page (2+) pages through chess.com's own result pages — live-tested: page 1 is the implicit
-//  default (no `page` param), `&page=N` for N>1 returns genuinely different games.
-//----------------------------------------------------------------------------------
 export async function searchChessComGames(fen: string, filters: ChessComSearchFilters, page?: number): Promise<{ games: ChessComSearchGame[]; url: string }> {
   const params = new URLSearchParams({
     opening: '',

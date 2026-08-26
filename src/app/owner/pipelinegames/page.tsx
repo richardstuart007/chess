@@ -1,5 +1,20 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelinePage — /owner/pipelinegames. The player-games pipeline UI: 9 steps (Game Sync →
+//    Build Position Tree → Sync Position Tree → Purge Stale Positions → Evaluate Positions →
+//    Update CP Change → Build Habits → Evaluate Game Endings → Deepen Popular Positions), each
+//    independently re-runnable, plus a "Run All" that chains all 9 sharing one pipeline run id,
+//    and a Jobs summary table reading back the latest logged run per step/sub-step.
+//
+//  2) NOTES
+//    Job group order matches the scheduled cron order in vercel.json (3:00am-5:00am, 20min
+//    apart). Each group is one scheduled/schedulable macro step; its subJobs are the individual
+//    table-writes within it, run together and sharing one pip_run_id. Display schedule times come
+//    from PIPELINE_CRON_SCHEDULE_Player, not a copy hardcoded here.
+//==================================================================================================
+
 import { useState, useEffect, Fragment } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -73,18 +88,6 @@ const JOB_GROUPS: {
       { subStep: 'a', label: 'Deepen Popular Positions' },
     ] },
 ]
-
-function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
-}
-
-function eta(remaining: number | undefined, msPerItem: number | null): string {
-  if (!remaining || !msPerItem) return ''
-  const ms = remaining * msPerItem
-  if (ms < 60_000)    return `~${Math.round(ms / 1_000)}s`
-  if (ms < 3_600_000) return `~${Math.round(ms / 60_000)}m`
-  return `~${Math.floor(ms / 3_600_000)}h ${Math.round((ms % 3_600_000) / 60_000)}m`
-}
 
 const SQL_STATUS_1 =
 `SELECT COUNT(*) AS pending FROM wk_gr_gamesraw r
@@ -176,17 +179,6 @@ WHERE p.pos_reached <= ${MIN_REACH_TO_KEEP_Player}
     WHERE g.gam_resulting_pos_id = p.pos_id
       AND d.gd_end_time > EXTRACT(EPOCH FROM (NOW() - INTERVAL '${PURGE_REACH_GRACE_DAYS_Player} days'))::integer
   );`
-
-function StatusBadge({ complete }: { complete: boolean | null }) {
-  if (complete === null) return null
-  return (
-    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-      complete ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-    }`}>
-      {complete ? 'Completed' : 'Incomplete'}
-    </span>
-  )
-}
 
 export default function PipelinePage() {
   const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
@@ -995,4 +987,36 @@ export default function PipelinePage() {
 
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  StatusBadge — small Completed/Incomplete pill; renders nothing while status is unknown (null)
+//----------------------------------------------------------------------------------
+function StatusBadge({ complete }: { complete: boolean | null }) {
+  if (complete === null) return null
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+      complete ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+    }`}>
+      {complete ? 'Completed' : 'Incomplete'}
+    </span>
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  n — formats a count for display, or an em dash if not yet loaded
+//----------------------------------------------------------------------------------
+function n(val: number | undefined): string {
+  return val === undefined ? '—' : val.toLocaleString()
+}
+
+//----------------------------------------------------------------------------------
+//  eta — rough remaining-time estimate from a backlog count and a measured ms/item rate
+//----------------------------------------------------------------------------------
+function eta(remaining: number | undefined, msPerItem: number | null): string {
+  if (!remaining || !msPerItem) return ''
+  const ms = remaining * msPerItem
+  if (ms < 60_000)    return `~${Math.round(ms / 1_000)}s`
+  if (ms < 3_600_000) return `~${Math.round(ms / 60_000)}m`
+  return `~${Math.floor(ms / 3_600_000)}h ${Math.round((ms % 3_600_000) / 60_000)}m`
 }

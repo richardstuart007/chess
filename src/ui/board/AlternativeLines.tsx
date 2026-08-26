@@ -1,5 +1,17 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    AlternativeLines — Stockfish multi-PV engine lines panel; clicking a line explores it on
+//    the board.
+//
+//    Parameters:
+//      results     — ranked engine lines to display
+//      loading     — true while lines are being calculated
+//      positionPly — ply number of the current position, for move-number formatting
+//      onSelectLine — called with the clicked line
+//==================================================================================================
+
 import MyBox from 'nextjs-shared/MyBox'
 import { MultiPvResult } from '@/src/lib/analysisTree'
 import { formatCp } from '@/src/lib/formatCp'
@@ -9,21 +21,6 @@ interface AlternativeLinesProps {
   loading: boolean
   positionPly: number
   onSelectLine: (line: MultiPvResult) => void
-}
-
-function formatLine(lineSans: string[], ply: number): string {
-  const parts: string[] = []
-  for (let i = 0; i < lineSans.length; i++) {
-    const p = ply + i
-    const moveNum = Math.floor(p / 2) + 1
-    if (p % 2 === 0) {
-      parts.push(`${moveNum}. ${lineSans[i]}`)
-    } else {
-      if (i === 0) parts.push(`${moveNum}... ${lineSans[i]}`)
-      else parts.push(lineSans[i])
-    }
-  }
-  return parts.join(' ')
 }
 
 export default function AlternativeLines({
@@ -87,4 +84,22 @@ export default function AlternativeLines({
       <p className='mt-1 text-xxs text-gray-400'>Click a line to explore it on the board</p>
     </MyBox>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  formatLine — formats a continuation's SAN moves with move numbers, starting from ply
+//----------------------------------------------------------------------------------
+function formatLine(lineSans: string[], ply: number): string {
+  const parts: string[] = []
+  for (let i = 0; i < lineSans.length; i++) {
+    const p = ply + i
+    const moveNum = Math.floor(p / 2) + 1
+    if (p % 2 === 0) {
+      parts.push(`${moveNum}. ${lineSans[i]}`)
+    } else {
+      if (i === 0) parts.push(`${moveNum}... ${lineSans[i]}`)
+      else parts.push(lineSans[i])
+    }
+  }
+  return parts.join(' ')
 }

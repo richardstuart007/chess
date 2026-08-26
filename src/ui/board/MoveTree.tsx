@@ -1,5 +1,17 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    MoveTree — main-line move table with inline variation branches, evaluation cells, and
+//    optional per-move occurrence counts. Scrolls the active move into view on selection change.
+//
+//    Parameters:
+//      tree         — the analysis tree to render
+//      currentNode  — the currently selected/active move node, or null
+//      onSelectNode — called with the clicked node
+//      moveCounts   — optional occurrence count per node id, shown next to the move
+//==================================================================================================
+
 import { useEffect, useRef } from 'react'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { AnalysisTree, MoveNode } from '@/src/lib/analysisTree'
@@ -18,124 +30,6 @@ const CLASSIFICATION_TEXT_COLORS: Record<string, string> = {
   mistake: 'text-orange-500',
   inaccuracy: 'text-yellow-600',
   good: 'text-blue-600'
-}
-
-function annotationSymbol(ev?: PlyEvaluation): string {
-  if (!ev) return ''
-  if (ev.classification === 'blunder') return '??'
-  if (ev.classification === 'mistake') return '?'
-  if (ev.classification === 'inaccuracy') return '?!'
-  return ''
-}
-
-function evalColor(cp: number): string {
-  if (cp < 0) return 'text-red-600'
-  return 'text-gray-900'
-}
-
-function MoveBadge({
-  node,
-  isActive,
-  onClick,
-  count
-}: {
-  node: MoveNode
-  isActive: boolean
-  onClick: () => void
-  count?: number
-}) {
-  const ev = node.evaluation
-  const textColor = ev
-    ? CLASSIFICATION_TEXT_COLORS[ev.classification]
-    : node.isMainLine
-      ? 'text-gray-700'
-      : 'text-blue-600'
-
-  const ann = annotationSymbol(ev)
-
-  return (
-    <MyButton
-      onClick={onClick}
-      data-node-id={node.id}
-      overrideClass={`inline-flex items-center gap-0.5 h-4 md:h-4 px-0.5 text-xs font-medium transition-all ${textColor} ${
-        isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
-      }`}
-    >
-      <span>{node.san}</span>
-      {ann && <span className='text-xxs text-blue-500'>{ann}</span>}
-      {count !== undefined && count > 1 && (
-        <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
-      )}
-    </MyButton>
-  )
-}
-
-function EvalCell({ node }: { node?: MoveNode }) {
-  if (!node?.evaluation) return <td className='py-px w-24'></td>
-  const cp = node.evaluation.cp
-  const depth = node.evaluation.depth
-  return (
-    <td className={`py-px w-24 font-mono text-xxs ${evalColor(cp)}`}>
-      {formatCp(cp)}
-      <span className='text-gray-400'> ({depth})</span>
-    </td>
-  )
-}
-
-function InlineVariation({
-  startNode,
-  startPly,
-  currentNode,
-  onSelectNode,
-  moveCounts
-}: {
-  startNode: MoveNode
-  startPly: number
-  currentNode: MoveNode | null
-  onSelectNode: (node: MoveNode) => void
-  moveCounts?: Record<string, number>
-}) {
-  const moves: { node: MoveNode; ply: number }[] = []
-  let node: MoveNode | null = startNode
-  let ply = startPly
-
-  while (node) {
-    moves.push({ node, ply })
-    node = node.children.length > 0 ? node.children[0] : null
-    ply++
-  }
-
-  return (
-    <div className='ml-4 my-0.5 flex flex-wrap items-center gap-0.5 rounded bg-gray-50 px-1.5 py-0.5 border-l-2 border-blue-300'>
-      {moves.map(({ node: n, ply: p }) => {
-        const moveNum = Math.floor(p / 2) + 1
-        const isWhite = p % 2 === 0
-
-        return (
-          <span key={n.id} className='inline-flex items-center gap-0.5'>
-            {isWhite && (
-              <span className='text-xxs text-gray-400 font-mono'>{moveNum}.</span>
-            )}
-            {!isWhite && p === startPly && (
-              <span className='text-xxs text-gray-400 font-mono'>{moveNum}...</span>
-            )}
-            <MoveBadge
-              node={n}
-              isActive={currentNode?.id === n.id}
-              onClick={() => onSelectNode(n)}
-              count={moveCounts?.[n.id]}
-            />
-            {n.evaluation && (
-              <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
-                {formatCp(n.evaluation.cp)}
-                <span className='text-gray-400'> ({n.evaluation.depth})</span>
-              </span>
-            )}
-          </span>
-        )
-      })}
-    </div>
-  )
 }
 
 export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }: MoveTreeProps) {
@@ -238,6 +132,143 @@ export default function MoveTree({ tree, currentNode, onSelectNode, moveCounts }
         </thead>
         <tbody>{rows}</tbody>
       </table>
+    </div>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  MoveBadge — one move's clickable SAN badge, colored by classification (or plain gray/blue for
+//  main-line/variation), with a ??/?/?! annotation and optional occurrence count
+//----------------------------------------------------------------------------------------------
+function MoveBadge({
+  node,
+  isActive,
+  onClick,
+  count
+}: {
+  node: MoveNode
+  isActive: boolean
+  onClick: () => void
+  count?: number
+}) {
+  const ev = node.evaluation
+  const textColor = ev
+    ? CLASSIFICATION_TEXT_COLORS[ev.classification]
+    : node.isMainLine
+      ? 'text-gray-700'
+      : 'text-blue-600'
+
+  const ann = annotationSymbol(ev)
+
+  return (
+    <MyButton
+      onClick={onClick}
+      data-node-id={node.id}
+      overrideClass={`inline-flex items-center gap-0.5 h-4 md:h-4 px-0.5 text-xs font-medium transition-all ${textColor} ${
+        isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
+      }`}
+    >
+      <span>{node.san}</span>
+      {ann && <span className='text-xxs text-blue-500'>{ann}</span>}
+      {count !== undefined && count > 1 && (
+        <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
+      )}
+    </MyButton>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  annotationSymbol — ??/?/?! for blunder/mistake/inaccuracy, or '' otherwise
+//----------------------------------------------------------------------------------------------
+function annotationSymbol(ev?: PlyEvaluation): string {
+  if (!ev) return ''
+  if (ev.classification === 'blunder') return '??'
+  if (ev.classification === 'mistake') return '?'
+  if (ev.classification === 'inaccuracy') return '?!'
+  return ''
+}
+
+//----------------------------------------------------------------------------------------------
+//  EvalCell — one table cell showing a node's Stockfish eval + depth, or blank if unevaluated
+//----------------------------------------------------------------------------------------------
+function EvalCell({ node }: { node?: MoveNode }) {
+  if (!node?.evaluation) return <td className='py-px w-24'></td>
+  const cp = node.evaluation.cp
+  const depth = node.evaluation.depth
+  return (
+    <td className={`py-px w-24 font-mono text-xxs ${evalColor(cp)}`}>
+      {formatCp(cp)}
+      <span className='text-gray-400'> ({depth})</span>
+    </td>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  evalColor — text color for a centipawn value (red if negative, gray otherwise). NOTE: called
+//  from both EvalCell and InlineVariation — no single caller to anchor its position to, placed
+//  after its first caller (EvalCell) as a judgment call, not a strict first-use derivation.
+//----------------------------------------------------------------------------------------------
+function evalColor(cp: number): string {
+  if (cp < 0) return 'text-red-600'
+  return 'text-gray-900'
+}
+
+//----------------------------------------------------------------------------------------------
+//  InlineVariation — one branch off the main line, rendered as its own indented mini-line of
+//  MoveBadges, following first-children only (a variation's own sub-variations aren't shown)
+//----------------------------------------------------------------------------------------------
+function InlineVariation({
+  startNode,
+  startPly,
+  currentNode,
+  onSelectNode,
+  moveCounts
+}: {
+  startNode: MoveNode
+  startPly: number
+  currentNode: MoveNode | null
+  onSelectNode: (node: MoveNode) => void
+  moveCounts?: Record<string, number>
+}) {
+  const moves: { node: MoveNode; ply: number }[] = []
+  let node: MoveNode | null = startNode
+  let ply = startPly
+
+  while (node) {
+    moves.push({ node, ply })
+    node = node.children.length > 0 ? node.children[0] : null
+    ply++
+  }
+
+  return (
+    <div className='ml-4 my-0.5 flex flex-wrap items-center gap-0.5 rounded bg-gray-50 px-1.5 py-0.5 border-l-2 border-blue-300'>
+      {moves.map(({ node: n, ply: p }) => {
+        const moveNum = Math.floor(p / 2) + 1
+        const isWhite = p % 2 === 0
+
+        return (
+          <span key={n.id} className='inline-flex items-center gap-0.5'>
+            {isWhite && (
+              <span className='text-xxs text-gray-400 font-mono'>{moveNum}.</span>
+            )}
+            {!isWhite && p === startPly && (
+              <span className='text-xxs text-gray-400 font-mono'>{moveNum}...</span>
+            )}
+            <MoveBadge
+              node={n}
+              isActive={currentNode?.id === n.id}
+              onClick={() => onSelectNode(n)}
+              count={moveCounts?.[n.id]}
+            />
+            {n.evaluation && (
+              <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
+                {formatCp(n.evaluation.cp)}
+                <span className='text-gray-400'> ({n.evaluation.depth})</span>
+              </span>
+            )}
+          </span>
+        )
+      })}
     </div>
   )
 }

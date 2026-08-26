@@ -1,5 +1,18 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    FilterMultiCheckbox — thin wrapper around nextjs-shared/MySelectMulti, preserving this
+//    project's existing call-site API (label, options, selected, onChange, width).
+//
+//    Parameters:
+//      label    — filter label text
+//      options  — plain strings or { value, label } pairs
+//      selected — currently checked values
+//      onChange — called with the new selection array
+//      width    — override width class (default 'w-20')
+//==================================================================================================
+
 import MySelectMulti from 'nextjs-shared/MySelectMulti'
 
 interface FilterOption {
@@ -15,10 +28,6 @@ interface FilterMultiCheckboxProps {
   width?: string
 }
 
-//----------------------------------------------------------------------------------------------
-//  FilterMultiCheckbox — thin wrapper around nextjs-shared/MySelectMulti, preserving this
-//  project's existing call-site API (label, options, selected, onChange, width)
-//----------------------------------------------------------------------------------------------
 export default function FilterMultiCheckbox({ label, options, selected, onChange, width = 'w-20' }: FilterMultiCheckboxProps) {
   return (
     <MySelectMulti

@@ -1,3 +1,12 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/fide/parse — pipeline UI route wrapper for parseFideXml (FIDE pipeline step 3).
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { parseFideXml } from '@/src/lib/fide/fideStaging'
 

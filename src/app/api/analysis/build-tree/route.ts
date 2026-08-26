@@ -1,3 +1,14 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/build-tree — pipeline UI route wrapper for buildPositionTree_Player.
+//
+//    Parameters (query string):
+//      limit    — max games to process this run (default POSITION_TREE_LIMIT_Player)
+//      player   — restrict to one player (default: all players)
+//      skipSync — 'true' to skip Phase B (debug/verification only)
+//      newRun   — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { buildPositionTree_Player } from '@/src/lib/analysis/buildPositionTree_Player'
 import { POSITION_TREE_LIMIT_Player } from '@/src/lib/constants'

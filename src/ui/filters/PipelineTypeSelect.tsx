@@ -1,5 +1,17 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineTypeSelect — pip_pipeline_type filter (PipelineLogTable).
+//
+//    Parameters:
+//      value       — current selected pipeline-type value
+//      onChange    — called with the new value on selection
+//      label       — filter label text
+//      width       — override width class (default WIDTH_PIPELINE_TYPE)
+//      borderClass — override border color classes
+//==================================================================================================
+
 import FilterSelect from './FilterSelect'
 import { OPTIONS_PIPELINE_TYPE, WIDTH_PIPELINE_TYPE } from '@/src/lib/constants'
 
@@ -11,9 +23,6 @@ interface PipelineTypeSelectProps {
   borderClass?: string
 }
 
-//----------------------------------------------------------------------------------------------
-//  PipelineTypeSelect — pip_pipeline_type filter (PipelineLogTable)
-//----------------------------------------------------------------------------------------------
 export default function PipelineTypeSelect({ value, onChange, label, width = WIDTH_PIPELINE_TYPE, borderClass }: PipelineTypeSelectProps) {
   return (
     <FilterSelect

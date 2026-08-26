@@ -1,3 +1,8 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    ConstantsPage — read-only display of constants.ts and .env, tabbed, no edit controls.
+//==================================================================================================
+
 import ConstantsViewer, { ConstantSection } from '@/src/ui/owner/ConstantsViewer'
 import {
   INCLUDED_TIME_CLASSES_Player,
@@ -94,7 +99,8 @@ import {
   GAME_LIST_ROWS_OPTIONS_Master,
   GAMES_SYNC_YEARS_Master,
   POSITION_TREE_LIMIT_Player,
-  POSITION_TREE_LIMIT_Master
+  POSITION_TREE_LIMIT_Master,
+  MASTER_GAMES_FOR_FEN_LIMIT
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -249,7 +255,8 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'POSITION_INSERT_CHUNK_SIZE_Master', value: POSITION_INSERT_CHUNK_SIZE_Master, description: 'Target rows per bulk INSERT into tmgam_game_positions — own constant, mirrors POSITION_INSERT_CHUNK_SIZE_Player.', consumers: ['masterPositionTree.ts: buildPositionTree_Master'] },
       { name: 'GAME_LIST_ROWS_DEFAULT_Master', value: GAME_LIST_ROWS_DEFAULT_Master, description: 'Default rows-per-page for the Masters Games list — own constant, never reuses GAME_LIST_ROWS_DEFAULT_Player.', consumers: ['MasterGameList.tsx: MasterGameList', 'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount'] },
       { name: 'GAME_LIST_ROWS_OPTIONS_Master', value: GAME_LIST_ROWS_OPTIONS_Master, description: 'Rows-per-page dropdown options for the Masters Games list — own constant, never reuses GAME_LIST_ROWS_OPTIONS_Player.', consumers: ['MasterGameList.tsx: MasterGameList'] },
-      { name: 'GAMES_SYNC_YEARS_Master', value: GAMES_SYNC_YEARS_Master, description: 'Year dropdown options for the master-games sync pipeline (most recent first).', consumers: ['owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] }
+      { name: 'GAMES_SYNC_YEARS_Master', value: GAMES_SYNC_YEARS_Master, description: 'Year dropdown options for the master-games sync pipeline (most recent first).', consumers: ['owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
+      { name: 'MASTER_GAMES_FOR_FEN_LIMIT', value: MASTER_GAMES_FOR_FEN_LIMIT, description: 'Default cap on games fetched by getMasterGamesForFen for one exact FEN — keeps the Master Moves/Games (Our DB) panels fast even on very popular positions.', consumers: ['masterGamesList.ts: getMasterGamesForFen', 'MasterMovesDbPanel.tsx: MasterMovesDbPanel', 'MasterGamesDbPanel.tsx: MasterGamesDbPanel'] }
     ]
   }
 ]
@@ -338,9 +345,6 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount': 'Fetches a filtered, paginated page of master games from tmgd_gamesdecon, and the matching total page count.'
 }
 
-//----------------------------------------------------------------------------------
-//  ConstantsPage — read-only display of constants.ts and .env, tabbed, no edit controls
-//----------------------------------------------------------------------------------
 export default function ConstantsPage() {
   const envSections: ConstantSection[] = [
     {

@@ -1,5 +1,17 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    FilterActionButton — small filter-bar action button (Filter/Refresh/Clear), consistent
+//    sizing/styling across every filter site in the app.
+//
+//    Parameters:
+//      onClick  — click handler
+//      children — button contents
+//      variant  — 'primary' | 'pending' | 'secondary' (default 'primary')
+//      disabled — disables the button
+//==================================================================================================
+
 import { MyButton } from 'nextjs-shared/MyButton'
 
 interface FilterActionButtonProps {
@@ -15,10 +27,6 @@ const VARIANT_CLASS: Record<string, string> = {
   secondary: 'bg-gray-400 hover:bg-gray-500'
 }
 
-//----------------------------------------------------------------------------------------------
-//  FilterActionButton — small filter-bar action button (Filter/Refresh/Clear), consistent
-//  sizing/styling across every filter site in the app
-//----------------------------------------------------------------------------------------------
 export default function FilterActionButton({ onClick, children, variant = 'primary', disabled }: FilterActionButtonProps) {
   return (
     <MyButton

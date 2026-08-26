@@ -1,3 +1,13 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/deepen-popular-positions — pipeline UI route wrapper for
+//    deepenPopularPositions.
+//
+//    Parameters (query string):
+//      limit  — max positions to process this run (default CRON_DEEPEN_POPULAR_BATCH_SIZE_Player)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { deepenPopularPositions } from '@/src/lib/analysis/enrichPositionsStockfish'
 import { CRON_DEEPEN_POPULAR_BATCH_SIZE_Player } from '@/src/lib/constants'

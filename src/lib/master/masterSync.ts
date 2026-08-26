@@ -1,5 +1,32 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    syncMasterGames — one player, one calendar year. Downloads every chess.com monthly archive
+//    for that year, keeps only standard chess (rules === 'chess', excludes chess960/variants)
+//    games in INCLUDED_TIME_CLASSES_Master, and inserts them into wk_mgr_gamesraw. No resume
+//    cursor — always a fresh pull for the given year, safe to re-run (ON CONFLICT DO NOTHING on
+//    the chess.com uuid). Also runs deconstructGames_Master immediately afterward, in the same
+//    call — mirrors runGameSync bundling Deconstruct Games into its own Step 1, since
+//    wk_mgr_gamesraw is a workfile with no independent value between a download and its
+//    deconstruction.
+//
+//    Parameters:
+//      chesscomHandle — player handle to sync
+//      year           — calendar year to sync
+//      level          — logging call-hierarchy depth
+//      forceNewRun    — allocate a new pipeline run id instead of joining the current one
+//      truncateFirst  — truncate wk_mgr_gamesraw before downloading (set only for the first
+//                       player in a multi-player batch)
+//
+//    Returns:
+//      inserted     — new raw games inserted
+//      skipped      — raw games already present (ON CONFLICT)
+//      total        — total standard games found in the archive
+//      deconstructed — games successfully deconstructed by the internal deconstructGames_Master
+//                      call
+//==================================================================================================
+
 import { table_write } from 'nextjs-shared/table_write'
 import { table_truncate } from 'nextjs-shared/table_truncate'
 import { write_logging } from 'nextjs-shared/write_logging'
@@ -10,55 +37,6 @@ import { INCLUDED_TIME_CLASSES_Master, PIPELINE_TYPE_MASTERGAMES } from '../cons
 
 const MASTER_GAMES_TABLE = 'wk_mgr_gamesraw'
 
-//----------------------------------------------------------------------------------
-//  insertMasterRawGame — insert one raw master game row; returns true if inserted,
-//  false if already existed (ON CONFLICT DO NOTHING)
-//----------------------------------------------------------------------------------
-async function insertMasterRawGame(data: {
-  player: string
-  chesscom_uuid: string
-  raw_data: object
-  pgn?: string | null
-  end_time: number
-  time_class: string
-}): Promise<boolean> {
-  const result = await table_write({
-    caller: 'insertMasterRawGame',
-    table: MASTER_GAMES_TABLE,
-    columnValuePairs: [
-      { column: 'mgr_player', value: data.player.toLowerCase() },
-      { column: 'mgr_chesscom_uuid', value: data.chesscom_uuid },
-      { column: 'mgr_raw_data', value: JSON.stringify(data.raw_data) },
-      { column: 'mgr_pgn', value: data.pgn ?? null },
-      { column: 'mgr_end_time', value: data.end_time },
-      { column: 'mgr_time_class', value: data.time_class }
-    ],
-    conflictColumn: 'mgr_chesscom_uuid, mgr_player',
-    skipCache: true
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'insertMasterRawGame',
-      lg_caller: 'insertMasterRawGame',
-      lg_msg: 'Failed to insert master raw game ' + data.chesscom_uuid + ': ' + result.error,
-      lg_severity: 'E'
-    })
-    return false
-  }
-  return result.data.length > 0
-}
-
-//----------------------------------------------------------------------------------
-//  syncMasterGames — one player, one calendar year. Downloads every
-//  chess.com monthly archive for that year, keeps only standard chess
-//  (rules === 'chess', excludes chess960/variants) games in
-//  INCLUDED_TIME_CLASSES_Master, and inserts them into wk_mgr_gamesraw. No resume
-//  cursor — always a fresh pull for the given year, safe to re-run (ON CONFLICT DO
-//  NOTHING on the chess.com uuid). Also runs deconstructGames_Master immediately
-//  afterward, in the same call — mirrors runGameSync bundling Deconstruct Games
-//  into its own Step 1, since wk_mgr_gamesraw is a workfile with no independent
-//  value between a download and its deconstruction.
-//----------------------------------------------------------------------------------
 export async function syncMasterGames(
   chesscomHandle: string,
   year: number,
@@ -171,4 +149,42 @@ export async function syncMasterGames(
   await logEnd('syncMasterGames', 'masterGamesPipelineRoute', `${inserted} inserted, ${skipped} skipped, ${total} total, ${decon.processed} deconstructed`, level)
 
   return { inserted, skipped, total, deconstructed: decon.processed }
+}
+
+//----------------------------------------------------------------------------------
+//  insertMasterRawGame — insert one raw master game row; returns true if inserted,
+//  false if already existed (ON CONFLICT DO NOTHING)
+//----------------------------------------------------------------------------------
+async function insertMasterRawGame(data: {
+  player: string
+  chesscom_uuid: string
+  raw_data: object
+  pgn?: string | null
+  end_time: number
+  time_class: string
+}): Promise<boolean> {
+  const result = await table_write({
+    caller: 'insertMasterRawGame',
+    table: MASTER_GAMES_TABLE,
+    columnValuePairs: [
+      { column: 'mgr_player', value: data.player.toLowerCase() },
+      { column: 'mgr_chesscom_uuid', value: data.chesscom_uuid },
+      { column: 'mgr_raw_data', value: JSON.stringify(data.raw_data) },
+      { column: 'mgr_pgn', value: data.pgn ?? null },
+      { column: 'mgr_end_time', value: data.end_time },
+      { column: 'mgr_time_class', value: data.time_class }
+    ],
+    conflictColumn: 'mgr_chesscom_uuid, mgr_player',
+    skipCache: true
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'insertMasterRawGame',
+      lg_caller: 'insertMasterRawGame',
+      lg_msg: 'Failed to insert master raw game ' + data.chesscom_uuid + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return false
+  }
+  return result.data.length > 0
 }

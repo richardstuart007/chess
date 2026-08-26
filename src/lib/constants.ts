@@ -33,7 +33,7 @@ export const WIDTH_RESULT = 'w-16'
 export const OPTIONS_RESULT_MULTI = [{ value: 'win', label: 'win' }, { value: 'loss', label: 'loss' }, { value: 'draw', label: 'draw' }]
 export const WIDTH_RESULT_MULTI = 'w-20'
 export const OPTIONS_TERMINATION = ['Resignation', 'Checkmate', 'Time', 'Repetition', 'Agreement', 'Stalemate', 'Insufficient', '50 Moves', 'Timeout', 'Abandoned']
-export const WIDTH_TERMINATION = 'w-20'
+export const WIDTH_TERMINATION = 'w-40'
 export const OPTIONS_PIPELINE_TYPE = [{ value: '', label: 'All' }, { value: 'games', label: 'games' }, { value: 'masters', label: 'masters' }, { value: 'mastergames', label: 'mastergames' }]
 export const WIDTH_PIPELINE_TYPE = 'w-32'
 
@@ -162,6 +162,7 @@ export const POSITION_INSERT_CHUNK_SIZE_Master = 500
 export const GAME_LIST_ROWS_DEFAULT_Master = 20
 export const GAME_LIST_ROWS_OPTIONS_Master = [10, 15, 20, 50] as const
 export const GAMES_SYNC_YEARS_Master = [2026, 2025, 2024, 2023, 2022, 2021, 2020] as const
+export const MASTER_GAMES_FOR_FEN_LIMIT = 50
 
 //----------------------------------------------------------------------------------
 //  UI Display

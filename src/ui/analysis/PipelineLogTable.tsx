@@ -1,5 +1,11 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineLogTable — paginated/filterable viewer for tpip_pipelinelog, adapted from
+//    nextjs-shared's OwnerTableLogging (xlg_logging viewer) pattern.
+//==================================================================================================
+
 import { useState, useEffect, useRef } from 'react'
 import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
@@ -25,18 +31,6 @@ type PipelineLogRow = {
   pip_run_id:         number
 }
 
-function stepLabel(row: PipelineLogRow): string {
-  return `${row.pip_step}${row.pip_sub_step}`
-}
-
-function formatCreated(pipCreated: string): string {
-  return new Date(pipCreated).toLocaleString(undefined, { hour12: false })
-}
-
-//----------------------------------------------------------------------------------------------
-//  PipelineLogTable — paginated/filterable viewer for tpip_pipelinelog, adapted from
-//  nextjs-shared's OwnerTableLogging (xlg_logging viewer) pattern.
-//----------------------------------------------------------------------------------------------
 export default function PipelineLogTable() {
   const functionName = 'PipelineLogTable'
   const [pipelineType, setPipelineType] = useState('')
@@ -228,6 +222,20 @@ export default function PipelineLogTable() {
       </div>
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  stepLabel — "3a"-style combined step + sub-step label
+//----------------------------------------------------------------------------------------------
+function stepLabel(row: PipelineLogRow): string {
+  return `${row.pip_step}${row.pip_sub_step}`
+}
+
+//----------------------------------------------------------------------------------------------
+//  formatCreated — local-time timestamp, 24-hour clock
+//----------------------------------------------------------------------------------------------
+function formatCreated(pipCreated: string): string {
+  return new Date(pipCreated).toLocaleString(undefined, { hour12: false })
 }
 
 //----------------------------------------------------------------------------------------------

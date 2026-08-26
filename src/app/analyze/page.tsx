@@ -1,5 +1,16 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    AnalyzePage — /analyze. Loads a single tracked-player game (by ?game= gdid) via getGameById,
+//    reconstructs it into a ChessComGame-shaped object, attaches any already-stored Stockfish ply
+//    evaluations, and renders ChessBoardView, behind a Suspense boundary.
+//
+//    Parameters (from the URL):
+//      game   — gdid of the game to load
+//      player — tracked player viewing the game (also drives the shared AppShell player selection)
+//==================================================================================================
+
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
@@ -10,6 +21,18 @@ import { ChessComGame } from '@/src/lib/chesscom'
 import { getGameById, getGameEvals } from '@/src/lib/actions/games'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 
+export default function AnalyzePage() {
+  return (
+    <Suspense fallback={<MyLoadingMessage message1='Loading...' />}>
+      <AnalyzeContent />
+    </Suspense>
+  )
+}
+
+//----------------------------------------------------------------------------------
+//  AnalyzeContent — loads the game by ?game= gdid, reconstructs it into a ChessComGame-shaped
+//  object with any stored ply evaluations attached, then renders ChessBoardView
+//----------------------------------------------------------------------------------
 function AnalyzeContent() {
   const searchParams = useSearchParams()
 
@@ -117,13 +140,5 @@ function AnalyzeContent() {
       onDeepAnalysisDepthChange={setDeepAnalysisDepth}
       onDeepAnalysisMultiPvChange={setDeepAnalysisMultiPv}
     />
-  )
-}
-
-export default function AnalyzePage() {
-  return (
-    <Suspense fallback={<MyLoadingMessage message1='Loading...' />}>
-      <AnalyzeContent />
-    </Suspense>
   )
 }

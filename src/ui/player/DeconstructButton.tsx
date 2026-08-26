@@ -1,5 +1,15 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    DeconstructButton — manual trigger to deconstruct a player's raw games in batches, with a
+//    Check button to view outstanding/done counts first.
+//
+//    Parameters:
+//      player     — the player to deconstruct games for
+//      onComplete — called after a Populate run finishes
+//==================================================================================================
+
 import { useState } from 'react'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MySelect from 'nextjs-shared/MySelect'

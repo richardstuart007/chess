@@ -1,5 +1,31 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    purgeStaleReachOnePositions — EXPLICIT EXCEPTION to the "no destructive SQL in automation"
+//    rule, user-approved (see chess project .claude/CLAUDE.md). Deletes
+//    tpos_positions/tgam_game_positions/tpose_positions_eval rows for positions reached by
+//    MIN_REACH_TO_KEEP_Player games or fewer, once every one of those occurrences is at least
+//    PURGE_REACH_GRACE_DAYS_Player old. Sets tgd_gamesdecon.gd_positions_purged on any game left
+//    with zero tgam_game_positions rows, so buildPositionTree_Player never mistakes a purged
+//    game for an unprocessed one and resurrects what was just removed.
+//
+//    Parameters:
+//      level        — logging call-hierarchy depth
+//      forceNewRun  — allocate a new pipeline run id instead of joining the current one
+//
+//    Returns:
+//      purged — number of positions purged this run
+//
+//  2) NOTES
+//    Dangling-reference handling follows the standard before/resulting-pair rule (see
+//    .claude/CLAUDE.md): full-delete a tgam row when its own before-position is a candidate;
+//    otherwise, if only its resulting-position is a candidate, null out just that reference and
+//    keep the row. No cross-candidate dependency check is needed — each candidate is safe to
+//    process independently of which other candidates are in the same run, so there's no per-run
+//    row cap; every eligible candidate is purged.
+//==================================================================================================
+
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { table_truncate } from 'nextjs-shared/table_truncate'
@@ -7,22 +33,6 @@ import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { PURGE_REACH_GRACE_DAYS_Player, MIN_REACH_TO_KEEP_Player, MIN_ANALYSIS_MOVE_Player, MAX_ANALYSIS_MOVE_Player, PIPELINE_TYPE_GAMES } from '../constants'
 
-//----------------------------------------------------------------------------------
-//  purgeStaleReachOnePositions — EXPLICIT EXCEPTION to the "no destructive SQL in
-//  automation" rule, user-approved (see chess project .claude/CLAUDE.md). Deletes
-//  tpos_positions/tgam_game_positions/tpose_positions_eval rows for positions reached by
-//  MIN_REACH_TO_KEEP_Player games or fewer, once every one of those occurrences is at least
-//  PURGE_REACH_GRACE_DAYS_Player old. Sets tgd_gamesdecon.gd_positions_purged on any game left
-//  with zero tgam_game_positions rows, so buildPositionTree_Player never mistakes a purged
-//  game for an unprocessed one and resurrects what was just removed.
-//
-//  Dangling-reference handling follows the standard before/resulting-pair rule (see
-//  .claude/CLAUDE.md): full-delete a tgam row when its own before-position is a
-//  candidate; otherwise, if only its resulting-position is a candidate, null out just
-//  that reference and keep the row. No cross-candidate dependency check is needed —
-//  each candidate is safe to process independently of which other candidates are in
-//  the same run, so there's no per-run row cap; every eligible candidate is purged.
-//----------------------------------------------------------------------------------
 export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun?: boolean): Promise<{ purged: number }> {
   await logStart('purgeStaleReachOnePositions', 'purgeRoute', 'checking for stale low-reach positions', level)
   const t0 = Date.now()

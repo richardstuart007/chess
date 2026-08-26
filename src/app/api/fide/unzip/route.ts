@@ -1,3 +1,12 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/fide/unzip — pipeline UI route wrapper for unzipFideZip (FIDE pipeline step 2).
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { unzipFideZip } from '@/src/lib/fide/fideStaging'
 

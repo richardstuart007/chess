@@ -1,5 +1,20 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    FilterDateInput — labeled compact date filter, consistent sizing/styling across every
+//    filter site in the app.
+//
+//    Parameters:
+//      label       — filter label text
+//      value       — current date value
+//      onChange    — called with the new value on change
+//      min         — minimum selectable date
+//      max         — maximum selectable date
+//      width       — override width class (default 'w-28')
+//      borderClass — override border color classes
+//==================================================================================================
+
 import { MyInput } from 'nextjs-shared/MyInput'
 
 interface FilterDateInputProps {
@@ -12,10 +27,6 @@ interface FilterDateInputProps {
   borderClass?: string
 }
 
-//----------------------------------------------------------------------------------------------
-//  FilterDateInput — labeled compact date filter, consistent sizing/styling across every
-//  filter site in the app
-//----------------------------------------------------------------------------------------------
 export default function FilterDateInput({ label, value, onChange, min, max, width = 'w-28', borderClass = '' }: FilterDateInputProps) {
   return (
     <div className={label ? 'flex flex-col gap-0.5' : ''}>

@@ -1,5 +1,11 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    DataflowTabs — one tab bar, "Diagram" alongside one tab per pipeline table/process, all
+//    plain TSX (no markdown parsing).
+//==================================================================================================
+
 import { useState } from 'react'
 import { MyTab } from 'nextjs-shared/MyTab'
 import PipelineDiagram from '@/src/ui/dataflow/PipelineDiagram'
@@ -7,10 +13,6 @@ import { SECTIONS } from '@/src/ui/dataflow/sections'
 
 type ActiveTab = 'diagram' | string
 
-//----------------------------------------------------------------------------------------------
-//  DataflowTabs — one tab bar, "Diagram" alongside one tab per pipeline table/process, all plain
-//  TSX (no markdown parsing) — replaces the earlier MarkdownLiteView-based approach
-//----------------------------------------------------------------------------------------------
 export default function DataflowTabs() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('diagram')
 

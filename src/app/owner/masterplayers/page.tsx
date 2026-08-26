@@ -1,5 +1,18 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    MasterPlayersPage — /owner/masterplayers. Priority-flagging list of every known master name
+//    (populated entirely by the FIDE pipeline — see /owner/pipelinemasters), plus a one-at-a-time
+//    Chess.com handle lookup, for the Analyze page's "Search known masters" loop.
+//
+//  2) NOTES
+//    findNextHandle processes one player per click, highest grade first — a long sequential batch
+//    across all 156 triggered intermittent failures on well-known players (reproducible only at
+//    that scale), most likely chess.com's own anti-bot throttling. User decision: process one at
+//    a time instead, paced by clicking the button.
+//==================================================================================================
+
 import { useState, useEffect } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -7,11 +20,6 @@ import { MyInput } from 'nextjs-shared/MyInput'
 import { MyToggle } from 'nextjs-shared/MyToggle'
 import { getMasterPlayers, setMasterPlayerPriority, findNextMasterPlayerHandle, MasterPlayerRow } from '@/src/lib/actions/masterPlayers'
 
-//----------------------------------------------------------------------------------
-//  MasterPlayersPage — priority-flagging list of every known master name (populated
-//  entirely by the FIDE pipeline — see /owner/pipelinemasters), plus a one-at-a-time
-//  Chess.com handle lookup, for the Analyze page's "Search known masters" loop.
-//----------------------------------------------------------------------------------
 export default function MasterPlayersPage() {
   const [players, setPlayers] = useState<MasterPlayerRow[]>([])
   const [loadingPlayers, setLoadingPlayers] = useState(true)
@@ -28,12 +36,6 @@ export default function MasterPlayersPage() {
     const rows = await getMasterPlayers(filter_name, sortGradeDesc, onlyMissingHandle)
     setPlayers(rows)
     setLoadingPlayers(false)
-  }
-
-  async function togglePriority(row: MasterPlayerRow) {
-    const nextPriority = !row.priority
-    setPlayers(prev => prev.map(p => p.mstid === row.mstid ? { ...p, priority: nextPriority } : p))
-    await setMasterPlayerPriority(row.mstid, nextPriority)
   }
 
   const [findingHandle, setFindingHandle] = useState(false)
@@ -56,6 +58,15 @@ export default function MasterPlayersPage() {
     }
     setFindingHandle(false)
     await loadPlayers()
+  }
+
+  //
+  //  togglePriority — flips one row's priority flag, optimistically, then persists it
+  //
+  async function togglePriority(row: MasterPlayerRow) {
+    const nextPriority = !row.priority
+    setPlayers(prev => prev.map(p => p.mstid === row.mstid ? { ...p, priority: nextPriority } : p))
+    await setMasterPlayerPriority(row.mstid, nextPriority)
   }
 
   return (

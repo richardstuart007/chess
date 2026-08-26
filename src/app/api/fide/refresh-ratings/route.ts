@@ -1,3 +1,13 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/fide/refresh-ratings — pipeline UI route wrapper for refreshFideRatings (FIDE
+//    pipeline step 5).
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { refreshFideRatings } from '@/src/lib/fide/fidePipeline'
 

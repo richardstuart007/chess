@@ -1,5 +1,27 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    MasterPlayerMultiSelect — multi-select of known master players (tmst_master_players),
+//    values are chess.com handles, sorted by grade descending. Each option is labeled with a
+//    "✓" suffix when that player already has 1+ games synced for the selected year
+//    (getMasterSyncYearStatus), so the picker doubles as a status display. A search box narrows
+//    the *unselected* candidates by name/handle as you type.
+//
+//    Parameters:
+//      selected — currently checked chess.com handles
+//      onChange — called with the new selection array
+//      year     — calendar year the "✓" status is computed against
+//      label    — filter label text (default 'Masters')
+//      width    — override width class (default 'w-72')
+//
+//  2) NOTES
+//    Selection is fully owned by the caller — this component never auto-checks anything; a year
+//    change only refreshes the "✓" labels on the option list, it never changes what's currently
+//    selected. Already-selected players always stay visible in the option list regardless of the
+//    search text, so unchecking one never requires clearing the search first.
+//==================================================================================================
+
 import { useState, useEffect } from 'react'
 import MySelectMulti from 'nextjs-shared/MySelectMulti'
 import { MyInput } from 'nextjs-shared/MyInput'
@@ -13,16 +35,6 @@ interface MasterPlayerMultiSelectProps {
   width?: string
 }
 
-//----------------------------------------------------------------------------------------------
-//  MasterPlayerMultiSelect — multi-select of known master players (tmst_master_players), values
-//  are chess.com handles, sorted by grade descending. Each option is labeled with a "✓" suffix
-//  when that player already has 1+ games synced for the selected year (getMasterSyncYearStatus),
-//  so the picker doubles as a status display. Selection is fully owned by the caller — this
-//  component never auto-checks anything; a year change only refreshes the "✓" labels on the
-//  option list, it never changes what's currently selected. A search box narrows the *unselected*
-//  candidates by name/handle as you type — already-selected players always stay visible
-//  regardless of the search text, so unchecking one never requires clearing the search first.
-//----------------------------------------------------------------------------------------------
 export default function MasterPlayerMultiSelect({ selected, onChange, year, label = 'Masters', width = 'w-72' }: MasterPlayerMultiSelectProps) {
   const [allOptions, setAllOptions] = useState<{ value: string; label: string }[]>([])
   const [search, setSearch] = useState('')

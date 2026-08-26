@@ -1,5 +1,11 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineHelp — wider structured help popover for the Analysis Pipeline page, showing every
+//    step's input/processing/output plus a row-count SQL snippet.
+//==================================================================================================
+
 import { useState } from 'react'
 import { MyButton } from 'nextjs-shared/MyButton'
 
@@ -132,9 +138,6 @@ const ROW_COUNT_SQL =
   UNION ALL SELECT 6, 'thab_habits',            COUNT(*) FROM thab_habits
 ) t ORDER BY ord;`
 
-//----------------------------------------------------------------------------------------------
-//  PipelineHelp — wider structured help popover for the Analysis Pipeline page
-//----------------------------------------------------------------------------------------------
 export default function PipelineHelp() {
   const [open, setOpen] = useState(false)
 

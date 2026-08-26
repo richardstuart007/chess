@@ -1,5 +1,23 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    ChessBoardView — full analysis board for one player game: move tree, Stockfish game
+//    analysis and infinite-analysis panels, Lichess Masters Explorer panels, our own
+//    synced-master-games panels, and a live Chess.com game search for the current position.
+//
+//    Parameters:
+//      game                        — the chess.com game to display
+//      gdid                        — this game's own database id, if saved
+//      player                      — the tracked player whose perspective this view is from
+//      stockfishDepth              — current Game Analysis depth (controlled by the caller)
+//      onStockfishDepthChange      — called with the new depth on change
+//      deepAnalysisDepth           — current infinite-analysis depth (controlled by the caller)
+//      deepAnalysisMultiPv         — current infinite-analysis MultiPV count
+//      onDeepAnalysisDepthChange   — called with the new depth on change
+//      onDeepAnalysisMultiPvChange — called with the new MultiPV count on change
+//==================================================================================================
+
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Chess, Square } from 'chess.js'
@@ -41,6 +59,8 @@ import {
 import AlternativeLines from './AlternativeLines'
 import MoveTree from './MoveTree'
 import DepthInput from './DepthInput'
+import MasterMovesDbPanel from './MasterMovesDbPanel'
+import MasterGamesDbPanel from './MasterGamesDbPanel'
 
 interface ChessBoardViewProps {
   game: ChessComGame
@@ -84,49 +104,6 @@ const CHESSCOM_SORT_OPTIONS = [
   { value: '9', label: 'Most moves' },
   { value: '10', label: 'Fewest moves' }
 ]
-
-//----------------------------------------------------------------------------------
-//  getCurrentMoveLabel — "16.Ng6" / "16...Ng6" for whatever position is currently on
-//  the board (matching MoveTree.tsx's own move-number notation), "Starting position"
-//  at the root (no move played yet)
-//----------------------------------------------------------------------------------
-function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
-  if (!currentNode) return 'Starting position'
-  const moveNum = Math.floor((currentPly - 1) / 2) + 1
-  const isWhite = (currentPly - 1) % 2 === 0
-  return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
-}
-
-//----------------------------------------------------------------------------------
-//  collectNodesFromMove — walks the whole tree (main line + every variation) and
-//  returns every node whose full-move number is >= minMove
-//----------------------------------------------------------------------------------
-function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
-  const result: MoveNode[] = []
-  function walk(node: MoveNode, ply: number) {
-    if (ply > 0) {
-      const moveNum = Math.floor((ply - 1) / 2) + 1
-      if (moveNum >= minMove) result.push(node)
-    }
-    for (const child of node.children) {
-      walk(child, ply + 1)
-    }
-  }
-  walk(root, 0)
-  return result
-}
-
-//----------------------------------------------------------------------------------
-//  formatGameDate — unix epoch seconds -> dd/mm/yy, matching the same convention
-//  already used in GameList.tsx and HabitsTable.tsx
-//----------------------------------------------------------------------------------
-function formatGameDate(endTime: number): string {
-  const date = new Date(endTime * 1000)
-  const dd = String(date.getDate()).padStart(2, '0')
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const yy = String(date.getFullYear()).slice(2)
-  return `${dd}/${mm}/${yy}`
-}
 
 export default function ChessBoardView({ game, gdid, player, stockfishDepth, onStockfishDepthChange, deepAnalysisDepth, deepAnalysisMultiPv, onDeepAnalysisDepthChange, onDeepAnalysisMultiPvChange }: ChessBoardViewProps) {
   const router = useRouter()
@@ -1383,6 +1360,14 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
             )
           })()}
 
+          {currentNode && (
+            <div className='pt-2 border-t border-gray-200 space-y-4'>
+              <p className='text-xxs font-semibold text-gray-400 uppercase tracking-wide'>From our own synced master games</p>
+              <MasterMovesDbPanel fen={currentNode.fen} />
+              <MasterGamesDbPanel fen={currentNode.fen} />
+            </div>
+          )}
+
           {/* Master Moves — master-level game stats for whatever position is currently on the
               board, from the Lichess Masters Opening Explorer. Separate panel from
               "Moves Played" (not merged) — showing all fields the API
@@ -1643,4 +1628,47 @@ export default function ChessBoardView({ game, gdid, player, stockfishDepth, onS
       </div>
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  collectNodesFromMove — walks the whole tree (main line + every variation) and
+//  returns every node whose full-move number is >= minMove
+//----------------------------------------------------------------------------------
+function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
+  const result: MoveNode[] = []
+  function walk(node: MoveNode, ply: number) {
+    if (ply > 0) {
+      const moveNum = Math.floor((ply - 1) / 2) + 1
+      if (moveNum >= minMove) result.push(node)
+    }
+    for (const child of node.children) {
+      walk(child, ply + 1)
+    }
+  }
+  walk(root, 0)
+  return result
+}
+
+//----------------------------------------------------------------------------------
+//  getCurrentMoveLabel — "16.Ng6" / "16...Ng6" for whatever position is currently on
+//  the board (matching MoveTree.tsx's own move-number notation), "Starting position"
+//  at the root (no move played yet)
+//----------------------------------------------------------------------------------
+function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
+  if (!currentNode) return 'Starting position'
+  const moveNum = Math.floor((currentPly - 1) / 2) + 1
+  const isWhite = (currentPly - 1) % 2 === 0
+  return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
+}
+
+//----------------------------------------------------------------------------------
+//  formatGameDate — unix epoch seconds -> dd/mm/yy, matching the same convention
+//  already used in GameList.tsx and HabitsTable.tsx
+//----------------------------------------------------------------------------------
+function formatGameDate(endTime: number): string {
+  const date = new Date(endTime * 1000)
+  const dd = String(date.getDate()).padStart(2, '0')
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const yy = String(date.getFullYear()).slice(2)
+  return `${dd}/${mm}/${yy}`
 }

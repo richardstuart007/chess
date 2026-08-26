@@ -1,5 +1,20 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PlayerProfile — one tracked player's header card: avatar, name, and rating badges per time
+//    class. Clicking the card or a rating badge is optional, caller-driven.
+//
+//    Parameters:
+//      player        — player handle
+//      displayName   — optional display name shown above the handle
+//      avatar        — optional avatar image URL
+//      ratings       — optional rating per time class
+//      onClick       — optional; called when the card itself is clicked
+//      selected      — highlights the card when true
+//      onRatingClick — optional; called with the time class when a rating badge is clicked
+//==================================================================================================
+
 import MyBox from 'nextjs-shared/MyBox'
 
 interface PlayerProfileProps {

@@ -1,5 +1,14 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineMasterGamesPage — /owner/pipelinemastergames. The master-games position-database
+//    pipeline UI: 3 steps (Sync Master Games → Build Master Position Tree → Sync Master Position
+//    Tree), each independently re-runnable for one or more selected master players, plus a
+//    "Run All" that chains all 3 across every selected player sharing one pipeline run id, and a
+//    Jobs summary table reading back the latest logged run per step/sub-step.
+//==================================================================================================
+
 import { useState, useEffect, Fragment } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
@@ -44,10 +53,6 @@ const JOB_GROUPS: {
       { subStep: 'b', label: 'Backfill tmgam ids' },
     ] },
 ]
-
-function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
-}
 
 const SQL_STATUS_SYNC = `SELECT
   (SELECT COUNT(*) FROM wk_mgr_gamesraw r WHERE NOT EXISTS (SELECT 1 FROM tmgd_gamesdecon d WHERE d.mgd_chesscom_uuid = r.mgr_chesscom_uuid)) AS pending,
@@ -427,4 +432,11 @@ export default function PipelineMasterGamesPage() {
 
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  n — formats a count for display, or an em dash if not yet loaded
+//----------------------------------------------------------------------------------
+function n(val: number | undefined): string {
+  return val === undefined ? '—' : val.toLocaleString()
 }

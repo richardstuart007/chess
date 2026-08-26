@@ -1,3 +1,12 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/update-cp-change — pipeline UI route wrapper for bulkUpdateCpLoss.
+//
+//    Parameters (query string):
+//      level  — logging call-hierarchy depth (default 1)
+//      newRun — 'true' to allocate a new pipeline run id instead of joining the current one
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { bulkUpdateCpLoss } from '@/src/lib/analysis/enrichPositionsStockfish'
 

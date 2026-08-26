@@ -1,5 +1,14 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    TerminationChart — stacked win/loss bar chart by termination type. Filter selections persist
+//    to sessionStorage.
+//
+//    Parameters:
+//      players — tracked players to fetch termination stats for (narrowed by the global ?player=)
+//==================================================================================================
+
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -20,10 +29,6 @@ const TODAY = new Date().toISOString().slice(0, 10)
 
 interface TerminationChartProps {
   players: { player: string; display_name: string | null }[]
-}
-
-function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
 export default function TerminationChart({ players }: TerminationChartProps) {
@@ -170,4 +175,11 @@ export default function TerminationChart({ players }: TerminationChartProps) {
       )}
     </MyBox>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }

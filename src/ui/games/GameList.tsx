@@ -1,5 +1,17 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    GameList — filterable, paginated table of a tracked player's games. Player/timeClass apply
+//    instantly (shared global URL params); dateFrom/opening/eco/other filters are draft state,
+//    only applied on the Filter button click. Filter/pagination state persists to sessionStorage.
+//
+//    Parameters:
+//      players      — tracked players to list games for
+//      onSelectGame — called with (game, player) when a row/Analyze button is clicked
+//      minDate      — earliest selectable date for the Date filter
+//==================================================================================================
+
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
@@ -42,10 +54,6 @@ const RESULT_STYLES: Record<string, string> = {
   win: 'text-green-600 font-bold',
   loss: 'text-red-600 font-bold',
   draw: 'text-gray-500 font-bold'
-}
-
-function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }
 
 export default function GameList({ players, onSelectGame, minDate }: GameListProps) {
@@ -537,4 +545,11 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
       </div>
     </MyBox>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//----------------------------------------------------------------------------------------------
+function ss<T>(key: string, fallback: T): T {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
 }

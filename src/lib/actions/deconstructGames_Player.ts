@@ -1,5 +1,20 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    deconstructGames_Player — process raw games into tgd_gamesdecon for one player.
+//
+//    Parameters:
+//      playerParam — player handle
+//      limit       — max games to process (0 = no limit)
+//      timeClasses — time classes to include (default INCLUDED_TIME_CLASSES_Player)
+//
+//    Returns:
+//      processed — games successfully deconstructed
+//      skipped   — games skipped (no PGN, or too short to be trackable)
+//      errors    — games that failed to deconstruct
+//==================================================================================================
+
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { table_count } from 'nextjs-shared/table_count'
@@ -20,56 +35,6 @@ const ECO_TABLE = 'tec_ecoreference'
 //
 const MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Player - 1) * 2
 
-//----------------------------------------------------------------------------------
-//  getUndeconstructedCount — count raw games not yet deconstructed for a player
-//----------------------------------------------------------------------------------
-export async function getUndeconstructedCount(
-  player: string,
-  timeClasses: string[] = INCLUDED_TIME_CLASSES_Player
-): Promise<number> {
-  const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
-  const result = await table_query({
-    caller: 'getUndeconstructedCount',
-    table: RAW_TABLE,
-    query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
-    params: [player.toLowerCase(), ...timeClasses]
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'getUndeconstructedCount',
-      lg_caller: 'getUndeconstructedCount',
-      lg_msg: 'Failed to count undeconstructed games for ' + player + ': ' + result.error,
-      lg_severity: 'E'
-    })
-    return 0
-  }
-  return Number(result.data[0].count)
-}
-
-//----------------------------------------------------------------------------------
-//  getDeconstructedCount — count deconstructed games for a player
-//----------------------------------------------------------------------------------
-export async function getDeconstructedCount(player: string): Promise<number> {
-  const result = await table_count({
-    table: DECON_TABLE,
-    whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
-    caller: 'getDeconstructedCount'
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'getDeconstructedCount',
-      lg_caller: 'getDeconstructedCount',
-      lg_msg: 'Failed to count deconstructed games for ' + player + ': ' + result.error,
-      lg_severity: 'E'
-    })
-    return 0
-  }
-  return result.data
-}
-
-//----------------------------------------------------------------------------------
-//  deconstructGames_Player — process raw games into tgd_gamesdecon
-//----------------------------------------------------------------------------------
 export async function deconstructGames_Player(
   playerParam: string,
   limit: number,
@@ -220,4 +185,51 @@ export async function upsertEcoReference(ecoCode: string, openingName: string): 
       // Ignore duplicate key errors (race condition)
     }
   }
+}
+
+//----------------------------------------------------------------------------------
+//  getUndeconstructedCount — count raw games not yet deconstructed for a player
+//----------------------------------------------------------------------------------
+export async function getUndeconstructedCount(
+  player: string,
+  timeClasses: string[] = INCLUDED_TIME_CLASSES_Player
+): Promise<number> {
+  const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
+  const result = await table_query({
+    caller: 'getUndeconstructedCount',
+    table: RAW_TABLE,
+    query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
+    params: [player.toLowerCase(), ...timeClasses]
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getUndeconstructedCount',
+      lg_caller: 'getUndeconstructedCount',
+      lg_msg: 'Failed to count undeconstructed games for ' + player + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return Number(result.data[0].count)
+}
+
+//----------------------------------------------------------------------------------
+//  getDeconstructedCount — count deconstructed games for a player
+//----------------------------------------------------------------------------------
+export async function getDeconstructedCount(player: string): Promise<number> {
+  const result = await table_count({
+    table: DECON_TABLE,
+    whereColumnValuePairs: [{ column: 'gd_player', value: player.toLowerCase() }],
+    caller: 'getDeconstructedCount'
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'getDeconstructedCount',
+      lg_caller: 'getDeconstructedCount',
+      lg_msg: 'Failed to count deconstructed games for ' + player + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return result.data
 }

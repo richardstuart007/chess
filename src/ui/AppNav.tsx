@@ -1,5 +1,12 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    AppNav — top-level section tab bar (Games/Habits/Graph/Openings/Endings/Masters Games).
+//    Carries every global filter (player/timeClass/dateFrom/opening/eco) across tab navigation,
+//    and highlights the active tab based on the current pathname.
+//==================================================================================================
+
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 

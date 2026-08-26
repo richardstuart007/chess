@@ -1,3 +1,16 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/mastergames/sync — pipeline UI route wrapper for syncMasterGames.
+//
+//    Parameters (query string):
+//      player        — chess.com handle to sync (required)
+//      year          — calendar year to sync (required)
+//      level         — logging call-hierarchy depth (default 1)
+//      newRun        — 'true' to allocate a new pipeline run id instead of joining the current one
+//      truncateFirst — 'true' to truncate wk_mgr_gamesraw before downloading (set only for the
+//                      first player in a multi-player batch)
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { syncMasterGames } from '@/src/lib/master/masterSync'
 

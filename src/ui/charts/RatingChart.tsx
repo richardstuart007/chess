@@ -1,5 +1,27 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    RatingChart — rating-over-time line chart, one series per (player, timeClass) pair,
+//    auto-choosing a sensible granularity (per-game/daily/weekly/monthly) from the data's date
+//    span, overridable via the Granularity dropdown.
+//
+//    Parameters:
+//      players         — tracked players to chart
+//      playerFilter    — narrows to one player when set and players.length > 1
+//      filters         — only dateFrom/dateTo/timeClass are actually applied (see NOTES)
+//      limit           — max games to fetch
+//      onLoadingChange — optional; called with the current loading state
+//      refreshNonce    — bump on every Refresh click to force a re-fetch even when nothing else
+//                        changed
+//
+//  2) NOTES
+//    A rating point reflects the player's true rating, shaped by their entire game history —
+//    narrowing by Color/Opponent/Result/Termination/Opening/ECO wouldn't produce a meaningful
+//    trend, only a sparser set of the same real values, so only date range and time class from
+//    `filters` are actually applied here regardless of what's set via the Games tab.
+//==================================================================================================
+
 import { useMemo, useState, useEffect } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -27,73 +49,6 @@ const POINT_DESC: Record<RatingGranularity, string> = {
   day:   'each point = daily average',
   week:  'each point = weekly average',
   month: 'each point = monthly average',
-}
-
-function availableGrans(spanDays: number): RatingGranularity[] {
-  if (spanDays < 2)   return ['game']
-  if (spanDays < 14)  return ['game', 'day']
-  if (spanDays < 60)  return ['game', 'day', 'week']
-  return ['day', 'week', 'month']
-}
-
-function defaultGran(spanDays: number): RatingGranularity {
-  if (spanDays < 2)   return 'game'
-  if (spanDays < 14)  return 'game'
-  if (spanDays < 60)  return 'day'
-  if (spanDays < 365) return 'week'
-  return 'month'
-}
-
-function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date: string; avgRating: number }[] {
-  if (rows.length === 0) return []
-
-  if (granularity === 'game') {
-    return rows
-      .map(row => ({
-        date: new Date(row.gd_end_time * 1000).toISOString(),
-        avgRating: row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-  }
-
-  const groups = new Map<string, number[]>()
-  for (const row of rows) {
-    const d = new Date(row.gd_end_time * 1000)
-    let key: string
-    if (granularity === 'day') {
-      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    } else if (granularity === 'week') {
-      const day = d.getDay()
-      const mon = new Date(d)
-      mon.setDate(d.getDate() - day + (day === 0 ? -6 : 1))
-      key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
-    } else {
-      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    }
-    const rating = row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(rating)
-  }
-
-  return Array.from(groups.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, ratings]) => ({
-      date: key,
-      avgRating: Math.round(ratings.reduce((s, r) => s + r, 0) / ratings.length)
-    }))
-}
-
-function parseDate(d: string): Date {
-  if (d.length > 10) return new Date(d)
-  const [y, m, day] = d.split('-').map(Number)
-  return new Date(y, m - 1, day ?? 1)
-}
-
-function generateDateTicks(fromMs: number, toMs: number, count: number): number[] {
-  if (count <= 1) return [fromMs]
-  return Array.from({ length: count }, (_, i) =>
-    Math.round(fromMs + (i / (count - 1)) * (toMs - fromMs))
-  )
 }
 
 interface RatingChartProps {
@@ -327,5 +282,89 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
         </ResponsiveContainer>
       )}
     </MyBox>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  availableGrans — granularity options that make sense for a date span this wide
+//----------------------------------------------------------------------------------------------
+function availableGrans(spanDays: number): RatingGranularity[] {
+  if (spanDays < 2)   return ['game']
+  if (spanDays < 14)  return ['game', 'day']
+  if (spanDays < 60)  return ['game', 'day', 'week']
+  return ['day', 'week', 'month']
+}
+
+//----------------------------------------------------------------------------------------------
+//  defaultGran — the granularity auto-selected for a date span this wide, absent a manual
+//  override
+//----------------------------------------------------------------------------------------------
+function defaultGran(spanDays: number): RatingGranularity {
+  if (spanDays < 2)   return 'game'
+  if (spanDays < 14)  return 'game'
+  if (spanDays < 60)  return 'day'
+  if (spanDays < 365) return 'week'
+  return 'month'
+}
+
+//----------------------------------------------------------------------------------------------
+//  aggregateForPlayer — one player's rows reduced to one point per game, or averaged into
+//  day/week/month buckets
+//----------------------------------------------------------------------------------------------
+function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date: string; avgRating: number }[] {
+  if (rows.length === 0) return []
+
+  if (granularity === 'game') {
+    return rows
+      .map(row => ({
+        date: new Date(row.gd_end_time * 1000).toISOString(),
+        avgRating: row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }
+
+  const groups = new Map<string, number[]>()
+  for (const row of rows) {
+    const d = new Date(row.gd_end_time * 1000)
+    let key: string
+    if (granularity === 'day') {
+      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    } else if (granularity === 'week') {
+      const day = d.getDay()
+      const mon = new Date(d)
+      mon.setDate(d.getDate() - day + (day === 0 ? -6 : 1))
+      key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
+    } else {
+      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }
+    const rating = row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(rating)
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, ratings]) => ({
+      date: key,
+      avgRating: Math.round(ratings.reduce((s, r) => s + r, 0) / ratings.length)
+    }))
+}
+
+//----------------------------------------------------------------------------------------------
+//  parseDate — 'YYYY-MM-DD' or a full ISO string to a local Date
+//----------------------------------------------------------------------------------------------
+function parseDate(d: string): Date {
+  if (d.length > 10) return new Date(d)
+  const [y, m, day] = d.split('-').map(Number)
+  return new Date(y, m - 1, day ?? 1)
+}
+
+//----------------------------------------------------------------------------------------------
+//  generateDateTicks — count evenly-spaced timestamps between fromMs and toMs, for the x-axis
+//----------------------------------------------------------------------------------------------
+function generateDateTicks(fromMs: number, toMs: number, count: number): number[] {
+  if (count <= 1) return [fromMs]
+  return Array.from({ length: count }, (_, i) =>
+    Math.round(fromMs + (i / (count - 1)) * (toMs - fromMs))
   )
 }

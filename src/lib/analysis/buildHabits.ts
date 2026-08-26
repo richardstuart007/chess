@@ -1,5 +1,38 @@
 'use server'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    buildHabits — full recompute + upsert into thab_habits every run. There is no safe
+//    incremental cursor here: a habit's move_cp can change as new games arrive for a move
+//    already in the table, not just add brand-new rows. The upsert's SET clause never touches
+//    hab_dismissed, so a dismissed habit's flag survives every rebuild even though its stats
+//    keep refreshing.
+//
+//  2) NOTES
+//    move_cp is the single occurrence with the largest magnitude of change (ORDER BY
+//    ABS(gam_cp_change) DESC, keeping its real sign), not an average — for a fixed (position,
+//    move) pair every occurrence's gam_cp_change is actually the same deterministic value today
+//    (same before/after positions, one evaluation each), so this only behaves differently from
+//    an average if that ever stops holding (e.g. a position gets re-evaluated at a different
+//    depth later). Clamped to ±HABITS_MOVE_CP_CLAMP_Player to stay within hab_move_cp's
+//    numeric(6,2) precision — mate scores are normalized to ±10000, so a single real swing can
+//    still exceed it.
+//
+//    Both good and bad recurring moves are stored (no WHERE move_cp < 0 filter) — a "habit" is
+//    any recurring move, not just a mistake. Good vs. bad filtering happens at read time
+//    (getHabitsData's quality option). resulting_pos_id is likewise deterministic per (position,
+//    move) — same reasoning as move_cp above — used at read time to display the resulting
+//    position's actual Stockfish eval (see docs/CP_VALUE.md), not stored as a delta.
+//
+//    opening_name/eco_code come from the latest game (by gd_end_time) that reached this habit's
+//    position, matching it as either gam_pos_id or gam_resulting_pos_id (per this project's
+//    "reach counts both directions" rule) — denormalized here at build time instead of joined
+//    live at read time, since it's only as fresh as the last rebuild anyway (same tradeoff
+//    already accepted for every other column in this table). The lookup joins against the
+//    already-grouped aggregate (not the raw per-occurrence rows), so it runs once per final
+//    habit row, not once per underlying game occurrence.
+//==================================================================================================
+
 import { write_logging } from 'nextjs-shared/write_logging'
 import { table_query } from 'nextjs-shared/table_query'
 import { cache_clearTable } from 'nextjs-shared/userCache_store'
@@ -23,47 +56,33 @@ interface HabitAggregate {
   lastOccurred:     number | null
 }
 
-//----------------------------------------------------------------------------------
-//  chunkRows — plain fixed-size chunking; unlike buildPositionTree_Player's chunkByGame,
-//  each habit row is independent so no grouping constraint is needed.
-//----------------------------------------------------------------------------------
-function chunkRows<T>(rows: T[], maxRows: number): T[][] {
-  const chunks: T[][] = []
-  for (let i = 0; i < rows.length; i += maxRows) chunks.push(rows.slice(i, i + maxRows))
-  return chunks
+export async function buildHabits(level: number = 1, forceNewRun?: boolean): Promise<{ built: number }> {
+  await logStart('buildHabits', 'buildHabitsRoute', 'aggregating move habits', level)
+  const t0 = Date.now()
+
+  const aggregates = await fetchHabitAggregates()
+  const built = await upsertHabitAggregates(aggregates, level)
+
+  const durationMs = Date.now() - t0
+
+  await logPipelineStep({
+    step: 7, subStep: 'a', stepName: 'Build Habits', pipelineType: PIPELINE_TYPE_GAMES,
+    inputTable: 'tgam_game_positions', inputRecs: aggregates.length,
+    outputTable: 'thab_habits', outputRecs: built,
+    durationMs, forceNewRun
+  })
+
+  await write_logging({
+    lg_functionname: 'buildHabits',
+    lg_caller: 'buildHabitsRoute',
+    lg_msg: `Built/refreshed ${built} habit rows`,
+    lg_severity: 'I'
+  })
+
+  await logEnd('buildHabits', 'buildHabitsRoute', `${built} rows built/refreshed`, level)
+  return { built }
 }
 
-//----------------------------------------------------------------------------------
-//  buildHabits — full recompute + upsert into thab_habits every run. There is no safe
-//  incremental cursor here: a habit's move_cp can change as new games arrive for a
-//  move already in the table, not just add brand-new rows. The upsert's SET clause
-//  never touches hab_dismissed, so a dismissed habit's flag survives every rebuild
-//  even though its stats keep refreshing.
-//
-//  move_cp is the single occurrence with the largest magnitude of change (ORDER BY
-//  ABS(gam_cp_change) DESC, keeping its real sign), not an average — for a fixed
-//  (position, move) pair every occurrence's gam_cp_change is actually the same
-//  deterministic value today (same before/after positions, one evaluation each), so
-//  this only behaves differently from an average if that ever stops holding (e.g. a
-//  position gets re-evaluated at a different depth later). Clamped to
-//  +-HABITS_MOVE_CP_CLAMP_Player to stay within hab_move_cp's numeric(6,2) precision — mate
-//  scores are normalized to +-10000, so a single real swing can still exceed it.
-//
-//  Both good and bad recurring moves are stored (no WHERE move_cp < 0 filter) — a
-//  "habit" is any recurring move, not just a mistake. Good vs. bad filtering happens
-//  at read time (getHabitsData's quality option). resulting_pos_id is likewise
-//  deterministic per (position, move) — same reasoning as move_cp above — used at
-//  read time to display the resulting position's actual Stockfish eval (see
-//  docs/CP_VALUE.md), not stored as a delta.
-//
-//  opening_name/eco_code come from the latest game (by gd_end_time) that reached this
-//  habit's position, matching it as either gam_pos_id or gam_resulting_pos_id (per this
-//  project's "reach counts both directions" rule) — denormalized here at build time
-//  instead of joined live at read time, since it's only as fresh as the last rebuild
-//  anyway (same tradeoff already accepted for every other column in this table). The
-//  lookup joins against the already-grouped aggregate (not the raw per-occurrence rows),
-//  so it runs once per final habit row, not once per underlying game occurrence.
-//----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
 //  fetchHabitAggregates — the aggregate query behind buildHabits' full rebuild. Habits
 //  are deliberately never refreshed live from an interactive analysis click — only this
@@ -196,29 +215,12 @@ async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number
   return built
 }
 
-export async function buildHabits(level: number = 1, forceNewRun?: boolean): Promise<{ built: number }> {
-  await logStart('buildHabits', 'buildHabitsRoute', 'aggregating move habits', level)
-  const t0 = Date.now()
-
-  const aggregates = await fetchHabitAggregates()
-  const built = await upsertHabitAggregates(aggregates, level)
-
-  const durationMs = Date.now() - t0
-
-  await logPipelineStep({
-    step: 7, subStep: 'a', stepName: 'Build Habits', pipelineType: PIPELINE_TYPE_GAMES,
-    inputTable: 'tgam_game_positions', inputRecs: aggregates.length,
-    outputTable: 'thab_habits', outputRecs: built,
-    durationMs, forceNewRun
-  })
-
-  await write_logging({
-    lg_functionname: 'buildHabits',
-    lg_caller: 'buildHabitsRoute',
-    lg_msg: `Built/refreshed ${built} habit rows`,
-    lg_severity: 'I'
-  })
-
-  await logEnd('buildHabits', 'buildHabitsRoute', `${built} rows built/refreshed`, level)
-  return { built }
+//----------------------------------------------------------------------------------
+//  chunkRows — plain fixed-size chunking; unlike buildPositionTree_Player's chunkByGame,
+//  each habit row is independent so no grouping constraint is needed.
+//----------------------------------------------------------------------------------
+function chunkRows<T>(rows: T[], maxRows: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < rows.length; i += maxRows) chunks.push(rows.slice(i, i + maxRows))
+  return chunks
 }

@@ -1,12 +1,23 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    GET /api/analysis/deconstruct — deconstruct-only route: reads wk_gr_gamesraw, writes
+//    tgd_gamesdecon. Does NOT sync from chess.com — safe to run any time. Loops in batches
+//    (batchSize, default 500) per player until a batch processes nothing, unless onebatch=1.
+//
+//    Parameters (query string):
+//      player   — one player handle (default: every tracked player)
+//      limit    — batch size per deconstructGames_Player call (default 500)
+//      onebatch — '1' to run only a single batch per player instead of looping to completion
+//
+//    Examples:
+//      GET /api/analysis/deconstruct                  → all players, all games
+//      GET /api/analysis/deconstruct?player=stricade  → one player
+//      GET /api/analysis/deconstruct?player=stricade&limit=500
+//==================================================================================================
+
 import { NextRequest, NextResponse } from 'next/server'
 import { deconstructGames_Player } from '@/src/lib/actions/deconstructGames_Player'
 import { getPlayers } from '@/src/lib/actions/players'
-
-// Deconstruct-only route — reads wk_gr_gamesraw, writes tgd_gamesdecon.
-// Does NOT sync from chess.com. Safe to run any time.
-// GET /api/analysis/deconstruct                  → all players, all games
-// GET /api/analysis/deconstruct?player=stricade  → one player
-// GET /api/analysis/deconstruct?player=stricade&limit=500
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)

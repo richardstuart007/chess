@@ -1,5 +1,10 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    PipelineDiagram — the chess pipeline dataflow diagram (React Flow).
+//==================================================================================================
+
 import { ReactFlow, Handle, Position, MarkerType } from '@xyflow/react'
 import type { Node, Edge, NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -112,10 +117,6 @@ const EDGES: Edge[] = [
   edge('e21', 'deepenpopular', 'top-src',    'tgam',          'right-tgt'),
 ]
 
-//----------------------------------------------------------------------------------------------
-//  PipelineDiagram — the chess pipeline dataflow diagram (React Flow, replacing the earlier
-//  nextjs-shared markdown-lite `flow` diagram block for this page)
-//----------------------------------------------------------------------------------------------
 export default function PipelineDiagram() {
   return (
     <div style={{ height: 1200 }} className='w-full rounded-lg border border-gray-200 bg-gray-50'>

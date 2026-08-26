@@ -1,5 +1,23 @@
 'use client'
 
+//==================================================================================================
+//  1) DESCRIPTION
+//    MasterGameView — board/move-list view for one synced master game, plus a live, unsaved
+//    Stockfish analysis panel (StockfishEngine.analyzeGame is pure client-side computation — no
+//    DB read/write at all, so results exist only in this component's own state and are
+//    recomputed on every visit).
+//
+//    Parameters:
+//      row — the master game row to display
+//
+//  2) NOTES
+//    Deliberately never imports saveGameEvaluations/upgradePositionEvaluation/
+//    getMovePlayCounts/fetchGamesForPosition — those write into or read from the tracked
+//    player's own primary-database position tree, which a master game has no business touching.
+//    This component is structurally incapable of it, not just gated by a flag. See
+//    PLAN_table-layer-and-master-games (task 6) for the full reasoning.
+//==================================================================================================
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
@@ -12,17 +30,9 @@ import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS } from '@/src/lib/st
 import { MoveNode, AnalysisTree, buildTree, replayToNode, findMainLineAncestor, isOnMainLine } from '@/src/lib/analysisTree'
 import MoveTree from './MoveTree'
 import DepthInput from './DepthInput'
+import MasterMovesDbPanel from './MasterMovesDbPanel'
+import MasterGamesDbPanel from './MasterGamesDbPanel'
 
-//----------------------------------------------------------------------------------------------
-//  MasterGameView — board/move-list view for one synced master game, plus a live, unsaved
-//  Stockfish analysis panel (StockfishEngine.analyzeGame is pure client-side computation — no
-//  DB read/write at all, so results exist only in this component's own state and are recomputed
-//  on every visit). Deliberately never imports saveGameEvaluations/upgradePositionEvaluation/
-//  getMovePlayCounts/fetchGamesForPosition — those write into or read from the tracked player's
-//  own primary-database position tree, which a master game has no business touching. This
-//  component is structurally incapable of it, not just gated by a flag. See
-//  PLAN_table-layer-and-master-games (task 6) for the full reasoning.
-//----------------------------------------------------------------------------------------------
 export interface MasterGameRow {
   mgd_mgdid:            number
   mgd_white_username:   string
@@ -43,14 +53,6 @@ export interface MasterGameRow {
 
 interface MasterGameViewProps {
   row: MasterGameRow
-}
-
-function formatGameDate(endTime: number): string {
-  const date = new Date(endTime * 1000)
-  const dd = String(date.getDate()).padStart(2, '0')
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const yy = String(date.getFullYear()).slice(2)
-  return `${dd}/${mm}/${yy}`
 }
 
 export default function MasterGameView({ row }: MasterGameViewProps) {
@@ -96,46 +98,6 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
     displayGame.current = new Chess()
     setBoardKey(k => k + 1)
   }, [row])
-
-  // -----------------------------------------------------------------------
-  // Run full-game Stockfish analysis — StockfishEngine.analyzeGame is pure client-side
-  // computation, no DB cache passed in (nothing to check) and no save afterward. Results
-  // live only in plyEvals/tree state for this session.
-  // -----------------------------------------------------------------------
-  async function runAnalysis() {
-    if (!tree) return
-    setAnalyzing(true)
-    setAnalysisError('')
-
-    try {
-      let engine = engineRef.current
-      if (!engine) {
-        engine = new StockfishEngine()
-        engineRef.current = engine
-      }
-
-      const fens = [tree.root.fen, ...tree.mainLine.map(n => n.fen)]
-      const sans = tree.mainLine.map(n => n.san)
-
-      const mergedPlyEvals: (PlyEvaluation | undefined)[] = []
-      await engine.analyzeGame(
-        fens, sans,
-        progress => setAnalysisProgress(progress),
-        stockfishDepth,
-        undefined,
-        (plyEval, i) => {
-          mergedPlyEvals[i] = plyEval
-          tree.mainLine[i].evaluation = plyEval
-          setPlyEvals([...mergedPlyEvals])
-          setTree({ ...tree })
-        }
-      )
-    } catch (err) {
-      setAnalysisError(err instanceof Error ? err.message : 'Analysis failed')
-    } finally {
-      setAnalyzing(false)
-    }
-  }
 
   // -----------------------------------------------------------------------
   // Navigate to a tree node
@@ -193,6 +155,46 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
     }).catch(() => { if (!cancelled) setMastersData(null) })
     return () => { cancelled = true }
   }, [currentNode])
+
+  // -----------------------------------------------------------------------
+  // Run full-game Stockfish analysis — StockfishEngine.analyzeGame is pure client-side
+  // computation, no DB cache passed in (nothing to check) and no save afterward. Results
+  // live only in plyEvals/tree state for this session.
+  // -----------------------------------------------------------------------
+  async function runAnalysis() {
+    if (!tree) return
+    setAnalyzing(true)
+    setAnalysisError('')
+
+    try {
+      let engine = engineRef.current
+      if (!engine) {
+        engine = new StockfishEngine()
+        engineRef.current = engine
+      }
+
+      const fens = [tree.root.fen, ...tree.mainLine.map(n => n.fen)]
+      const sans = tree.mainLine.map(n => n.san)
+
+      const mergedPlyEvals: (PlyEvaluation | undefined)[] = []
+      await engine.analyzeGame(
+        fens, sans,
+        progress => setAnalysisProgress(progress),
+        stockfishDepth,
+        undefined,
+        (plyEval, i) => {
+          mergedPlyEvals[i] = plyEval
+          tree.mainLine[i].evaluation = plyEval
+          setPlyEvals([...mergedPlyEvals])
+          setTree({ ...tree })
+        }
+      )
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : 'Analysis failed')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   const onMainLine = !currentNode || isOnMainLine(currentNode)
   const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
@@ -309,6 +311,14 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
         <MyBox title='Moves'>
           <MoveTree tree={tree} currentNode={currentNode} onSelectNode={goToNode} />
         </MyBox>
+
+        {currentNode && (
+          <div className='pt-2 border-t border-gray-200 space-y-4'>
+            <p className='text-xxs font-semibold text-gray-400 uppercase tracking-wide'>From our own synced master games</p>
+            <MasterMovesDbPanel fen={currentNode.fen} />
+            <MasterGamesDbPanel fen={currentNode.fen} />
+          </div>
+        )}
 
         {currentNode && (
           <MyBox title='Master Moves (Lichess)' collapsible>
@@ -428,4 +438,15 @@ export default function MasterGameView({ row }: MasterGameViewProps) {
       </div>
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  formatGameDate — epoch seconds to dd/mm/yy
+//----------------------------------------------------------------------------------------------
+function formatGameDate(endTime: number): string {
+  const date = new Date(endTime * 1000)
+  const dd = String(date.getDate()).padStart(2, '0')
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const yy = String(date.getFullYear()).slice(2)
+  return `${dd}/${mm}/${yy}`
 }
