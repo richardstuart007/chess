@@ -34,7 +34,7 @@ import BackButton from '@/src/ui/BackButton'
 import PlayerProfile from '@/src/ui/player/PlayerProfile'
 import AppNav from '@/src/ui/AppNav'
 import { getPlayer, getPlayerRatings, getPlayers } from '@/src/lib/actions/players'
-import { getPlayerTimeClasses } from '@/src/lib/constants'
+import { getPlayerTimeClasses, AVATAR_DIR, PLAYER_AVATARS } from '@/src/lib/constants'
 
 const BOTH = ''
 
@@ -155,12 +155,19 @@ function PlayerHeader() {
       {players.map((p, i) => {
         const db      = dbPlayers[i]
         const ratings = dbRatings[p.player] ?? {}
+
+        //
+        //  Prefer the locally-downloaded avatar file (PLAYER_AVATARS map) so no
+        //  request goes to chess.com's CDN; fall back to the stored pl_avatar URL
+        //  for any tracked player not in the map.
+        //
+        const avatarFile = PLAYER_AVATARS[p.player]
         return (
           <PlayerProfile
             key={p.player}
             player={db?.pl_player ?? p.player}
             displayName={db?.pl_display_name ?? undefined}
-            avatar={db?.pl_avatar}
+            avatar={avatarFile ? AVATAR_DIR + avatarFile : (db?.pl_avatar ?? undefined)}
             ratings={Object.keys(ratings).length > 0 ? ratings : undefined}
             onClick={players.length > 1 ? () => handleClick(p.player) : undefined}
             selected={players.length > 1 && (playerFilter === p.player || playerFilter === BOTH)}

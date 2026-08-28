@@ -122,15 +122,18 @@ two-reference-pair problem shape.
 
 ## Outstanding items
 
-- **Store the player avatar image on the app, not just its chess.com URL** (identified 2026-07-14,
-  not to be done now) — `tpl_players.pl_avatar` currently stores chess.com's own hosted image URL
-  as text (`upsertPlayer`, fed by `fetchPlayer`), fetched once at add-time. `PlayerProfile.tsx`
-  renders it directly as `<img src={pl_avatar}>` — the app never re-fetches it, but still depends
-  on chess.com continuing to serve that exact URL indefinitely. Suggestion: download the image once
-  at add-time and store/serve it from the app itself instead of hotlinking. Not investigated
-  further (storage mechanism, whether nextjs-shared already has a pattern for this, etc.). See
-  the `tpl_players` section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the
-  full write-up.
+- **Store the player avatar image on the app, not just its chess.com URL** (identified 2026-07-14;
+  partially done 2026-08-28 — `PLAN_master-avatars-grade-filter`) — the 2 tracked players and the
+  4 top master cards now have their avatar downloaded once into `public/avatars/` and resolved from
+  constants at render time (no chess.com CDN request): `PLAYER_AVATARS` (`pl_player` → filename) for
+  the tracked-player cards in `AppShell`, `MASTER_AVATARS` (`mst_chesscom_handle` → filename) for the
+  master cards in `AppNav`, both sharing `AVATAR_DIR`. `tpl_players.pl_avatar` is kept only as a
+  fallback for a future tracked player not in `PLAYER_AVATARS`; `tmst_master_players` has no avatar
+  column. **Still open:** no add-time hook does this automatically (the 6 files were downloaded
+  manually during that plan), no coverage for the other ~145 master rows, and no refresh mechanism.
+  A future add-player flow should download the image at add-time rather than storing the URL. See the
+  `tpl_players` section of [docs/Dataflow.md](../docs/Dataflow.md), Rules/gotchas, for the full
+  write-up.
 
 - **Preset/known-player selection for the "Chess.com Games" panel's Player 1/2 filters**
   (identified 2026-08-19, not to be done now) — the panel's `p1`/`p2` filters (see

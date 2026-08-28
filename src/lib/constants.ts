@@ -9,9 +9,32 @@ export const DEFAULT_FILTER_TERMINATIONS_Player = ['Checkmate', 'Resignation']
 export const TERMINATION_CHART_TYPES_Player = ['Resignation', 'Checkmate', 'Time']
 
 //----------------------------------------------------------------------------------
+//  Card avatars — both the blue Player box (AppShell) and the amber Master box
+//  (AppNav) show a fixed curated set of cards whose avatar images are downloaded
+//  once into public/avatars/. AVATAR_DIR is the shared public/ prefix; each map
+//  keys a chess.com handle → filename (native extension kept):
+//    MASTER_AVATARS — mst_chesscom_handle, the top 4 masters by grade
+//    PLAYER_AVATARS — pl_player, the tracked players
+//  tpl_players.pl_avatar stays as a fallback for any future tracked player not in
+//  PLAYER_AVATARS; tmst_master_players has no avatar column at all.
+//----------------------------------------------------------------------------------
+export const AVATAR_DIR = '/avatars/'
+export const MASTER_AVATARS: Record<string, string> = {
+  MagnusCarlsen:       'magnuscarlsen.jpg',
+  FabianoCaruana:      'fabianocaruana.png',
+  Hikaru:              'hikaru.png',
+  Javokhir_Sindarov05: 'javokhir_sindarov05.jpg'
+}
+export const PLAYER_AVATARS: Record<string, string> = {
+  stricade:  'stricade.jpeg',
+  astarrboy: 'astarrboy.png'
+}
+
+//----------------------------------------------------------------------------------
 //  Filter Settings — shared components (src/ui/filters/*)
 //----------------------------------------------------------------------------------
 export const WIDTH_PLAYER = 'w-24'
+export const WIDTH_MASTER_PLAYER = 'w-56'
 export const WIDTH_DATE_FROM = 'w-32'
 export const WIDTH_OPPONENT_RATING = 'w-12'
 export const WIDTH_GAME_NUMBER = 'w-16'

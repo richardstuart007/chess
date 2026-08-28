@@ -72,12 +72,14 @@ function TplPlayersSection() {
         cron step.
       </p>
       <p className={P}>
-        <Code>pl_avatar</Code> stores chess.com&apos;s own hosted image URL as text, not a
-        downloaded copy — <Code>PlayerProfile.tsx</Code> renders it as{' '}
-        <Code>{'<img src={pl_avatar}>'}</Code> directly. The app never fetches this image again
-        after add-time, but it still depends on chess.com continuing to serve that exact URL
-        indefinitely. See <Code>.claude/CLAUDE.md</Code> Outstanding items for the suggestion to
-        store the image itself.
+        Card avatars are downloaded once into <Code>public/avatars/</Code> and resolved from
+        constants, not fetched from chess.com at render time. The tracked-player cards
+        (<Code>AppShell</Code>) use the <Code>PLAYER_AVATARS</Code> map (<Code>pl_player</Code> →
+        filename), falling back to whatever <Code>pl_avatar</Code> holds for a player not listed;
+        the 4 top master cards (<Code>AppNav</Code>) use <Code>MASTER_AVATARS</Code> and have no
+        column at all. Both share <Code>AVATAR_DIR</Code>. See <Code>.claude/CLAUDE.md</Code>{' '}
+        Outstanding items — this covers 6 handles; the other masters and an auto-refresh are still
+        open.
       </p>
     </div>
   )
@@ -107,7 +109,11 @@ function ChessComApiSection() {
         </li>
         <li>
           <Code>/player/{'{username}'}</Code> — profile (avatar, display name) —{' '}
-          <Code>fetchPlayer</Code> in <Code>chesscom.ts</Code>
+          <Code>fetchPlayer</Code> in <Code>chesscom.ts</Code>. The <Code>avatar</Code> image is
+          downloaded once into <Code>public/avatars/</Code> for the tracked players + the 4 top
+          master cards; at render time both resolve the file from constants
+          (<Code>PLAYER_AVATARS</Code> / <Code>MASTER_AVATARS</Code>), so no request goes back to
+          chess.com&apos;s CDN.
         </li>
         <li>
           <Code>/player/{'{username}'}/stats</Code> — ratings per time class —{' '}

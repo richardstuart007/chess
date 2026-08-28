@@ -9,7 +9,7 @@ import { write_logging } from 'nextjs-shared/write_logging'
 import type { Filter } from 'nextjs-shared/structures'
 import { Chess } from 'chess.js'
 import { GAME_LIST_ROWS_DEFAULT_Master, MASTER_GAMES_FOR_FEN_LIMIT } from '../constants'
-import { getMasterHandleNameMap } from '../actions/masterPlayers'
+import { getMasterHandleNameMap, getMasterPlayers } from '../actions/masterPlayers'
 import { truncateFen } from '../fen'
 import { classifyMove } from '../stockfish'
 import { getPositionEvaluationsBulk_shared, upgradePositionEvaluation_shared } from '../analysis/chessdb_shared'
@@ -307,15 +307,19 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
   return { reached, moves, games }
 }
 
-export type SyncedMasterPlayer = { handle: string; name: string }
+export type SyncedMasterPlayer = { handle: string; name: string; grade: number | null }
 
 //----------------------------------------------------------------------------------
 //  getSyncedMasterPlayers — distinct mgd_player handles actually present in
-//  tmgd_gamesdecon, each paired with its real name (merged in from
+//  tmgd_gamesdecon, each paired with its real name and grade (merged in from
 //  tmst_master_players, primary database — no cross-database join possible), for the
 //  Masters Games list's Player filter (as opposed to MasterPlayerSelect, which lists
 //  every known master player regardless of whether they've been synced — this only
-//  lists ones with real data to filter by).
+//  lists ones with real data to filter by). Sorted by grade descending (NULLS last).
+//
+//  Change history:
+//    2026-08-28 — row now carries `grade`; result sorted grade-descending instead of
+//                 alphabetical by handle (FilterMasterPlayerSelect shows "Name (grade)")
 //----------------------------------------------------------------------------------
 export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
   const result = await table_query({
@@ -335,11 +339,27 @@ export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
     return []
   }
 
-  const nameMap = await getMasterHandleNameMap()
-  return result.data.map((r: any) => {
+  //
+  //  One pass over every known master to build handle (lowercased) → { name, grade }.
+  //
+  const allMasters = await getMasterPlayers('')
+  const infoMap: Record<string, { name: string; grade: number | null }> = {}
+  for (const m of allMasters) {
+    if (m.chesscomHandle) {
+      infoMap[m.chesscomHandle.toLowerCase()] = {
+        name: m.firstName ? `${m.firstName} ${m.lastName}` : m.lastName,
+        grade: m.grade
+      }
+    }
+  }
+
+  const players = result.data.map((r: any) => {
     const handle = r.mgd_player as string
-    return { handle, name: nameMap[handle.toLowerCase()] ?? handle }
+    const info = infoMap[handle.toLowerCase()]
+    return { handle, name: info?.name ?? handle, grade: info?.grade ?? null }
   })
+  players.sort((a, b) => (b.grade ?? -Infinity) - (a.grade ?? -Infinity))
+  return players
 }
 
 //----------------------------------------------------------------------------------

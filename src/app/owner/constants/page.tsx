@@ -54,7 +54,11 @@ import {
   HABITS_BOARD_SIZE_PX,
   POSITION_BOARD_SIZE_PX,
   SESSION_STORAGE_PREFIX,
+  AVATAR_DIR,
+  MASTER_AVATARS,
+  PLAYER_AVATARS,
   WIDTH_PLAYER,
+  WIDTH_MASTER_PLAYER,
   WIDTH_DATE_FROM,
   WIDTH_OPPONENT_RATING,
   WIDTH_GAME_NUMBER,
@@ -147,6 +151,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'WIDTH_OPPONENT_RATING', value: WIDTH_OPPONENT_RATING, description: 'Shared width for the gd_opponent_rating FilterNumberRange, identical in both places it appears.', consumers: ['GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart'] },
       { name: 'WIDTH_GAME_NUMBER', value: WIDTH_GAME_NUMBER, description: "Width for the Games table's gd_gdid exact-match filter input.", consumers: ['GameList.tsx: GameList'] },
       { name: 'WIDTH_PLAYER', value: WIDTH_PLAYER, description: 'Default dropdown width for FilterPlayerSelect, shared by every page it appears on.', consumers: ['FilterPlayerSelect.tsx: FilterPlayerSelect'] },
+      { name: 'WIDTH_MASTER_PLAYER', value: WIDTH_MASTER_PLAYER, description: "Default dropdown width for FilterMasterPlayerSelect (the Masters Games list 'Player' filter) — wider than WIDTH_PLAYER to fit the \"Name (grade)\" option labels.", consumers: ['FilterMasterPlayerSelect.tsx: FilterMasterPlayerSelect'] },
       { name: 'WIDTH_POSITION_COLOR', value: WIDTH_POSITION_COLOR, description: "Width for the Habits table's pos_color filter (distinct from gd_player_color's ColorSelect — a different DD column with a different value domain, 'w'/'b' vs 'white'/'black').", consumers: ['HabitsTable.tsx: HabitsTable'] },
       { name: 'WIDTH_QUALITY', value: WIDTH_QUALITY, description: "Width for the Habits table's Bad/Good quality filter.", consumers: ['HabitsTable.tsx: HabitsTable'] },
       { name: 'WIDTH_RESULT', value: WIDTH_RESULT, description: 'Default width for ResultSelect.', consumers: ['ResultSelect.tsx: ResultSelect'] },
@@ -241,6 +246,14 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
     ]
   },
   {
+    heading: 'Card Avatars',
+    entries: [
+      { name: 'AVATAR_DIR', value: AVATAR_DIR, description: "public/ directory prefix for the downloaded card-avatar images, shared by the master cards (AppNav) and the tracked-player cards (AppShell) — joined with MASTER_AVATARS[handle] / PLAYER_AVATARS[handle] to build the <img src>.", consumers: ['AppNav.tsx: AppNav', 'AppShell.tsx: PlayerHeader'] },
+      { name: 'MASTER_AVATARS', value: MASTER_AVATARS, description: "Fixed curated map of mst_chesscom_handle → avatar filename in public/avatars/, for the 4 top-grade master cards in AppNav's Master box. tmst_master_players has no avatar column.", consumers: ['AppNav.tsx: AppNav'] },
+      { name: 'PLAYER_AVATARS', value: PLAYER_AVATARS, description: "Map of pl_player → avatar filename in public/avatars/ for the tracked-player cards in AppShell's Player box, so no request hits chess.com's CDN. tpl_players.pl_avatar is kept as the fallback for any future tracked player not listed here.", consumers: ['AppShell.tsx: PlayerHeader'] }
+    ]
+  },
+  {
     heading: 'Masters Explorer (Lichess)',
     entries: [
       { name: 'MASTERS_EXPLORER_MOVES_LIMIT', value: MASTERS_EXPLORER_MOVES_LIMIT, description: "Max number of per-move rows requested from the Lichess Masters Opening Explorer — matches the API's own default.", consumers: ['lichess.ts: getMastersExplorer'] }
@@ -324,6 +337,7 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'lib/cron-sync.ts': 'Standalone CLI script that calls the local /api/cron/sync endpoint with the CRON_SECRET bearer token.',
   'src/lib/analysis/enrichPositionsStockfish.ts': 'Server actions module implementing the Stockfish engine wrappers and batch position/game-ending evaluation pipeline steps.',
   'FilterPlayerSelect.tsx: FilterPlayerSelect': 'Player picker shared by every page, reading/writing the ?player= URL param.',
+  'FilterMasterPlayerSelect.tsx: FilterMasterPlayerSelect': "Synced-master picker for the Masters Games list Player filter; options are \"Name (grade)\", sorted grade-descending.",
   'FilterTimeClassSelect.tsx: FilterTimeClassSelect': 'Time-class picker shared by every page with a Time filter (Games, Graph, Openings, Endings), reading/writing the ?timeClass= URL param — applies instantly, same as player selection.',
   'ColorSelect.tsx: ColorSelect': 'Reusable gd_player_color single-select dropdown (GameList, OpeningScoreChart, TerminationChart).',
   'ColorMultiSelect.tsx: ColorMultiSelect': "Reusable gd_player_color multi-select checkbox group (OpeningScoreChart's nested game table).",
