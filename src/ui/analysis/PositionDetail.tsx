@@ -17,11 +17,8 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import { MyButton } from 'nextjs-shared/MyButton'
-import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import { useTabQueryState } from 'nextjs-shared/useTabQueryState'
-import MyBox from 'nextjs-shared/MyBox'
 import AppTab from '@/src/ui/AppTab'
-import BackButton from '@/src/ui/BackButton'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, EvaluationRow } from '@/src/lib/analysis/chessdb_shared'
 import type { MoveRow } from '@/src/lib/analysis/chessdb_player'
@@ -109,15 +106,6 @@ export default function PositionDetail({
 
   return (
     <div className="max-w-5xl p-4 space-y-3">
-      <MyBox>
-        <div className="flex items-center justify-between">
-          <div className="flex gap-3">
-            <MyBackHomeNav />
-            <BackButton fallback="/habits" />
-          </div>
-        </div>
-      </MyBox>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: board */}
         <div className="space-y-2">

@@ -142,24 +142,36 @@ two-reference-pair problem shape.
   rule) and a decision on dropdown vs. free-text-with-
   autocomplete.
 
-- **Extract `ChessBoardView.tsx`'s remaining inline panels into separate components, then reuse
-  them from Master games analysis** (identified 2026-08-26, not to be done now) — `ChessBoardView.tsx`
-  (~1586 lines) still has six panels built as inline JSX rather than separate components:
-  Stockfish, Moves Played, Games Played, Master Moves (Lichess), Master Games (Lichess), and
-  Chess.com Games. Per the user's stated general rule: a panel showing data independent of the
-  other panels on a route should be its own component, both for readability (splits a large file
-  into legible chunks) and reusability (lets the same panel be dropped onto another route). Intent
-  confirmed by the user: all six of these should eventually also appear on the Master games
-  analysis view (`MasterGameView.tsx`/`/analyzemaster`) — they don't today, purely because this
-  extraction hasn't been done yet, not because they're considered player-only in principle. Note
-  some of these panels (Stockfish in particular) are currently tightly coupled to a dozen-plus
-  pieces of `ChessBoardView`'s own local state/handlers (`deepAnalysisDepth`, `deepAnalyzing`,
+- **Extract `ChessBoardView_shared.tsx`/`MasterGameView_master.tsx`'s remaining inline panels into
+  separate shared components** (identified 2026-08-26, updated 2026-08-26 after
+  `PLAN_master-game-view-parity`, not to be done now) — `ChessBoardView_shared.tsx` still has six
+  panels built as inline JSX rather than separate components: Stockfish, Moves Played, Games
+  Played, Master Moves (Lichess), Master Games (Lichess), and Chess.com Games. Per the user's
+  stated general rule: a panel showing data independent of the other panels on a route should be
+  its own component, both for readability (splits a large file into legible chunks) and
+  reusability (lets the same panel be dropped onto another route). All six of these now also exist
+  on `MasterGameView_master.tsx`/`/analyzemaster` (full feature parity achieved by
+  `PLAN_master-game-view-parity`) — but as their own **separately duplicated inline JSX**, not a
+  shared component reused by both views, so the original "split into components" motivation is now
+  stronger, not resolved: any future tweak to one of these six panels has to be made in both files
+  by hand. Note some of these panels (Stockfish in particular) are currently tightly coupled to a
+  dozen-plus pieces of each file's own local state/handlers (`deepAnalysisDepth`, `deepAnalyzing`,
   `saveAnalysisMessage`, `handleSelectPvLine`, `getCurrentPositionFen()`, `fenCopied`, etc.), so
   extraction will need a real prop surface designed per panel, not just a mechanical JSX cut —
-  mirrors the `GameAnalysisPanel` extraction (see `docs/archive/PLAN_master-games-fen-eval-reuse.md`
-  once archived) as the precedent for how to do this. Not designed further yet — which panels get
-  full player-side feature parity on the master side (e.g. "Moves Played"/"Games Played" are
-  inherently player-scoped — tied to `tgam_game_positions`/`getMovePlayCounts`/
-  `fetchGamesForPosition`, which master games structurally cannot use, per this file's Critical
-  Lessons section — so those two would need a master-specific equivalent sourced from
-  `tmpos_positions`/`tmgam_game_positions`, not a literal reuse) needs its own design pass.
+  mirrors the `GameAnalysisPanel_shared` extraction (see
+  `docs/archive/PLAN_master-games-fen-eval-reuse.md`) as the precedent for how to do this. Moves
+  Played/Games Played specifically are no longer inherently player-scoped — `chessdb_master.ts`
+  (added by `PLAN_master-game-view-parity`) provides a master-scoped mirror
+  (`getMoveSummaryForPosition_master`/`fetchGamesForPosition_master`/
+  `getGamesForPositionCount_master`, via `tmpos_positions`/`tmgam_game_positions`/
+  `tmgd_gamesdecon`), so an eventual shared panel component would take its data-fetching functions
+  as props (or a `variant` switch) rather than being genuinely unbuildable for master, as this item
+  previously said.
+
+- **Master box: small "top masters" mini-panel** (identified 2026-08-27, not to be done now) —
+  once the Player box shows the tracked-player cards (see `PLAN_master-game-view-parity`'s nav
+  restructure), the user suggested the Master box could eventually show something analogous: a
+  small panel with a picture and grade for the top 3 (or so) synced masters. Not designed further
+  — would need a data source (likely top-N `tmst_master_players` by `mst_grade`), a decision on
+  which masters qualify as "top" (highest grade? most games synced?), and layout/sizing to match
+  the Master box's own height.

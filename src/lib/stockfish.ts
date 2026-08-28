@@ -63,6 +63,17 @@ export function classifyMove(cpLoss: number): PlyEvaluation['classification'] {
   return 'good'
 }
 
+//
+//  Board square highlight colors for a move's classification, shared by every interactive
+//  board view (ChessBoardView_shared, MasterGameView_master) — 'good' is deliberately absent,
+//  since a good move gets no highlight at all.
+//
+export const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
+  blunder: 'rgba(239, 68, 68, 0.6)',
+  mistake: 'rgba(249, 115, 22, 0.6)',
+  inaccuracy: 'rgba(234, 179, 8, 0.5)'
+}
+
 function uciToSan(fen: string, uciMove: string): string {
   try {
     const g = new Chess(fen)

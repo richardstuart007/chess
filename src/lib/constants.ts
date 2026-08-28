@@ -67,7 +67,7 @@ export const WIDTH_HABITS_OPENING = 'w-96'
 //  Analysis Pipeline Thresholds
 //----------------------------------------------------------------------------------
 export const MIN_ANALYSIS_MOVE_Player = 4
-export const MOVE_COUNT_MIN_MOVE_Player = 6
+export const MOVE_COUNT_MIN_MOVE = 6
 export const MAX_ANALYSIS_MOVE_Player = 16
 export const PURGE_REACH_GRACE_DAYS_Player = 90
 export const MIN_REACH_TO_KEEP_Player = 2
@@ -96,8 +96,8 @@ export const PIPELINE_LOG_ROWS_PER_PAGE = 40
 export const PIPELINE_LOG_ROWS_OPTIONS = [10, 20, 40, 100] as const
 export const HABITS_ITEMS_PER_PAGE_Player = 3
 export const HABITS_ROWS_OPTIONS_Player = [3, 6, 10, 20, 50] as const
-export const POSITION_GAMES_ROWS_DEFAULT_Player = 10
-export const POSITION_GAMES_ROWS_OPTIONS_Player = [10, 15, 20] as const
+export const POSITION_GAMES_ROWS_DEFAULT = 10
+export const POSITION_GAMES_ROWS_OPTIONS = [10, 15, 20] as const
 export const FIDE_TOP_RATING_CUTOFF = 2600
 export const FIDE_STANDARD_RATING_LIST_URL = 'https://ratings.fide.com/download/standard_rating_list_xml.zip'
 export const FIDE_XML_CHUNK_SIZE = 2_000_000

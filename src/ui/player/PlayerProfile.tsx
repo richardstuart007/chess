@@ -2,17 +2,20 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    PlayerProfile — one tracked player's header card: avatar, name, and rating badges per time
-//    class. Clicking the card or a rating badge is optional, caller-driven.
+//    PlayerProfile — one player's (or master's — see AppNav's Master box) header card: avatar,
+//    name, and badges (rating per time class for a tracked player; a single Grade badge for a
+//    master, via the same generic `ratings` prop). Clicking the card or a badge is optional,
+//    caller-driven.
 //
 //    Parameters:
-//      player        — player handle
+//      player        — handle (chess.com username for a player, or master's chess.com handle)
 //      displayName   — optional display name shown above the handle
 //      avatar        — optional avatar image URL
-//      ratings       — optional rating per time class
+//      ratings       — optional badges, e.g. one per time class for a player, or a single
+//                      { Grade: n } for a master — rendered identically either way
 //      onClick       — optional; called when the card itself is clicked
 //      selected      — highlights the card when true
-//      onRatingClick — optional; called with the time class when a rating badge is clicked
+//      onRatingClick — optional; called with the badge's key when clicked
 //==================================================================================================
 
 import MyBox from 'nextjs-shared/MyBox'

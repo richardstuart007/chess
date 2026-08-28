@@ -207,3 +207,38 @@ export function isOnMainLine(node: MoveNode | null): boolean {
 export function getMainLineIndex(node: MoveNode, tree: AnalysisTree): number {
   return tree.mainLine.indexOf(node)
 }
+
+// --------------------------------------------------------------------------
+//  Walk the whole tree (main line + every variation) and return every node
+//  whose full-move number is >= minMove — shared by ChessBoardView_shared and
+//  MasterGameView_master's move-play-count badge lookups
+// --------------------------------------------------------------------------
+
+export function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
+  const result: MoveNode[] = []
+  function walk(node: MoveNode, ply: number) {
+    if (ply > 0) {
+      const moveNum = Math.floor((ply - 1) / 2) + 1
+      if (moveNum >= minMove) result.push(node)
+    }
+    for (const child of node.children) {
+      walk(child, ply + 1)
+    }
+  }
+  walk(root, 0)
+  return result
+}
+
+// --------------------------------------------------------------------------
+//  "16.Ng6" / "16...Ng6" for whatever position is currently on the board
+//  (matching MoveTree_shared.tsx's own move-number notation), "Starting
+//  position" at the root (no move played yet) — shared by ChessBoardView_shared
+//  and MasterGameView_master's "Position Analysis {label}" heading
+// --------------------------------------------------------------------------
+
+export function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
+  if (!currentNode) return 'Starting position'
+  const moveNum = Math.floor((currentPly - 1) / 2) + 1
+  const isWhite = (currentPly - 1) % 2 === 0
+  return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
+}

@@ -33,23 +33,21 @@ import { Chess, Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
-import { MyBackHomeNav } from 'nextjs-shared/MyBackHomeNav'
 import MySelect from 'nextjs-shared/MySelect'
 import { MyInput } from 'nextjs-shared/MyInput'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { MyToggle } from 'nextjs-shared/MyToggle'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
-import BackButton from '@/src/ui/BackButton'
 import { ChessComGame, getPlayerResult } from '@/src/lib/chesscom'
 import { parsePgnHeaders } from '@/src/lib/parsePgn'
-import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove } from '@/src/lib/stockfish'
+import { StockfishEngine, PlyEvaluation, STOCKFISH_DEFAULTS, InfiniteAnalysisUpdate, classifyMove, CLASSIFICATION_SQUARE_COLORS } from '@/src/lib/stockfish'
 import { saveGameEvaluations_player } from '@/src/lib/actions/games'
 import { upgradePositionEvaluation_shared, getPositionEvaluationsBulk_shared } from '@/src/lib/analysis/chessdb_shared'
 import { getMovePlayCounts_player, fetchGamesForPosition_player, getGamesForPositionCount_player, getMoveSummaryForPosition_player, PositionGameHit, MoveRow } from '@/src/lib/analysis/chessdb_player'
 import { getMastersExplorer, LichessExplorerResponse } from '@/src/lib/actions/lichess'
 import { searchChessComGames, ChessComSearchGame, ChessComSearchFilters } from '@/src/lib/actions/chesscomSearch'
 import { getMasterPlayerNames } from '@/src/lib/actions/masterPlayers'
-import { MOVE_COUNT_MIN_MOVE_Player, POSITION_GAMES_ROWS_DEFAULT_Player, POSITION_GAMES_ROWS_OPTIONS_Player } from '@/src/lib/constants'
+import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
 import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
@@ -64,7 +62,9 @@ import {
   replayToNode,
   findMainLineAncestor,
   isOnMainLine,
-  getMainLineIndex
+  getMainLineIndex,
+  collectNodesFromMove,
+  getCurrentMoveLabel
 } from '@/src/lib/analysisTree'
 import AlternativeLines_shared from './AlternativeLines_shared'
 import MoveTree_shared from './MoveTree_shared'
@@ -83,12 +83,6 @@ interface ChessBoardViewProps {
   deepAnalysisMultiPv?: number
   onDeepAnalysisDepthChange?: (depth: number) => void
   onDeepAnalysisMultiPvChange?: (multiPv: number) => void
-}
-
-const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
-  blunder: 'rgba(239, 68, 68, 0.6)',
-  mistake: 'rgba(249, 115, 22, 0.6)',
-  inaccuracy: 'rgba(234, 179, 8, 0.5)'
 }
 
 //
@@ -129,7 +123,7 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
   const [positionGames, setPositionGames] = useState<PositionGameHit[]>([])
   const [positionGamesTotalRows, setPositionGamesTotalRows] = useState(0)
   const [positionGamesPage, setPositionGamesPage] = useState(1)
-  const [positionGamesRowsPerPage, setPositionGamesRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT_Player)
+  const [positionGamesRowsPerPage, setPositionGamesRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT)
   const [moveSummary, setMoveSummary] = useState<MoveRow[]>([])
   const [selectedPositionMove, setSelectedPositionMove] = useState<string | null>(null)
   const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
@@ -230,7 +224,7 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
   }, [])
 
   // -----------------------------------------------------------------------
-  // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE_Player
+  // Move-play-count badges — how many times each move (from MOVE_COUNT_MIN_MOVE
   // onward, main line + every variation) was played from its position, across
   // this player's own synced games. One batched lookup per tree change.
   // -----------------------------------------------------------------------
@@ -238,7 +232,7 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
     if (!tree) { setMoveCounts({}); return }
     let cancelled = false
 
-    const nodes = collectNodesFromMove(tree.root, MOVE_COUNT_MIN_MOVE_Player)
+    const nodes = collectNodesFromMove(tree.root, MOVE_COUNT_MIN_MOVE)
     const fens = nodes.map(n => truncateFen(n.fenBefore))
 
     if (fens.length === 0) { setMoveCounts({}); return }
@@ -979,16 +973,6 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
 
   return (
     <div className='space-y-3'>
-      {/* Header */}
-      <MyBox>
-        <div className='flex items-center justify-between'>
-          <div className='flex gap-3'>
-            <MyBackHomeNav />
-            <BackButton fallback='/' />
-          </div>
-        </div>
-      </MyBox>
-
       {/* Opening name — page-level, above the whole Board/Moves/Analysis grid */}
       <div className='text-xs text-gray-500'>
         {opening || 'Unknown'}
@@ -1273,7 +1257,7 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
                       setStateCurrentPage={setPositionGamesPage}
                       rowsPerPage={positionGamesRowsPerPage}
                       setRowsPerPage={v => { setPositionGamesRowsPerPage(v); setPositionGamesPage(1) }}
-                      rowsOptions={POSITION_GAMES_ROWS_OPTIONS_Player}
+                      rowsOptions={POSITION_GAMES_ROWS_OPTIONS}
                       totalRows={positionGamesTotalRows}
                     />
                   </div>
@@ -1550,37 +1534,6 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
       </div>
     </div>
   )
-}
-
-//----------------------------------------------------------------------------------
-//  collectNodesFromMove — walks the whole tree (main line + every variation) and
-//  returns every node whose full-move number is >= minMove
-//----------------------------------------------------------------------------------
-function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
-  const result: MoveNode[] = []
-  function walk(node: MoveNode, ply: number) {
-    if (ply > 0) {
-      const moveNum = Math.floor((ply - 1) / 2) + 1
-      if (moveNum >= minMove) result.push(node)
-    }
-    for (const child of node.children) {
-      walk(child, ply + 1)
-    }
-  }
-  walk(root, 0)
-  return result
-}
-
-//----------------------------------------------------------------------------------
-//  getCurrentMoveLabel — "16.Ng6" / "16...Ng6" for whatever position is currently on
-//  the board (matching MoveTree_shared.tsx's own move-number notation), "Starting position"
-//  at the root (no move played yet)
-//----------------------------------------------------------------------------------
-function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
-  if (!currentNode) return 'Starting position'
-  const moveNum = Math.floor((currentPly - 1) / 2) + 1
-  const isWhite = (currentPly - 1) % 2 === 0
-  return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
 }
 
 //----------------------------------------------------------------------------------
