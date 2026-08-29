@@ -3,8 +3,8 @@
 //==================================================================================================
 //  1) DESCRIPTION
 //    OpeningsPage — /openings. Loads the tracked-player list client-side and renders
-//    OpeningScoreChart, behind a Suspense boundary. Selecting a game pushes the current URL as a
-//    back-nav target and navigates to /analyze for that game.
+//    OpeningScoreChart, behind a Suspense boundary. Clicking a bar pushes the current URL as a
+//    back-nav target and navigates to the Games tab (/) with that opening (eco + name) preset.
 //==================================================================================================
 
 import { Suspense, useState, useEffect } from 'react'
@@ -12,7 +12,6 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { MyLoadingMessage } from 'nextjs-shared/MyLoadingMessage'
 import OpeningScoreChart from '@/src/ui/charts/OpeningScoreChart'
 import { getPlayers } from '@/src/lib/actions/players'
-import { ChessComGame } from '@/src/lib/chesscom'
 import { pushBackTarget } from '@/src/lib/backNav'
 
 export default function OpeningsPage() {
@@ -40,13 +39,20 @@ function OpeningsContent() {
     loadPlayers()
   }, [])
 
-  function handleSelectGame(game: ChessComGame, player: string) {
-    const gdid = (game as any)._gdid
-    if (gdid) {
-      const qs = searchParams.toString()
-      pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
-      router.push(`/analyze?game=${gdid}&player=${encodeURIComponent(player)}`)
-    }
+  //
+  //  Bar click → Games tab with the opening preset. eco/opening/color are set on top of the
+  //  current search params; player/timeClass/dateFrom carry across automatically (all global URL
+  //  params). Together these are every attribute that decides which games a bar represents, so
+  //  the Games tab shows the identical set. color is omitted when the chart's Colour is "All".
+  //
+  function handleSelectOpening(eco: string, openingName: string, color: '' | 'white' | 'black') {
+    const qs = searchParams.toString()
+    pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
+    const params = new URLSearchParams(searchParams)
+    params.set('eco', eco)
+    params.set('opening', openingName)
+    if (color) params.set('color', color); else params.delete('color')
+    router.push(`/?${params.toString()}`)
   }
 
   return (
@@ -54,7 +60,7 @@ function OpeningsContent() {
       {players.length > 0 && (
         <OpeningScoreChart
           players={players}
-          onSelectGame={handleSelectGame}
+          onSelectOpening={handleSelectOpening}
         />
       )}
     </div>

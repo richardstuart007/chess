@@ -27,7 +27,7 @@ interface FilterNumberRangeProps {
 
 export default function FilterNumberRange({ label, min, max, onMinChange, onMaxChange, width = 'w-12' }: FilterNumberRangeProps) {
   const overlap = min !== '' && max !== '' && Number(min) > Number(max)
-  const inputClass = `${width} h-6 rounded-md border px-1 text-xxs text-gray-700 ${overlap ? 'border-red-400' : 'border-blue-500'}`
+  const inputClass = `${width} h-6 md:h-6 rounded-md border px-1 text-xxs text-gray-700 ${overlap ? 'border-red-400' : 'border-blue-500'}`
 
   return (
     <div className='flex flex-col gap-0.5'>

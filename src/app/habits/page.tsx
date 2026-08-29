@@ -4,7 +4,7 @@
 //  1) DESCRIPTION
 //    HabitsPage — /habits. Renders HabitsTable (recurring good/bad moves) with paging, behind a
 //    Suspense boundary. Color/Quality/Sort/Min Move/Min Reached apply instantly; Date From/
-//    Opening/ECO are global filters staged as drafts and only applied on Filter click.
+//    Opening/ECO are global filters staged as drafts and only applied on Refresh click.
 //==================================================================================================
 
 import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -60,10 +60,10 @@ function HabitsContent() {
   const [showDismissed, setShowDismissed] = useState(false)
   //
   //  Date From/Opening/ECO are also global (shared via URL with GameList/Graph/OpeningScoreChart/
-  //  TerminationChart's own Date From/Opening/ECO filters) and applied on an explicit Filter
+  //  TerminationChart's own Date From/Opening/ECO filters) and applied on an explicit Refresh
   //  click, not instantly like the filters above — draftDateFrom/draftOpening/draftEco track the
   //  inputs as typed/picked, dateFromFilter/openingFilter/ecoFilter (the applied, global values)
-  //  drive the actual query and only change when the Filter button is clicked. Absent dateFrom
+  //  drive the actual query and only change when the Refresh button is clicked. Absent dateFrom
   //  still defaults to DEFAULT_DATE_FROM_Player, matching every other consumer of this global filter.
   //
   const [rawDateFromFilter] = useGlobalFilter('dateFrom')
@@ -112,7 +112,7 @@ function HabitsContent() {
   //
   //  Keeps the draft Date From/Opening/ECO boxes in sync whenever the global values change from
   //  elsewhere (initial mount, tab navigation carrying them in from GameList, or this page's
-  //  own Filter click writing them back) — never from local typing.
+  //  own Refresh click writing them back) — never from local typing.
   //
   useEffect(() => {
     setDraftDateFrom(dateFromFilter)

@@ -8,8 +8,8 @@
 //    navigating to /analyzemaster.
 //==================================================================================================
 
-import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
@@ -24,6 +24,7 @@ import ResultSelect from '@/src/ui/filters/ResultSelect'
 import TerminationMultiSelect from '@/src/ui/filters/TerminationMultiSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { fetchFilteredMasterGames, getMasterGamesPageCount, MasterGameFilters } from '@/src/lib/master/masterGamesList'
+import { pushBackTarget } from '@/src/lib/backNav'
 import {
   GAME_LIST_ROWS_DEFAULT_Master, GAME_LIST_ROWS_OPTIONS_Master, SESSION_STORAGE_PREFIX,
   WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
@@ -38,6 +39,31 @@ const RESULT_STYLES: Record<string, string> = {
 
 export default function MasterGameList() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  //
+  //  Arrival presets from a Master nav card (AppNav's MASTER_CARRY_KEYS + ?master=). ?master=
+  //  seeds the player filter; colour/time/date/opening/eco are carried through from the Games
+  //  tab. presetUpdates is the merged patch, recomputed only when one of the params changes, so
+  //  both the mount hydration effect and the reactive effect below act on the same value.
+  //
+  const masterParam = searchParams.get('master')
+  const colorParam = searchParams.get('color')
+  const timeClassParam = searchParams.get('timeClass')
+  const dateFromParam = searchParams.get('dateFrom')
+  const openingParam = searchParams.get('opening')
+  const ecoParam = searchParams.get('eco')
+
+  const presetUpdates = useMemo<Partial<MasterGameFilters>>(() => {
+    const updates: Partial<MasterGameFilters> = {}
+    if (masterParam) updates.player = masterParam
+    if (colorParam === 'white' || colorParam === 'black') updates.color = colorParam
+    if (timeClassParam) updates.timeClass = timeClassParam
+    if (dateFromParam) updates.dateFrom = dateFromParam
+    if (openingParam) updates.opening = openingParam
+    if (ecoParam) updates.eco = ecoParam
+    return updates
+  }, [masterParam, colorParam, timeClassParam, dateFromParam, openingParam, ecoParam])
+
   const [draftFilters, setDraftFilters] = useState<MasterGameFilters>({})
   const [filters, setFilters] = useState<MasterGameFilters>({})
   const [currentPage, setCurrentPage] = useState(1)
@@ -45,12 +71,37 @@ export default function MasterGameList() {
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    setDraftFilters(ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-draftFilters`, {}))
-    setFilters(ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-filters`, {}))
+    const hydratedDraft = ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-draftFilters`, {})
+    const hydratedFilters = ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-filters`, {})
+    //
+    //  Seed the presets into BOTH draft and applied on first paint so they take effect
+    //  immediately — no Refresh, no false "pending" — overriding whatever mgl-* sessionStorage
+    //  held. A param absent from the URL leaves that filter as restored. The params linger in
+    //  the URL like ?eco= on the Games tab.
+    //
+    Object.assign(hydratedDraft, presetUpdates)
+    Object.assign(hydratedFilters, presetUpdates)
+    setDraftFilters(hydratedDraft)
+    setFilters(hydratedFilters)
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}mgl-page`, 1))
     setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}mgl-rows`, GAME_LIST_ROWS_DEFAULT_Master))
     setHydrated(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  //
+  //  Re-apply the presets when any carried param changes while MasterGameList is already mounted
+  //  — clicking a different Master card from within /mastergames is a same-route navigation, so
+  //  the mount hydration effect above doesn't re-run. Writes both draft and applied (no Refresh);
+  //  the filtersResetKeyRef effect below handles the page-1 reset. A param going back to null
+  //  leaves that filter unchanged.
+  //
+  useEffect(() => {
+    if (!hydrated) return
+    if (Object.keys(presetUpdates).length === 0) return
+    setDraftFilters(prev => ({ ...prev, ...presetUpdates }))
+    setFilters(prev => ({ ...prev, ...presetUpdates }))
+  }, [hydrated, presetUpdates])
 
   useEffect(() => {
     if (!hydrated) return
@@ -98,6 +149,17 @@ export default function MasterGameList() {
 
   function handleApplyFilters() {
     setFilters(draftFilters)
+  }
+
+  //
+  //  Open a game in /analyzemaster. Pushes the current /mastergames URL as the back target so
+  //  the page's "← Back" returns to this exact filtered list. Carries ?master= (the master's
+  //  chess.com handle) so AppNav keeps that master's card outlined while the game is viewed.
+  //
+  function openMasterGame(row: any) {
+    const qs = searchParams.toString()
+    pushBackTarget(qs ? `/mastergames?${qs}` : '/mastergames')
+    router.push(`/analyzemaster?game=${row.mgd_mgdid}&master=${encodeURIComponent(row.mgd_player)}`)
   }
 
   //
@@ -271,7 +333,7 @@ export default function MasterGameList() {
                   onClick={handleApplyFilters}
                   variant={filtersPending ? 'pending' : 'primary'}
                 >
-                  Filter
+                  Refresh
                 </FilterActionButton>
               </th>
             </tr>
@@ -304,7 +366,7 @@ export default function MasterGameList() {
                 <tr
                   key={row.mgd_mgdid}
                   className='cursor-pointer border-b border-gray-100 hover:bg-blue-50'
-                  onClick={() => router.push(`/analyzemaster?game=${row.mgd_mgdid}`)}
+                  onClick={() => openMasterGame(row)}
                 >
                   <td className='py-1.5 pr-2 text-gray-400 tabular-nums'>{gameNumber}</td>
                   <td className='py-1.5 pr-2'>{row.mgd_player_name} ({row.mgd_player})</td>
@@ -329,7 +391,7 @@ export default function MasterGameList() {
                   <td className='py-1.5 pr-2 text-gray-400'>{row.mgd_eco_code}</td>
                   <td className='py-1.5'>
                     <MyButton
-                      onClick={(e) => { e.stopPropagation(); router.push(`/analyzemaster?game=${row.mgd_mgdid}`) }}
+                      onClick={(e) => { e.stopPropagation(); openMasterGame(row) }}
                       overrideClass='text-xxs px-2 py-0.5 h-5 md:h-5'
                     >
                       Analyze

@@ -40,7 +40,7 @@ export default function FilterSelect({ label, options, value, onChange, width = 
     <MySelect
       value={value}
       onChange={e => onChange(e.target.value)}
-      overrideClass={`${width} h-6 rounded-md border ${borderClass} px-1 text-xxs text-gray-700`}
+      overrideClass={`${width} h-6 md:h-6 rounded-md border ${borderClass} px-1 text-xxs text-gray-700`}
       labelClass='text-xxs text-gray-500'
       containerClass={label ? 'flex flex-col gap-0.5' : ''}
       label={label}

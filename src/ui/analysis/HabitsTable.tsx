@@ -260,7 +260,7 @@ export default function HabitsTable({
                   type="button"
                   onClick={onShowDismissedToggle}
                   title={dismissedView ? 'Showing dismissed' : 'Show dismissed'}
-                  overrideClass={`text-xs leading-none px-1 py-0.5 rounded border ${dismissedView ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  overrideClass={`text-xs leading-none h-6 md:h-6 px-1 py-0.5 rounded border ${dismissedView ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                 >
                   {dismissedView ? '↺' : '✕'}
                 </MyButton>
@@ -268,7 +268,7 @@ export default function HabitsTable({
                   onClick={onApplyFilters}
                   variant={filtersPending ? 'pending' : 'primary'}
                 >
-                  Filter
+                  Refresh
                 </FilterActionButton>
               </div>
             </th>

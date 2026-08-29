@@ -5,8 +5,27 @@ export const INCLUDED_TIME_CLASSES_Player = ['blitz', 'rapid']
 export const DEFAULT_PLAYER = 'stricade'
 export const DEFAULT_DATE_FROM_Player = '2024-01-01'
 export const DEFAULT_MIN_GAMES_Player = '25'
-export const DEFAULT_FILTER_TERMINATIONS_Player = ['Checkmate', 'Resignation']
 export const TERMINATION_CHART_TYPES_Player = ['Resignation', 'Checkmate', 'Time']
+
+//
+//  Rating Graph (/graph) defaults
+//    DEFAULT_GRAPH_LIMIT      — Records dropdown default; 0 = All (no fetch cap)
+//    DEFAULT_GRAPH_GRANULARITY — initial granularity override; falls back to the
+//                               span-based auto pick when Weekly isn't offered
+//    DEFAULT_GRAPH_TIME_CLASS  — fallback class when ?timeClass= is unset or stale
+//                               for the current player (both tracked players play blitz)
+//
+export const DEFAULT_GRAPH_LIMIT = 0
+export const DEFAULT_GRAPH_GRANULARITY = 'week'
+export const DEFAULT_GRAPH_TIME_CLASS = 'blitz'
+
+//
+//  Openings (/openings) chart defaults
+//    DEFAULT_OPENINGS_SORT_FROM — 'Best' or 'Worst' — which end of the score% ranking to show
+//    DEFAULT_OPENINGS_SHOW      — Show dropdown default; '0' = All
+//
+export const DEFAULT_OPENINGS_SORT_FROM = 'Worst'
+export const DEFAULT_OPENINGS_SHOW = '0'
 
 //----------------------------------------------------------------------------------
 //  Card avatars — both the blue Player box (AppShell) and the amber Master box
@@ -47,14 +66,10 @@ export const GLOBAL_FILTER_BORDER_CLASS = 'border-purple-400 hover:border-purple
 
 export const OPTIONS_COLOR = [{ value: '', label: 'All' }, { value: 'white', label: 'white' }, { value: 'black', label: 'black' }]
 export const WIDTH_COLOR = 'w-20'
-export const OPTIONS_COLOR_MULTI = [{ value: 'white', label: 'white' }, { value: 'black', label: 'black' }]
-export const WIDTH_COLOR_MULTI = 'w-20'
 export const OPTIONS_TIME_CLASS = [{ value: '', label: 'All' }, { value: 'blitz', label: 'blitz' }, { value: 'rapid', label: 'rapid' }]
 export const WIDTH_TIME_CLASS = 'w-20'
 export const OPTIONS_RESULT = [{ value: '', label: 'All' }, { value: 'win', label: 'win' }, { value: 'loss', label: 'loss' }, { value: 'draw', label: 'draw' }]
 export const WIDTH_RESULT = 'w-16'
-export const OPTIONS_RESULT_MULTI = [{ value: 'win', label: 'win' }, { value: 'loss', label: 'loss' }, { value: 'draw', label: 'draw' }]
-export const WIDTH_RESULT_MULTI = 'w-20'
 export const OPTIONS_TERMINATION = ['Resignation', 'Checkmate', 'Time', 'Repetition', 'Agreement', 'Stalemate', 'Insufficient', '50 Moves', 'Timeout', 'Abandoned']
 export const WIDTH_TERMINATION = 'w-40'
 export const OPTIONS_PIPELINE_TYPE = [{ value: '', label: 'All' }, { value: 'games', label: 'games' }, { value: 'masters', label: 'masters' }, { value: 'mastergames', label: 'mastergames' }]
@@ -75,9 +90,9 @@ export const PLACEHOLDER_TEXT_FILTER = 'Filter...'
 export const WIDTH_MIN_GAMES = 'w-16'
 export const WIDTH_SORT_DIRECTION = 'w-16'
 export const WIDTH_RESULTS_COUNT = 'w-16'
-export const WIDTH_GAME_SORT = 'w-28'
 
 export const WIDTH_GRAPH_LIMIT = 'w-20'
+export const WIDTH_GRAPH_GRANULARITY = 'w-28'
 
 export const WIDTH_POSITION_COLOR = 'w-20'
 export const WIDTH_QUALITY = 'w-20'

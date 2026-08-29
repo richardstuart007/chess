@@ -2,13 +2,23 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    OpeningScoreChart — bar chart of score% by opening, with click-through to a filterable game
-//    list for the selected opening. Filter/sort selections persist to sessionStorage.
+//    OpeningScoreChart — bar chart of score% by opening. Clicking a bar navigates to the Games
+//    tab with that opening preset (via onSelectOpening) — there is no inline game list any more.
+//    NO chart filter re-fetches on change — Player, Colour, Time Class, Min games, From and Date
+//    From are all staged and only take effect on the Refresh button (via the applied* snapshot).
+//    Colour / From / Min games / Show selections persist to sessionStorage.
 //
 //    Parameters:
-//      players       — tracked players to fetch openings for (narrowed by the global ?player=)
-//      onSelectGame  — optional; called with (game, player) when a game row's Analyse button is
-//                      clicked
+//      players         — tracked players to fetch openings for (narrowed by the global ?player=)
+//      onSelectOpening — optional; called with (eco, openingName, color) when a bar is clicked —
+//                        color is the chart's applied Colour, so the Games tab it navigates to
+//                        shows the identical game set the bar represents
+//
+//  3) CHANGE HISTORY
+//    2026-08-29 — every chart filter (incl. global Player/Time Class) gated behind a Refresh
+//                 button via an "applied" snapshot; From default Best→Worst, Show default 20→All
+//    2026-08-29 — removed the inline per-opening game list; a bar click now navigates to the
+//                 Games tab with the opening preset (onSelectGame prop → onSelectOpening)
 //==================================================================================================
 
 import { useState, useEffect, useMemo } from 'react'
@@ -22,21 +32,16 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
-import FilterNumberRange from '@/src/ui/filters/FilterNumberRange'
 import ColorSelect from '@/src/ui/filters/ColorSelect'
 import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
-import ColorMultiSelect from '@/src/ui/filters/ColorMultiSelect'
-import ResultMultiSelect from '@/src/ui/filters/ResultMultiSelect'
-import TerminationMultiSelect from '@/src/ui/filters/TerminationMultiSelect'
-import { MyButton } from 'nextjs-shared/MyButton'
-import { getOpeningScores, fetchFilteredGames } from '@/src/lib/actions/games'
+import { getOpeningScores } from '@/src/lib/actions/games'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
 import {
-  DEFAULT_DATE_FROM_Player, DEFAULT_MIN_GAMES_Player, DEFAULT_FILTER_TERMINATIONS_Player, SESSION_STORAGE_PREFIX,
-  WIDTH_MIN_GAMES, WIDTH_SORT_DIRECTION, WIDTH_RESULTS_COUNT, WIDTH_DATE_FROM, WIDTH_GAME_SORT,
-  WIDTH_OPPONENT_RATING, GLOBAL_FILTER_BORDER_CLASS
+  DEFAULT_DATE_FROM_Player, DEFAULT_MIN_GAMES_Player,
+  DEFAULT_OPENINGS_SORT_FROM, DEFAULT_OPENINGS_SHOW, SESSION_STORAGE_PREFIX,
+  WIDTH_MIN_GAMES, WIDTH_SORT_DIRECTION, WIDTH_RESULTS_COUNT, WIDTH_DATE_FROM,
+  GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
-import { ChessComGame } from '@/src/lib/chesscom'
 
 const MIN_GAMES_OPTIONS = ['10', '25', '50', '100', '200', '500']
 const RESULTS_OPTIONS: { value: string; label: string }[] = [
@@ -45,48 +50,25 @@ const RESULTS_OPTIONS: { value: string; label: string }[] = [
 ]
 const TODAY = new Date().toISOString().slice(0, 10)
 
-const RESULT_STYLES: Record<string, string> = {
-  win:  'text-green-600 font-bold',
-  loss: 'text-red-600 font-bold',
-  draw: 'text-gray-500 font-bold'
-}
-
 interface OpeningScoreChartProps {
   players: { player: string; display_name: string | null }[]
-  onSelectGame?: (game: ChessComGame, player: string) => void
+  onSelectOpening?: (eco: string, openingName: string, color: '' | 'white' | 'black') => void
 }
 
-export default function OpeningScoreChart({ players, onSelectGame }: OpeningScoreChartProps) {
+export default function OpeningScoreChart({ players, onSelectOpening }: OpeningScoreChartProps) {
   const searchParams = useSearchParams()
+
+  //
+  //  Live filter values. Player and Time Class are global URL params (their shared dropdowns
+  //  write them immediately); Colour / Min games / From / Show are local state; Date From is a
+  //  local draft. None of these drive the query directly — only the applied* snapshot below does,
+  //  so nothing re-fetches until the Refresh button.
+  //
   const playerFilter = searchParams.get('player') ?? ''
-  const playersToFetch = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.player),
-    [playerFilter, players]
-  )
-  //
-  //  Passed to the actual query functions instead of playersToFetch — "All" (playerFilter
-  //  unset) means no player filter at all, not every tracked username enumerated.
-  //  playersToFetch itself stays as the "player list not loaded yet" guard.
-  //
-  const queryPlayers = useMemo(
-    () => playerFilter ? [playerFilter] : [],
-    [playerFilter]
-  )
-
-  //
-  //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
-  //  every other page with a Time filter via `?timeClass=` — applies immediately.
-  //
   const timeClassFilter = searchParams.get('timeClass') ?? ''
-
-  //
-  //  Date From is also global (shared via URL with every other page that has this filter).
-  //  This page has no Filter/Refresh gate at all — every filter already applies instantly — so
-  //  dateFrom becomes global the same way, no draft state needed. Absent still defaults to
-  //  DEFAULT_DATE_FROM_Player, matching today's behavior.
-  //
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
   const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
 
   //
   //  Initialized to plain defaults (matching the server render) rather than reading
@@ -95,60 +77,88 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
   const [color, setColor]               = useState<'' | 'white' | 'black'>('')
-  const [from, setFrom]                 = useState<'Best' | 'Worst'>('Best')
+  const [from, setFrom]                 = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
   const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES_Player)
-  const [resultsCount, setResultsCount] = useState('20')
+  const [resultsCount, setResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
   const [data, setData]                 = useState<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]>([])
   const [loading, setLoading]           = useState(false)
 
-  const [selectedEco, setSelectedEco]   = useState<string | null>(null)
-  const [selectedName, setSelectedName] = useState('')
-  const [gameRows, setGameRows]         = useState<any[]>([])
-  const [gamesLoading, setGamesLoading] = useState(false)
+  //
+  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh, and seeded
+  //  once on hydration (from the restored drafts + current URL) so a reload shows data without a
+  //  manual Refresh. refreshNonce forces a re-fetch even when nothing else changed.
+  //
+  const [appliedPlayer,       setAppliedPlayer]       = useState('')
+  const [appliedTimeClass,    setAppliedTimeClass]    = useState('')
+  const [appliedColor,        setAppliedColor]        = useState<'' | 'white' | 'black'>('')
+  const [appliedMinGames,     setAppliedMinGames]     = useState(DEFAULT_MIN_GAMES_Player)
+  const [appliedFrom,         setAppliedFrom]         = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
+  const [appliedResultsCount, setAppliedResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
+  const [appliedDateFrom,     setAppliedDateFrom]     = useState(dateFromFilter)
+  const [refreshNonce,        setRefreshNonce]        = useState(0)
+  const [hydrated,            setHydrated]            = useState(false)
 
-  const [sortBy, setSortBy]                         = useState<'date' | 'moves'>('date')
-  const [filterColors, setFilterColors]             = useState<string[]>([])
-  const [filterResults, setFilterResults]           = useState<string[]>([])
-  const [filterTerminations, setFilterTerminations] = useState<string[]>(DEFAULT_FILTER_TERMINATIONS_Player)
-  const [filterRatingMin, setFilterRatingMin]       = useState<string>('')
-  const [filterRatingMax, setFilterRatingMax]       = useState<string>('')
-  const [hydrated, setHydrated]                     = useState(false)
+  //
+  //  "All" (appliedPlayer unset) means no player filter at all, not every tracked username
+  //  enumerated. The players.length check in the load effect covers "player list not loaded yet".
+  //
+  const appliedQueryPlayers = useMemo(
+    () => appliedPlayer ? [appliedPlayer] : [],
+    [appliedPlayer]
+  )
 
   useEffect(() => {
-    const storedColor = sso<string>(`${SESSION_STORAGE_PREFIX}osc-color`, '')
-    setColor(storedColor === 'white' || storedColor === 'black' ? storedColor : '')
-    setFrom(sso(`${SESSION_STORAGE_PREFIX}osc-from`, 'Best'))
-    setMinGames(sso(`${SESSION_STORAGE_PREFIX}osc-mingames`, DEFAULT_MIN_GAMES_Player))
-    setResultsCount(sso(`${SESSION_STORAGE_PREFIX}osc-results-count`, '20'))
-    setSelectedEco(sso(`${SESSION_STORAGE_PREFIX}osc-eco`, null))
-    setSelectedName(sso(`${SESSION_STORAGE_PREFIX}osc-name`, ''))
-    setSortBy(sso(`${SESSION_STORAGE_PREFIX}osc-sort`, 'date'))
-    setFilterColors(sso(`${SESSION_STORAGE_PREFIX}osc-colors`, []))
-    setFilterResults(sso(`${SESSION_STORAGE_PREFIX}osc-results`, []))
-    setFilterTerminations(sso(`${SESSION_STORAGE_PREFIX}osc-terminations`, DEFAULT_FILTER_TERMINATIONS_Player))
-    setFilterRatingMin(sso(`${SESSION_STORAGE_PREFIX}osc-rating-min`, ''))
-    setFilterRatingMax(sso(`${SESSION_STORAGE_PREFIX}osc-rating-max`, ''))
+    const rawStoredColor = sso<string>(`${SESSION_STORAGE_PREFIX}osc-color`, '')
+    const storedColor: '' | 'white' | 'black' = rawStoredColor === 'white' || rawStoredColor === 'black' ? rawStoredColor : ''
+    const storedFrom = sso<'Best' | 'Worst'>(`${SESSION_STORAGE_PREFIX}osc-from`, DEFAULT_OPENINGS_SORT_FROM)
+    const storedMinGames = sso(`${SESSION_STORAGE_PREFIX}osc-mingames`, DEFAULT_MIN_GAMES_Player)
+    const storedResultsCount = sso(`${SESSION_STORAGE_PREFIX}osc-results-count`, DEFAULT_OPENINGS_SHOW)
+    setColor(storedColor)
+    setFrom(storedFrom)
+    setMinGames(storedMinGames)
+    setResultsCount(storedResultsCount)
+    //
+    //  Seed the applied snapshot from the restored drafts + current URL so the first load
+    //  reflects whatever sessionStorage / the URL already hold, no manual Refresh needed.
+    //
+    setAppliedColor(storedColor)
+    setAppliedFrom(storedFrom)
+    setAppliedMinGames(storedMinGames)
+    setAppliedResultsCount(storedResultsCount)
+    setAppliedPlayer(playerFilter)
+    setAppliedTimeClass(timeClassFilter)
+    setAppliedDateFrom(dateFromFilter)
     setHydrated(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  //
+  //  Keep the draft date box in sync when the global value changes from elsewhere (tab
+  //  navigation carrying it in, or this chart's own Refresh writing it back) — never from local
+  //  typing, which only touches draftDateFrom directly.
+  //
   useEffect(() => {
-    if (!hydrated || playersToFetch.length === 0) return
+    setDraftDateFrom(dateFromFilter)
+  }, [dateFromFilter])
+
+  useEffect(() => {
+    if (!hydrated || players.length === 0) return
     let cancelled = false
     setLoading(true)
     async function load() {
-      const limit   = resultsCount === '0' ? 0 : parseInt(resultsCount, 10)
-      const sortDir = from === 'Best' ? 'DESC' : 'ASC'
+      const limit   = appliedResultsCount === '0' ? 0 : parseInt(appliedResultsCount, 10)
+      const sortDir = appliedFrom === 'Best' ? 'DESC' : 'ASC'
       const rows = await getOpeningScores(
-        queryPlayers, color,
-        parseInt(minGames, 10), limit, sortDir,
-        dateFromFilter || undefined,
-        timeClassFilter || undefined
+        appliedQueryPlayers, appliedColor,
+        parseInt(appliedMinGames, 10), limit, sortDir,
+        appliedDateFrom || undefined,
+        appliedTimeClass || undefined
       )
       if (!cancelled) { setData(rows); setLoading(false) }
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [playersToFetch, queryPlayers, color, from, minGames, resultsCount, dateFromFilter, timeClassFilter, hydrated])
+  }, [appliedQueryPlayers, appliedColor, appliedFrom, appliedMinGames, appliedResultsCount, appliedDateFrom, appliedTimeClass, refreshNonce, hydrated, players.length])
 
   useEffect(() => {
     if (!hydrated) return
@@ -160,109 +170,35 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
     } catch {}
   }, [color, from, minGames, resultsCount, hydrated])
 
-  useEffect(() => {
-    if (!hydrated) return
-    try {
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-eco`, JSON.stringify(selectedEco))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-name`, JSON.stringify(selectedName))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-sort`, JSON.stringify(sortBy))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-colors`, JSON.stringify(filterColors))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-results`, JSON.stringify(filterResults))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-terminations`, JSON.stringify(filterTerminations))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-rating-min`, JSON.stringify(filterRatingMin))
-      sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}osc-rating-max`, JSON.stringify(filterRatingMax))
-    } catch {}
-  }, [selectedEco, selectedName, sortBy, filterColors, filterResults, filterTerminations, filterRatingMin, filterRatingMax, hydrated])
-
-  useEffect(() => {
-    if (!selectedEco || playersToFetch.length === 0) { setGameRows([]); return }
-    let cancelled = false
-    setGamesLoading(true)
-    async function loadGames() {
-      const colorFilter = color === '' ? undefined : color
-      const rows = await fetchFilteredGames(
-        queryPlayers,
-        {
-          eco: selectedEco!,
-          openingNameExact: selectedName,
-          color: colorFilter,
-          dateFrom: dateFromFilter || undefined,
-          timeClass: timeClassFilter || undefined
-        },
-        1, 500
-      )
-      if (!cancelled) { setGameRows(rows); setGamesLoading(false) }
-    }
-    loadGames().catch(() => { if (!cancelled) setGamesLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedEco, selectedName, playersToFetch, queryPlayers, color, dateFromFilter, timeClassFilter])
-
-  function handleSelectGame(row: any) {
-    if (!onSelectGame) return
-    const rowPlayer = row.gd_player
-    const game: ChessComGame = {
-      url: row.gd_game_url,
-      pgn: '',
-      time_control: row.gd_time_control,
-      time_class: row.gd_time_class,
-      end_time: row.gd_end_time,
-      rated: row.gd_is_rated,
-      rules: 'chess',
-      white: {
-        username: row.gd_white_username,
-        rating: row.gd_white_rating,
-        result: row.gd_player_color === 'white'
-          ? row.gd_player_result
-          : (row.gd_player_result === 'win' ? 'loss' : row.gd_player_result === 'loss' ? 'win' : 'draw')
-      },
-      black: {
-        username: row.gd_black_username,
-        rating: row.gd_black_rating,
-        result: row.gd_player_color === 'black'
-          ? row.gd_player_result
-          : (row.gd_player_result === 'win' ? 'loss' : row.gd_player_result === 'loss' ? 'win' : 'draw')
-      }
-    }
-    ;(game as any)._gdid = row.gd_gdid
-    ;(game as any)._openingName = row.gd_opening_name
-    ;(game as any)._ecoCode = row.gd_eco_code
-    onSelectGame(game, rowPlayer)
-  }
-
-  function handleBarClick(data: any) {
-    const eco  = data?.eco
-    const name = data?.fullName
+  function handleBarClick(barDatum: any) {
+    const eco = barDatum?.eco
     if (!eco) return
-    if (eco === selectedEco) { setSelectedEco(null); return }
-    setSelectedEco(eco)
-    setSelectedName(name ?? eco)
+    onSelectOpening?.(eco, barDatum.fullName ?? eco, appliedColor)
   }
 
-  const availableTerminations = useMemo(() =>
-    [...new Set(gameRows.map((r: any) => r.gd_termination).filter(Boolean))].sort() as string[]
-  , [gameRows])
+  //
+  //  Refresh — commit every live/draft filter into the applied snapshot (and the date back to
+  //  the global URL), then bump the nonce to force the load effect to run.
+  //
+  function handleRefresh() {
+    setDateFromFilter(draftDateFrom)
+    setAppliedPlayer(playerFilter)
+    setAppliedTimeClass(timeClassFilter)
+    setAppliedColor(color)
+    setAppliedMinGames(minGames)
+    setAppliedFrom(from)
+    setAppliedResultsCount(resultsCount)
+    setAppliedDateFrom(draftDateFrom || DEFAULT_DATE_FROM_Player)
+    setRefreshNonce(n => n + 1)
+  }
 
-  const displayRows = useMemo(() => {
-    let rows = gameRows
-    if (filterColors.length > 0)
-      rows = rows.filter((r: any) => filterColors.includes(r.gd_player_color))
-    if (filterResults.length > 0)
-      rows = rows.filter((r: any) => filterResults.includes(r.gd_player_result))
-    if (filterTerminations.length > 0)
-      rows = rows.filter((r: any) => filterTerminations.includes(r.gd_termination))
-    const rMin = filterRatingMin !== '' ? parseInt(filterRatingMin, 10) : null
-    const rMax = filterRatingMax !== '' ? parseInt(filterRatingMax, 10) : null
-    const rOverlap = rMin !== null && rMax !== null && rMin > rMax
-    if (!rOverlap) {
-      if (rMin !== null) rows = rows.filter((r: any) => r.gd_opponent_rating >= rMin)
-      if (rMax !== null) rows = rows.filter((r: any) => r.gd_opponent_rating <= rMax)
-    }
-    if (sortBy === 'moves')
-      rows = [...rows].sort((a: any, b: any) =>
-        (a.gd_opening_moves ?? '').localeCompare(b.gd_opening_moves ?? '')
-      )
-    return rows
-  }, [gameRows, sortBy, filterColors, filterResults, filterTerminations, filterRatingMin, filterRatingMax])
+  const filtersPending = playerFilter !== appliedPlayer
+    || timeClassFilter !== appliedTimeClass
+    || color !== appliedColor
+    || minGames !== appliedMinGames
+    || from !== appliedFrom
+    || resultsCount !== appliedResultsCount
+    || draftDateFrom !== appliedDateFrom
 
   const chartData = data.map(r => ({
     label:     `${r.eco_code} ${r.opening_name}`.slice(0, 100),
@@ -306,12 +242,19 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
         />
         <FilterDateInput
           label='From date'
-          value={dateFromFilter}
-          onChange={setDateFromFilter}
+          value={draftDateFrom}
+          onChange={setDraftDateFrom}
           max={TODAY}
           width={WIDTH_DATE_FROM}
           borderClass={GLOBAL_FILTER_BORDER_CLASS}
         />
+        <FilterActionButton
+          onClick={handleRefresh}
+          disabled={loading}
+          variant={filtersPending ? 'pending' : 'primary'}
+        >
+          {loading ? 'Fetching...' : 'Refresh'}
+        </FilterActionButton>
       </div>
 
       {loading && <p className='text-xs text-gray-400'>Loading...</p>}
@@ -322,7 +265,7 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
 
       {!loading && chartData.length > 0 && (
         <>
-          <p className='mb-1 text-xxs text-gray-400'>Click a bar to see the games</p>
+          <p className='mb-1 text-xxs text-gray-400'>Click a bar to open its games on the Games tab</p>
           <ResponsiveContainer width='100%' height={chartHeight}>
             <BarChart
               layout='vertical'
@@ -351,11 +294,7 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
               />
               <Bar dataKey='score_pct' radius={[0, 3, 3, 0]} onClick={handleBarClick} cursor='pointer'>
                 {chartData.map((entry, i) => (
-                  <Cell
-                    key={i}
-                    fill={barColor(entry.score_pct)}
-                    opacity={selectedEco && entry.eco !== selectedEco ? 0.35 : 1}
-                  />
+                  <Cell key={i} fill={barColor(entry.score_pct)} />
                 ))}
                 <LabelList
                   dataKey='score_pct'
@@ -366,131 +305,6 @@ export default function OpeningScoreChart({ players, onSelectGame }: OpeningScor
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-
-          {selectedEco && (
-            <div className='mt-4'>
-              <div className='mb-2 flex items-center justify-between'>
-                <p className='text-xs font-medium text-gray-700'>{selectedEco} — {selectedName}</p>
-                <FilterActionButton
-                  onClick={() => setSelectedEco(null)}
-                  variant='secondary'
-                >
-                  Close
-                </FilterActionButton>
-              </div>
-
-              {gamesLoading && <p className='text-xs text-gray-400'>Loading games...</p>}
-
-              {!gamesLoading && gameRows.length > 0 && (
-                <>
-                  <div className='mb-2 flex items-center gap-4'>
-                    <FilterSelect
-                      label='Sort'
-                      options={[{ value: 'date', label: 'Date' }, { value: 'moves', label: 'Opening moves' }]}
-                      value={sortBy}
-                      onChange={v => setSortBy(v as 'date' | 'moves')}
-                      width={WIDTH_GAME_SORT}
-                    />
-                    <span className='text-xxs text-gray-400 ml-auto'>
-                      {displayRows.length !== gameRows.length
-                        ? `filtered ${displayRows.length} of ${gameRows.length} games`
-                        : `${gameRows.length} games`}
-                    </span>
-                  </div>
-
-                  {displayRows.length === 0 && (
-                    <p className='text-xs text-gray-400'>No games match the selected filters.</p>
-                  )}
-
-                  <div className='overflow-x-auto'>
-                    <table className='w-full text-left text-xs'>
-                      <thead>
-                        <tr className='border-b border-gray-200 text-gray-500'>
-                          <th className='pb-1 pr-2'>Player</th>
-                          <th className='pb-1 pr-2'>#</th>
-                          <th className='pb-1 pr-2'>Date</th>
-                          <th className='pb-1 pr-2'>
-                            <ColorMultiSelect
-                              selected={filterColors}
-                              onChange={setFilterColors}
-                            />
-                          </th>
-                          <th className='pb-1 pr-2'>Opponent</th>
-                          <th className='pb-1 pr-2'>
-                            <FilterNumberRange
-                              label='Opp. Rating'
-                              min={filterRatingMin}
-                              max={filterRatingMax}
-                              onMinChange={setFilterRatingMin}
-                              onMaxChange={setFilterRatingMax}
-                              width={WIDTH_OPPONENT_RATING}
-                            />
-                          </th>
-                          <th className='pb-1 pr-2'>
-                            <ResultMultiSelect
-                              selected={filterResults}
-                              onChange={setFilterResults}
-                            />
-                          </th>
-                          <th className='pb-1 pr-2'>
-                            <TerminationMultiSelect
-                              options={availableTerminations}
-                              selected={filterTerminations}
-                              onChange={setFilterTerminations}
-                            />
-                          </th>
-                          <th className='pb-1 pr-2'>Moves</th>
-                          {onSelectGame && <th className='pb-1' />}
-                        </tr>
-                      </thead>
-                      <tbody>
-                          {displayRows.map((row: any, i: number) => {
-                            const d = new Date(row.gd_end_time * 1000)
-                            const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-                            const moves = row.gd_opening_moves ?? ''
-                            return (
-                              <tr
-                                key={row.gd_gdid}
-                                className={`border-b border-gray-100 ${onSelectGame ? 'cursor-pointer hover:bg-blue-50' : ''}`}
-                                onClick={() => handleSelectGame(row)}
-                              >
-                                <td className='py-1 pr-2 text-gray-600'>{row.gd_player}</td>
-                                <td className='py-1 pr-2 text-gray-400'>{i + 1}</td>
-                                <td className='py-1 pr-2 whitespace-nowrap'>{dateStr}</td>
-                                <td className='py-1 pr-2'>{row.gd_player_color}</td>
-                                <td className='py-1 pr-2'>{row.gd_opponent_username}</td>
-                                <td className='py-1 pr-2'>{row.gd_opponent_rating}</td>
-                                <td className={`py-1 pr-2 ${RESULT_STYLES[row.gd_player_result] ?? ''}`}>
-                                  {row.gd_player_result}
-                                </td>
-                                <td className='py-1 pr-2 text-gray-500'>{row.gd_termination}</td>
-                                <td className='py-1 pr-2 font-mono text-xxs max-w-xs truncate' title={moves}>
-                                  {moves}
-                                </td>
-                                {onSelectGame && (
-                                  <td className='py-1'>
-                                    <MyButton
-                                      onClick={e => { e.stopPropagation(); handleSelectGame(row) }}
-                                      overrideClass='text-xxs px-2 py-0.5 h-5 md:h-5'
-                                    >
-                                      Analyse
-                                    </MyButton>
-                                  </td>
-                                )}
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                </>
-              )}
-
-              {!gamesLoading && gameRows.length === 0 && (
-                <p className='text-xs text-gray-400'>No games found.</p>
-              )}
-            </div>
-          )}
         </>
       )}
     </MyBox>

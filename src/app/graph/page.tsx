@@ -4,7 +4,9 @@
 //  1) DESCRIPTION
 //    GraphPage — /graph. Renders RatingChart behind Player/Date From/Time Class/Records filters,
 //    behind a Suspense boundary. Player and Time Class apply instantly (shared global URL state);
-//    Date From and Records are staged as drafts and only take effect on Refresh.
+//    Date From and Records are staged as drafts and only take effect on Refresh. Time Class is a
+//    player-aware single-select (FilterGraphTimeClassSelect) — no "All" — so the chart always
+//    plots one series per player for exactly one class.
 //==================================================================================================
 
 import { Suspense, useState, useEffect, useMemo } from 'react'
@@ -15,11 +17,11 @@ import FilterPlayerSelect from '@/src/ui/filters/FilterPlayerSelect'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
 import FilterSelect from '@/src/ui/filters/FilterSelect'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
-import FilterTimeClassSelect from '@/src/ui/filters/FilterTimeClassSelect'
+import FilterGraphTimeClassSelect from '@/src/ui/filters/FilterGraphTimeClassSelect'
 import { getPlayers } from '@/src/lib/actions/players'
 import { getEarliestGameDate, GameFilters } from '@/src/lib/actions/games'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
-import { DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, WIDTH_GRAPH_LIMIT, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
+import { DEFAULT_DATE_FROM_Player, DEFAULT_GRAPH_LIMIT, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, WIDTH_GRAPH_LIMIT, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}graph_filters`
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -65,7 +67,7 @@ function GraphContent() {
   //  restoring persisted state happens in the effect below, after mount, to avoid a
   //  hydration mismatch between the server-rendered HTML and the first client render.
   //
-  const [limit,     setLimit]     = useState(1000)
+  const [limit,     setLimit]     = useState(DEFAULT_GRAPH_LIMIT)
   const [minDate,   setMinDate]   = useState<string | undefined>()
   const [loading,   setLoading]   = useState(false)
   const [hydrated,  setHydrated]  = useState(false)
@@ -75,7 +77,7 @@ function GraphContent() {
     [players]
   )
 
-  const [appliedLimit,   setAppliedLimit]   = useState(1000)
+  const [appliedLimit,   setAppliedLimit]   = useState(DEFAULT_GRAPH_LIMIT)
   const [refreshNonce,   setRefreshNonce]   = useState(0)
 
   useEffect(() => {
@@ -96,7 +98,7 @@ function GraphContent() {
   }, [dateFromFilter])
 
   useEffect(() => {
-    setLimit(ss(STORAGE_KEY + '_limit', 1000))
+    setLimit(ss(STORAGE_KEY + '_limit', DEFAULT_GRAPH_LIMIT))
     setHydrated(true)
   }, [])
 
@@ -167,7 +169,7 @@ function GraphContent() {
             borderClass={GLOBAL_FILTER_BORDER_CLASS}
           />
 
-          <FilterTimeClassSelect />
+          <FilterGraphTimeClassSelect players={players} />
 
           <FilterSelect
             label='Records'

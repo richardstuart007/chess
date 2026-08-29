@@ -2,11 +2,17 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    TerminationChart — stacked win/loss bar chart by termination type. Filter selections persist
-//    to sessionStorage.
+//    TerminationChart — stacked win/loss bar chart by termination type. NO filter re-fetches on
+//    change — Player, Colour, Time Class and Date From are all staged and only take effect on the
+//    Refresh button. Colour persists to sessionStorage; Player/Time Class/Date From are global URL
+//    params (still written live by their shared controls, but the chart ignores them until Refresh).
 //
 //    Parameters:
 //      players — tracked players to fetch termination stats for (narrowed by the global ?player=)
+//
+//  3) CHANGE HISTORY
+//    2026-08-29 — every filter (incl. the global Player/Time Class) now gated behind a Refresh
+//                 button via an "applied" snapshot layer; removed the old dateFrom "Clear" button
 //==================================================================================================
 
 import { useState, useEffect, useMemo } from 'react'
@@ -33,69 +39,83 @@ interface TerminationChartProps {
 
 export default function TerminationChart({ players }: TerminationChartProps) {
   const searchParams = useSearchParams()
+
+  //
+  //  Live filter values. Player and Time Class come from the global URL params (their shared
+  //  dropdowns write them immediately); Colour is local state; Date From is a local draft. None
+  //  of these drive the query directly — only the applied* snapshot below does.
+  //
   const playerFilter = searchParams.get('player') ?? ''
-  const playersToFetch = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.player),
-    [playerFilter, players]
-  )
-
-  //
-  //  Passed to the actual query functions instead of playersToFetch — "All" (playerFilter
-  //  unset) means no player filter at all, not every tracked username enumerated.
-  //  playersToFetch itself stays as the "player list not loaded yet" guard.
-  //
-  const queryPlayers = useMemo(
-    () => playerFilter ? [playerFilter] : [],
-    [playerFilter]
-  )
-
-  //
-  //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
-  //  every other page with a Time filter via `?timeClass=` — applies immediately.
-  //
   const timeClassFilter = searchParams.get('timeClass') ?? ''
-
-  //
-  //  Date From is also global (shared via URL with every other page that has this filter).
-  //  This page has no Filter/Refresh gate at all — every filter already applies instantly — so
-  //  dateFrom becomes global the same way, no draft state needed. Absent still defaults to
-  //  DEFAULT_DATE_FROM_Player, matching today's behavior.
-  //
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
   const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
+  const [color, setColor] = useState('')
+  const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
 
   //
-  //  Initialized to plain defaults (matching the server render) rather than reading
-  //  sessionStorage synchronously — sessionStorage is only available client-side, so
-  //  restoring persisted state happens in the effect below, after mount, to avoid a
-  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh (and seeded
+  //  once on hydration so a reload shows data without a manual Refresh). refreshNonce forces a
+  //  re-fetch even when nothing else changed.
   //
-  const [color, setColor] = useState('')
+  const [appliedPlayer,    setAppliedPlayer]    = useState('')
+  const [appliedTimeClass, setAppliedTimeClass] = useState('')
+  const [appliedColor,     setAppliedColor]     = useState('')
+  const [appliedDateFrom,  setAppliedDateFrom]  = useState(dateFromFilter)
+  const [refreshNonce,     setRefreshNonce]     = useState(0)
+
   const [data, setData] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
   const [loading, setLoading] = useState(false)
   const [hydrated, setHydrated] = useState(false)
 
+  //
+  //  "All" (appliedPlayer unset) means no player filter at all, not every tracked username
+  //  enumerated. The players.length check in the load effect covers "player list not loaded yet".
+  //
+  const appliedQueryPlayers = useMemo(
+    () => appliedPlayer ? [appliedPlayer] : [],
+    [appliedPlayer]
+  )
+
+  //
+  //  Restore persisted Colour, then seed the applied snapshot from the current live values so the
+  //  first load reflects whatever the URL / sessionStorage already hold.
+  //
   useEffect(() => {
-    setColor(ss(`${SESSION_STORAGE_PREFIX}tc-color`, ''))
+    const storedColor = ss(`${SESSION_STORAGE_PREFIX}tc-color`, '')
+    setColor(storedColor)
+    setAppliedColor(storedColor)
+    setAppliedPlayer(playerFilter)
+    setAppliedTimeClass(timeClassFilter)
+    setAppliedDateFrom(dateFromFilter)
     setHydrated(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  //
+  //  Keep the draft date box in sync when the global value changes from elsewhere (tab
+  //  navigation carrying it in, or this chart's own Refresh writing it back) — never from local
+  //  typing, which only touches draftDateFrom directly.
+  //
   useEffect(() => {
-    if (!hydrated || playersToFetch.length === 0) return
+    setDraftDateFrom(dateFromFilter)
+  }, [dateFromFilter])
+
+  useEffect(() => {
+    if (!hydrated || players.length === 0) return
     let cancelled = false
     setLoading(true)
     async function load() {
       const rows = await getTerminationStats(
-        queryPlayers,
-        dateFromFilter || undefined,
-        color || undefined,
-        timeClassFilter || undefined
+        appliedQueryPlayers,
+        appliedDateFrom || undefined,
+        appliedColor || undefined,
+        appliedTimeClass || undefined
       )
       if (!cancelled) { setData(rows); setLoading(false) }
     }
     load().catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [playersToFetch, queryPlayers, color, dateFromFilter, timeClassFilter, hydrated])
+  }, [appliedQueryPlayers, appliedDateFrom, appliedColor, appliedTimeClass, refreshNonce, hydrated, players.length])
 
   useEffect(() => {
     if (!hydrated) return
@@ -103,6 +123,24 @@ export default function TerminationChart({ players }: TerminationChartProps) {
       sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}tc-color`, JSON.stringify(color))
     } catch {}
   }, [color, hydrated])
+
+  //
+  //  Refresh — commit every live/draft filter into the applied snapshot (and the date back to
+  //  the global URL), then bump the nonce to force the load effect to run.
+  //
+  function handleRefresh() {
+    setDateFromFilter(draftDateFrom)
+    setAppliedPlayer(playerFilter)
+    setAppliedTimeClass(timeClassFilter)
+    setAppliedColor(color)
+    setAppliedDateFrom(draftDateFrom || DEFAULT_DATE_FROM_Player)
+    setRefreshNonce(n => n + 1)
+  }
+
+  const filtersPending = playerFilter !== appliedPlayer
+    || timeClassFilter !== appliedTimeClass
+    || color !== appliedColor
+    || draftDateFrom !== appliedDateFrom
 
   const chartData = data.map(r => ({
     name: r.termination,
@@ -122,20 +160,19 @@ export default function TerminationChart({ players }: TerminationChartProps) {
         <FilterTimeClassSelect />
         <FilterDateInput
           label='From'
-          value={dateFromFilter}
-          onChange={setDateFromFilter}
+          value={draftDateFrom}
+          onChange={setDraftDateFrom}
           max={TODAY}
           width={WIDTH_DATE_FROM}
           borderClass={GLOBAL_FILTER_BORDER_CLASS}
         />
-        {rawDateFromFilter && (
-          <FilterActionButton
-            onClick={() => setDateFromFilter('')}
-            variant='secondary'
-          >
-            Clear
-          </FilterActionButton>
-        )}
+        <FilterActionButton
+          onClick={handleRefresh}
+          disabled={loading}
+          variant={filtersPending ? 'pending' : 'primary'}
+        >
+          {loading ? 'Fetching...' : 'Refresh'}
+        </FilterActionButton>
       </div>
 
       {loading && <p className='text-xs text-gray-400'>Loading...</p>}

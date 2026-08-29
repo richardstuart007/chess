@@ -17,18 +17,21 @@
 //    so the Master box visually matches whatever height the Player box ends up at once its cards
 //    are rendered — no hardcoded height value. The Master box carries the top 4 master cards by
 //    grade (getMasterPlayers('', true) sliced to 4 — currently Carlsen/Caruana/Nakamura/Sindarov),
-//    laid out in a single horizontal row. No onClick/selected — static display only, since no
-//    "select a master" mechanism exists anywhere in the app yet.
+//    laid out in a single horizontal row. Clicking a card navigates to /mastergames?master=<handle>
+//    (pushing a back target first) and pre-filters the Master Games list to that master; the card
+//    shows the selected outline while its master is the active ?master= filter on /mastergames.
 //
 //  3) CHANGE HISTORY
 //    2026-08-28 — Master box now shows the top 4 masters by grade (was a single Carlsen card) in
 //                 one horizontal row, each with its downloaded avatar resolved via the
 //                 MASTER_AVATARS constants map
+//    2026-08-29 — master cards are now clickable: navigate to /mastergames pre-filtered to that
+//                 master (?master=<handle>), with a selected-outline highlight while active
 //==================================================================================================
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams, useRouter } from 'next/navigation'
 import MyBox from 'nextjs-shared/MyBox'
 import PlayerProfile from '@/src/ui/player/PlayerProfile'
 import { getMasterPlayers, MasterPlayerRow } from '@/src/lib/actions/masterPlayers'
@@ -64,9 +67,17 @@ const MASTER_SECTIONS = [
 //
 const GLOBAL_FILTER_KEYS = ['player', 'timeClass', 'dateFrom', 'opening', 'eco']
 
+//
+//  Filters copied from the current URL onto a Master-card click, so the master's games open in
+//  the same opening/colour/time/date context you were looking at. Not `player` — that's the
+//  tracked player; the clicked master goes in `?master=` instead.
+//
+const MASTER_CARRY_KEYS = ['color', 'timeClass', 'dateFrom', 'opening', 'eco']
+
 export default function AppNav({ playerCards }: AppNavProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [masterCards, setMasterCards] = useState<MasterPlayerRow[]>([])
 
   //
@@ -105,17 +116,46 @@ export default function AppNav({ playerCards }: AppNavProps) {
     : pathname === '/' ? 'games'
     : null
 
+  //
+  //  Navigate to the Master Games list pre-filtered to this master. Carries the MASTER_CARRY_KEYS
+  //  filters from the current URL (colour/time/date/opening/eco — e.g. after an Openings bar click
+  //  on the Games tab) so the master's games arrive in the same context. No backNav push — this is
+  //  a list tab with no "← Back" button; browser Back handles it via history. No-ops when the
+  //  master has no chess.com handle (can't filter mgd_player without one).
+  //
+  function handleMasterClick(handle: string) {
+    if (!handle) return
+    const params = new URLSearchParams()
+    //
+    //  Lowercase — mgd_player is stored lowercase, so ?master= must match it (and the
+    //  FilterMasterPlayerSelect option values, and openMasterGame's row.mgd_player).
+    //
+    params.set('master', handle.toLowerCase())
+    for (const key of MASTER_CARRY_KEYS) {
+      const value = searchParams.get(key)
+      if (value) params.set(key, value)
+    }
+    router.push(`/mastergames?${params.toString()}`)
+  }
+
+  const activeMaster = (pathname === '/mastergames' || pathname === '/analyzemaster')
+    ? searchParams.get('master')
+    : null
+
   const masterCardContent = masterCards.length > 0 && (
     <div className='flex gap-3'>
       {masterCards.map(m => {
-        const avatarFile = m.chesscomHandle ? MASTER_AVATARS[m.chesscomHandle] : undefined
+        const handle = m.chesscomHandle ?? ''
+        const avatarFile = handle ? MASTER_AVATARS[handle] : undefined
         return (
           <PlayerProfile
             key={m.mstid}
-            player={m.chesscomHandle ?? ''}
+            player={handle}
             displayName={m.firstName ? `${m.firstName} ${m.lastName}` : m.lastName}
             avatar={avatarFile ? AVATAR_DIR + avatarFile : MASTER_CARD_AVATAR}
             ratings={m.grade != null ? { Grade: m.grade } : undefined}
+            onClick={handle ? () => handleMasterClick(handle) : undefined}
+            selected={!!handle && activeMaster === handle.toLowerCase()}
           />
         )
       })}

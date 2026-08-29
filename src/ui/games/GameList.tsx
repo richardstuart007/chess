@@ -4,7 +4,7 @@
 //  1) DESCRIPTION
 //    GameList — filterable, paginated table of a tracked player's games. Player/timeClass apply
 //    instantly (shared global URL params); dateFrom/opening/eco/other filters are draft state,
-//    only applied on the Filter button click. Filter/pagination state persists to sessionStorage.
+//    only applied on the Refresh button click. Filter/pagination state persists to sessionStorage.
 //
 //    Parameters:
 //      players      — tracked players to list games for
@@ -74,7 +74,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
 
   //
   //  Date From, Opening, and ECO are also global (shared via URL with every other page that has
-  //  these filters) — but unlike timeClass, they stay gated behind the Filter button below (a
+  //  these filters) — but unlike timeClass, they stay gated behind the Refresh button below (a
   //  date picker/typed text shouldn't fire a query on every change). Absent dateFrom still
   //  defaults to DEFAULT_DATE_FROM_Player, matching today's behavior (user-decided — URL params can't
   //  distinguish "never set" from "explicitly cleared" the way sessionStorage could).
@@ -113,7 +113,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
 
   //
   //  Keeps the draft text/date boxes in sync whenever the global values change from elsewhere
-  //  (initial mount, tab navigation carrying them in, or this page's own Filter click writing
+  //  (initial mount, tab navigation carrying them in, or this page's own Refresh click writing
   //  them back) — never from local typing, since that only touches draftDateFrom/etc. directly.
   //
   useEffect(() => {
@@ -138,11 +138,23 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     delete hydratedFilters.opening
     delete hydratedDraft.eco
     delete hydratedFilters.eco
+    //
+    //  One-shot arrival preset: a ?color= carried in from the Openings tab (bar click) seeds
+    //  both draft and applied Colour so it takes effect immediately — no Refresh, no false
+    //  "pending". Thereafter Colour behaves normally (draft/apply + sessionStorage). The param
+    //  lingers in the URL like ?eco=/?opening= already do.
+    //
+    const colorParam = searchParams.get('color')
+    if (colorParam === 'white' || colorParam === 'black') {
+      hydratedDraft.color = colorParam
+      hydratedFilters.color = colorParam
+    }
     setDraftFilters(hydratedDraft)
     setFilters(hydratedFilters)
     setCurrentPage(ss(`${SESSION_STORAGE_PREFIX}gl-page`, 1))
     setRowsPerPage(ss(`${SESSION_STORAGE_PREFIX}gl-rows`, GAME_LIST_ROWS_DEFAULT_Player))
     setHydrated(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -450,7 +462,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
                   onClick={handleApplyFilters}
                   variant={filtersPending ? 'pending' : 'primary'}
                 >
-                  Filter
+                  Refresh
                 </FilterActionButton>
               </th>
             </tr>

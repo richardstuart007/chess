@@ -30,6 +30,7 @@ import {
 import MyBox from 'nextjs-shared/MyBox'
 import MySelect from 'nextjs-shared/MySelect'
 import { RatingGranularity, fetchFilteredGames, GameFilters } from '@/src/lib/actions/games'
+import { DEFAULT_GRAPH_GRANULARITY, WIDTH_GRAPH_GRANULARITY } from '@/src/lib/constants'
 
 const PLAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea']
 
@@ -145,7 +146,12 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     return pairs.sort((a, b) => a.label.localeCompare(b.label))
   }, [games])
 
-  const [granularityOverride, setGranularityOverride] = useState<RatingGranularity | null>(null)
+  //
+  //  Starts at Weekly rather than null — the guard below still falls back to the
+  //  span-based auto pick (defaultGran) when the fetched span is too short for
+  //  Weekly to be an offered option. Not persisted: always Weekly on a fresh load.
+  //
+  const [granularityOverride, setGranularityOverride] = useState<RatingGranularity | null>(DEFAULT_GRAPH_GRANULARITY)
 
   const activeSeries = allSeries
 
@@ -235,7 +241,7 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
             .map(([, v]) => v)}
           value={GRAN_LABELS[granularity]}
           onChange={e => setGranularityOverride(GRAN_MAP[e.target.value])}
-          overrideClass='h-6 md:h-6'
+          overrideClass={`${WIDTH_GRAPH_GRANULARITY} h-6 md:h-6`}
         />
       </div>
       <p className='mb-3 text-xxs text-gray-400'>{POINT_DESC[granularity]}</p>
