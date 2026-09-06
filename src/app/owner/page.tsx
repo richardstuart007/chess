@@ -1,8 +1,8 @@
 //==================================================================================================
 //  1) DESCRIPTION
-//    Page — /owner. Tab shell (via nextjs-shared's OwnerPage) hosting Logging, Cache, per-domain
-//    tool-launcher panels (Players/Masters/FIDE), Pipeline Log, Dataflow, Constants, Session
-//    Storage, and Routing Maintenance.
+//    Page — /owner. Tab shell (via nextjs-shared's OwnerPage) hosting Logging, Cache, a nested
+//    Pipeline tab (Players/Masters/FIDE tool-launcher panels + Pipeline Log), Dataflow, Constants,
+//    Session Storage, and Routing Maintenance.
 //==================================================================================================
 
 import Link from 'next/link'
@@ -35,10 +35,20 @@ export default function Page() {
       tabs={[
         { label: 'Logging', content: <OwnerTableLogging /> },
         { label: 'Cache', content: <OwnerTableCache /> },
-        { label: 'Players', content: <ToolsPanel tools={TOOLS_PLAYERS} /> },
-        { label: 'Masters', content: <ToolsPanel tools={TOOLS_MASTERS} /> },
-        { label: 'FIDE', content: <ToolsPanel tools={TOOLS_FIDE} /> },
-        { label: 'Pipeline Log', content: <div className='p-6 md:p-8'><PipelineLogTable /></div> },
+        {
+          label: 'Pipeline',
+          content: (
+            <OwnerPage
+              persistKey='chess-owner-tab-pipeline'
+              tabs={[
+                { label: 'Players', content: <ToolsPanel tools={TOOLS_PLAYERS} /> },
+                { label: 'Masters', content: <ToolsPanel tools={TOOLS_MASTERS} /> },
+                { label: 'FIDE', content: <ToolsPanel tools={TOOLS_FIDE} /> },
+                { label: 'Pipeline Log', content: <div className='p-6 md:p-8'><PipelineLogTable /></div> }
+              ]}
+            />
+          )
+        },
         { label: 'Dataflow', content: <div className='p-6 md:p-8'><DataflowTabs /></div> },
         { label: 'Constants', content: <ConstantsPage /> },
         { label: 'Session Storage', content: <OwnerTableSessionStorage /> },
