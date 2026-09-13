@@ -55,7 +55,7 @@ import { Chessboard } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MySelect from 'nextjs-shared/MySelect'
-import { MyInput } from 'nextjs-shared/MyInput'
+import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import { MyHelpField } from 'nextjs-shared/MyHelpField'
 import { MyToggle } from 'nextjs-shared/MyToggle'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
@@ -193,7 +193,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
   const [p2, setP2] = useState('')
   const [fixedcolors, setFixedcolors] = useState(false)
   const [mr, setMr] = useState<number | ''>('')
-  const [year, setYear] = useState('')
+  const [year, setYear] = useState<number | ''>('')
   const [lsty, setLsty] = useState(CHESSCOM_YEAR_COMPARISON_OPTIONS[0].value)
   const [lstresult, setLstresult] = useState(CHESSCOM_RESULT_OPTIONS[0].value)
   const [sort, setSort] = useState(CHESSCOM_SORT_OPTIONS[0].value)
@@ -1300,10 +1300,10 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                   <div className='flex flex-wrap items-center gap-3'>
                     <div className='flex items-center gap-2'>
                       <span className='font-bold text-xs whitespace-nowrap'>Min rating</span>
-                      <MyInput
-                        type='number'
+                      <MyInputNumeric
+                        integerOnly
                         value={mr}
-                        onChange={e => setMr(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                        onChange={v => setMr(v ?? '')}
                         overrideClass='w-20 h-6 md:h-6'
                       />
                     </div>
@@ -1312,10 +1312,10 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                       <MySelect value={lsty} onChange={e => setLsty(e.target.value)} overrideClass='w-14 h-6 md:h-6'>
                         {CHESSCOM_YEAR_COMPARISON_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </MySelect>
-                      <MyInput
-                        type='number'
+                      <MyInputNumeric
+                        integerOnly
                         value={year}
-                        onChange={e => setYear(e.target.value)}
+                        onChange={v => setYear(v ?? '')}
                         placeholder='e.g. 2024'
                         overrideClass='w-20 h-6 md:h-6'
                       />

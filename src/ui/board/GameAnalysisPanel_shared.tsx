@@ -25,9 +25,10 @@
 //      analysisError           — error text; shows a Retry button when non-empty
 //==================================================================================================
 
+import { useRef } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
-import { MyInput } from 'nextjs-shared/MyInput'
+import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import { PlyEvaluation } from '@/src/lib/stockfish'
 import DepthInput_shared from './DepthInput_shared'
 
@@ -66,6 +67,7 @@ export default function GameAnalysisPanel_shared({
   analysisResultMessage,
   analysisError
 }: GameAnalysisPanelProps) {
+  const fromMoveLatestRef = useRef(fromMove)
   const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
   const mistakes = plyEvals.filter(e => e?.classification === 'mistake').length
   const inaccuracies = plyEvals.filter(e => e?.classification === 'inaccuracy').length
@@ -98,29 +100,36 @@ export default function GameAnalysisPanel_shared({
             <div className='flex items-center gap-4'>
               <div className='flex items-center gap-2'>
                 <span className='font-bold text-xs whitespace-nowrap'>From move</span>
-                <MyInput
-                  type='number'
+                <MyInputNumeric
+                  integerOnly
+                  clampOnBlur
                   min={1}
                   max={totalFullMoves}
                   value={Number.isNaN(fromMove) ? '' : fromMove}
-                  onChange={e => onFromMoveChange(e.target.value === '' ? NaN : parseInt(e.target.value, 10))}
+                  onChange={v => {
+                    const next = v === null ? NaN : v
+                    fromMoveLatestRef.current = next
+                    onFromMoveChange(next)
+                  }}
                   onBlur={() => {
-                    const raw = Number.isNaN(fromMove) ? 1 : fromMove
-                    const clamped = Math.max(1, Math.min(raw, totalFullMoves))
-                    onFromMoveChange(clamped)
-                    if (clamped > toMove) onToMoveChange(clamped)
+                    let finalValue = fromMoveLatestRef.current
+                    if (Number.isNaN(finalValue)) {
+                      finalValue = 1
+                      onFromMoveChange(1)
+                    }
+                    if (finalValue > toMove) onToMoveChange(finalValue)
                   }}
                   overrideClass='w-16 h-6 md:h-6'
                 />
               </div>
               <div className='flex items-center gap-2'>
                 <span className='font-bold text-xs whitespace-nowrap'>To move</span>
-                <MyInput
-                  type='number'
+                <MyInputNumeric
+                  integerOnly
                   min={1}
                   max={totalFullMoves}
                   value={Number.isNaN(toMove) ? '' : toMove}
-                  onChange={e => onToMoveChange(e.target.value === '' ? NaN : parseInt(e.target.value, 10))}
+                  onChange={v => onToMoveChange(v === null ? NaN : v)}
                   onBlur={() => {
                     const raw = Number.isNaN(toMove) ? totalFullMoves : toMove
                     const from = Number.isNaN(fromMove) ? 1 : fromMove

@@ -122,6 +122,16 @@ two-reference-pair problem shape.
 
 ## Outstanding items
 
+- **Audit all pipeline steps (games/master-games/masters, ~9+ steps each) for UI-route-vs-cron-script
+  divergence** (identified 2026-09-12, not to be done now) — per global CLAUDE.md's "UI replicas of
+  production cron jobs must be exact, not approximate," a spot-check of `build-tree` confirmed the
+  UI route (`/api/analysis/build-tree`) and `cron-build-tree.ts` both call the same shared function
+  (`buildPositionTree_Player`) with matching parameters, with no extra logic in the route wrapper —
+  correctly implemented. The other steps across all three pipeline pages
+  (`pipelinegames`/`pipelinemastergames`/`pipelinemasters`) and their `cron-*.ts` counterparts
+  haven't been checked the same way. Worth a full audit to confirm none of them have a route-only or
+  script-only side effect (logging, a parameter default, an extra step) that the other path skips.
+
 - **Store the player avatar image on the app, not just its chess.com URL** (identified 2026-07-14;
   partially done 2026-08-28 — `PLAN_master-avatars-grade-filter`) — the 2 tracked players and the
   4 top master cards now have their avatar downloaded once into `public/avatars/` and resolved from

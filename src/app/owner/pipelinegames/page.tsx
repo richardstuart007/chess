@@ -18,7 +18,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
-import { MyInput } from 'nextjs-shared/MyInput'
+import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import MySelect from 'nextjs-shared/MySelect'
 import { MyHelp } from 'nextjs-shared/MyHelp'
 import PipelineHelp from '@/src/ui/analysis/PipelineHelp'
@@ -618,12 +618,12 @@ export default function PipelinePage() {
 
           <div className='flex flex-wrap items-center gap-3 text-xs text-gray-600 pb-2 border-b border-gray-100'>
             <span className='text-gray-400 font-medium'>Depth</span>
-            <MyInput type='number' value={globalDepth} min={8} max={24}
-              onChange={e => setGlobalDepth(Math.min(24, parseInt(e.target.value) || STOCKFISH_DEPTH))}
+            <MyInputNumeric integerOnly clampOnBlur value={globalDepth} min={8} max={24}
+              onChange={v => setGlobalDepth(v ?? STOCKFISH_DEPTH)}
               overrideClass='w-16' />
             <span className='text-gray-400 font-medium'>Batch</span>
-            <MyInput type='number' value={globalBatchSize} min={1} max={1000}
-              onChange={e => setGlobalBatchSize(Math.max(1, parseInt(e.target.value) || 50))}
+            <MyInputNumeric integerOnly clampOnBlur value={globalBatchSize} min={1} max={1000}
+              onChange={v => setGlobalBatchSize(v ?? 50)}
               overrideClass='w-20' />
           </div>
 

@@ -49,7 +49,7 @@ export interface ChessComSearchFilters {
   p2:         string
   fixedcolors: boolean
   mr:         number | ''
-  year:       string
+  year:       number | ''
   lsty:       string
   lstresult:  string
   sort:       string
@@ -63,7 +63,7 @@ export async function searchChessComGames(fen: string, filters: ChessComSearchFi
     p2: filters.p2,
     mr: filters.mr === '' ? '' : String(filters.mr),
     lsty: filters.lsty,
-    year: filters.year,
+    year: filters.year === '' ? '' : String(filters.year),
     lstMoves: '3',
     moves: '',
     fen,

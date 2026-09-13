@@ -14,11 +14,17 @@
 //
 //  2) NOTES
 //    Types freely (value can transiently be NaN mid-typing, same convention as this file's own
-//    From move/To move inputs) and only clamps to min/max on blur, so typing e.g. "31" isn't
-//    overwritten by an in-progress clamp on the first keystroke.
+//    From move/To move inputs) and only clamps to min/max on blur, via MyInputNumeric's
+//    clampOnBlur, so typing e.g. "31" isn't overwritten by an in-progress clamp on the first
+//    keystroke. NaN-for-empty is this component's own external convention (matches its callers) —
+//    translated to/from MyInputNumeric's '' / null at this boundary only.
+//
+//  3) CHANGE HISTORY
+//    2026-09-12 — internals switched from MyInput type='number' to MyInputNumeric (integerOnly +
+//                 clampOnBlur); external prop API unchanged
 //==================================================================================================
 
-import { MyInput } from 'nextjs-shared/MyInput'
+import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 import { STOCKFISH_DEPTH_INPUT_MAX } from '@/src/lib/constants'
 
@@ -40,15 +46,15 @@ export default function DepthInput_shared({
   return (
     <div className='flex items-center gap-2'>
       <span className='font-bold text-xs whitespace-nowrap'>Depth</span>
-      <MyInput
-        type='number'
+      <MyInputNumeric
+        integerOnly
+        clampOnBlur
         min={min}
         max={max}
         value={Number.isNaN(value) ? '' : value}
-        onChange={e => onChange(e.target.value === '' ? NaN : parseInt(e.target.value, 10))}
+        onChange={v => onChange(v === null ? NaN : v)}
         onBlur={() => {
-          const raw = Number.isNaN(value) ? min : value
-          onChange(Math.max(min, Math.min(raw, max)))
+          if (Number.isNaN(value)) onChange(min)
         }}
         overrideClass={overrideClass}
       />
