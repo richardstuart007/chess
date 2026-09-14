@@ -104,7 +104,7 @@ import {
   GAMES_SYNC_YEARS_Master,
   POSITION_TREE_LIMIT_Player,
   POSITION_TREE_LIMIT_Master,
-  MASTER_GAMES_FOR_FEN_LIMIT
+  MASTER_GAMES_FOR_FEN_LIMIT,
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -192,8 +192,8 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'PIPELINE_LOG_ROWS_PER_PAGE', value: PIPELINE_LOG_ROWS_PER_PAGE, description: 'Page size for the /owner/pipelinelog viewer.', consumers: ['PipelineLogTable.tsx: fetchdata'] },
       { name: 'HABITS_ITEMS_PER_PAGE_Player', value: HABITS_ITEMS_PER_PAGE_Player, description: 'Default rows-per-page for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
       { name: 'HABITS_ROWS_OPTIONS_Player', value: HABITS_ROWS_OPTIONS_Player, description: 'Rows-per-page dropdown options for the /habits table.', consumers: ['habits/page.tsx: HabitsContent'] },
-      { name: 'POSITION_GAMES_ROWS_DEFAULT', value: POSITION_GAMES_ROWS_DEFAULT, description: "Default rows-per-page for the Analyze/master-analyze pages' Games Played panel.", consumers: ['ChessBoardView_shared.tsx: ChessBoardView_shared', 'MasterGameView_master.tsx: MasterGameView_master'] },
-      { name: 'POSITION_GAMES_ROWS_OPTIONS', value: POSITION_GAMES_ROWS_OPTIONS, description: "Rows-per-page dropdown options for the Analyze/master-analyze pages' Games Played panel.", consumers: ['ChessBoardView_shared.tsx: ChessBoardView_shared', 'MasterGameView_master.tsx: MasterGameView_master'] },
+      { name: 'POSITION_GAMES_ROWS_DEFAULT', value: POSITION_GAMES_ROWS_DEFAULT, description: "Default rows-per-page for the Analyze/master-analyze pages' Games Played panel.", consumers: ['ChessBoardView_shared.tsx: ChessBoardView_shared', 'MasterGameView_master.tsx: MasterGameView_master', 'MasterGamesDbPanel.tsx: MasterGamesDbPanel'] },
+      { name: 'POSITION_GAMES_ROWS_OPTIONS', value: POSITION_GAMES_ROWS_OPTIONS, description: "Rows-per-page dropdown options for the Analyze/master-analyze pages' Games Played panel.", consumers: ['ChessBoardView_shared.tsx: ChessBoardView_shared', 'MasterGameView_master.tsx: MasterGameView_master', 'MasterGamesDbPanel.tsx: MasterGamesDbPanel'] },
       { name: 'GAME_ENDINGS_CONCURRENCY_Player', value: GAME_ENDINGS_CONCURRENCY_Player, description: "Number of concurrent Stockfish processes used by evaluateGameEndings for games whose final position isn't already tracked (native binary path only).", consumers: ['enrichPositionsStockfish.ts: evaluateGameEndings'] },
       { name: 'PIPELINE_CRON_SCHEDULE_Player', value: PIPELINE_CRON_SCHEDULE_Player, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] },
       { name: 'PIPELINE_TYPE_GAMES', value: PIPELINE_TYPE_GAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the game-sync/analysis pipeline (steps 1-9) — keeps its run-id allocation and Run selector scoped separately from the masters pipeline.', consumers: ['sync.ts: runGameSync', 'buildPositionTree_Player.ts: buildPositionTree_Player, syncTposFromTgam_Player', 'purgePositions.ts: purgeStaleReachOnePositions', 'buildHabits.ts: buildHabits', 'enrichPositionsStockfish.ts: bulkUpdateCpLoss, enrichPositionsStockfish, deepenPopularPositions, evaluateGameEndings', 'owner/pipelinegames/page.tsx: PipelinePage'] },
@@ -356,7 +356,8 @@ const FUNCTION_DESCRIPTIONS: Record<string, string> = {
   'masterPositionTree.ts: buildPositionTree_Master': 'Full truncate-and-rebuild of the master position tree (tmpos_positions/tmgam_game_positions) from tmgd_gamesdecon for one player.',
   'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage': 'Owner pipeline page for the master-games position database (sync, deconstruct, build tree), for one or more selected master players and a chosen year.',
   'MasterGameList.tsx: MasterGameList': 'Browsable/filterable list of synced master players\' games (own route, /mastergames) — local filter state only, no player-select filter yet, rows not clickable.',
-  'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount': 'Fetches a filtered, paginated page of master games from tmgd_gamesdecon, and the matching total page count.'
+  'masterGamesList.ts: fetchFilteredMasterGames, getMasterGamesPageCount': 'Fetches a filtered, paginated page of master games from tmgd_gamesdecon, and the matching total page count.',
+  'MasterGamesDbPanel.tsx: MasterGamesDbPanel': 'Server-side paginated list of synced master games reaching an exact FEN, with a server-side Move filter.'
 }
 
 export default function ConstantsPage() {

@@ -24,15 +24,18 @@ import type { Filter, JoinParams } from 'nextjs-shared/structures'
 import { write_logging } from 'nextjs-shared/write_logging'
 import { truncateFen }  from '../fen'
 import { getPositionEvaluationsBulk_shared } from './chessdb_shared'
+import { objectiveGameResult } from '../objectiveGameResult'
 
 export interface MasterMoveRow {
-  move_played: string
-  move_uci:    string | null
-  mov_times:   number
-  mov_wins:    number
-  mov_losses:  number
-  pose_cp:     number | null
-  pose_depth:  number | null
+  move_played:        string
+  move_uci:           string | null
+  mov_times:          number
+  white:              number
+  draws:              number
+  black:              number
+  avg_opponent_rating: number | null
+  pose_cp:            number | null
+  pose_depth:         number | null
 }
 
 //----------------------------------------------------------------------------------
@@ -95,7 +98,12 @@ export async function getMovePlayCounts_master(fens: string[], masterPlayer: str
 //  SQL join — see the file header for why: (1) the move/count/win/loss
 //  group-by query against the secondary database, returning each move's
 //  resulting FEN; (2) a bulk eval lookup against the primary database, merged
-//  in by FEN.
+//  in by FEN. mov_times is a distinct-game count (COUNT(DISTINCT mgam_mgdid)) so a
+//  transposition revisiting the same position+move within one game isn't counted
+//  twice. white/draws/black are the OBJECTIVE outcome for these games (from
+//  mgd_player_color/mgd_player_result, inverted when the tracked master was Black) —
+//  never the tracked master's own personal win/loss, since that would mix two
+//  different perspectives depending on which color they happened to play.
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition_master(fen: string, masterPlayer: string): Promise<MasterMoveRow[]> {
   const result = await table_query({
@@ -105,9 +113,17 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
       SELECT
         gp.mgam_move_played                                   AS move_played,
         gp.mgam_move_uci                                      AS move_uci,
-        COUNT(*)::int                                         AS mov_times,
-        COUNT(*) FILTER (WHERE d.mgd_player_result = 'win')::int  AS mov_wins,
-        COUNT(*) FILTER (WHERE d.mgd_player_result = 'loss')::int AS mov_losses,
+        COUNT(DISTINCT gp.mgam_mgdid)::int                    AS mov_times,
+        COUNT(DISTINCT gp.mgam_mgdid) FILTER (
+          WHERE (d.mgd_player_color = 'white' AND d.mgd_player_result = 'win')
+             OR (d.mgd_player_color = 'black' AND d.mgd_player_result = 'loss')
+        )::int                                                 AS white,
+        COUNT(DISTINCT gp.mgam_mgdid) FILTER (WHERE d.mgd_player_result = 'draw')::int AS draws,
+        COUNT(DISTINCT gp.mgam_mgdid) FILTER (
+          WHERE (d.mgd_player_color = 'black' AND d.mgd_player_result = 'win')
+             OR (d.mgd_player_color = 'white' AND d.mgd_player_result = 'loss')
+        )::int                                                 AS black,
+        ROUND(AVG(d.mgd_opponent_rating))::int                 AS avg_opponent_rating,
         MAX(gp.mgam_resulting_fen)                            AS resulting_fen
       FROM tmpos_positions p
       JOIN tmgam_game_positions gp ON gp.mgam_pos_id = p.mpos_id
@@ -129,7 +145,7 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
     })
     return []
   }
-  const rows = result.data as { move_played: string; move_uci: string | null; mov_times: number; mov_wins: number; mov_losses: number; resulting_fen: string | null }[]
+  const rows = result.data as { move_played: string; move_uci: string | null; mov_times: number; white: number; draws: number; black: number; avg_opponent_rating: number | null; resulting_fen: string | null }[]
 
   const resultingFens = rows.map(r => r.resulting_fen).filter((f): f is string => f != null)
   const poseEvals = await getPositionEvaluationsBulk_shared(resultingFens)
@@ -137,13 +153,15 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
   return rows.map(r => {
     const pose = r.resulting_fen ? poseEvals[truncateFen(r.resulting_fen)] : undefined
     return {
-      move_played: r.move_played,
-      move_uci:    r.move_uci,
-      mov_times:   r.mov_times,
-      mov_wins:    r.mov_wins,
-      mov_losses:  r.mov_losses,
-      pose_cp:     pose?.cp ?? null,
-      pose_depth:  pose?.depth ?? null
+      move_played:        r.move_played,
+      move_uci:           r.move_uci,
+      mov_times:          r.mov_times,
+      white:              r.white,
+      draws:              r.draws,
+      black:              r.black,
+      avg_opponent_rating: r.avg_opponent_rating,
+      pose_cp:            pose?.cp ?? null,
+      pose_depth:         pose?.depth ?? null
     }
   })
 }
@@ -157,6 +175,11 @@ export interface MasterPositionGameHit {
   date:           string | null
   opponentRating: number | null
   termination:    string | null
+  white_username: string
+  black_username: string
+  white_rating:   number
+  black_rating:   number
+  result:         string   // objective chess result: '1-0' | '0-1' | '½-½' — never player-perspective
 }
 
 //
@@ -188,7 +211,12 @@ function mapMasterPositionGameRow(r: any): MasterPositionGameHit {
     mgdid:          r.mgd_mgdid != null ? Number(r.mgd_mgdid) : null,
     date:           r.mgd_end_time != null ? new Date(Number(r.mgd_end_time) * 1000).toISOString().slice(0, 10) : null,
     opponentRating: r.mgd_opponent_rating != null ? Number(r.mgd_opponent_rating) : null,
-    termination:    r.mgd_termination ?? null
+    termination:    r.mgd_termination ?? null,
+    white_username: r.mgd_white_username,
+    black_username: r.mgd_black_username,
+    white_rating:   r.mgd_white_rating,
+    black_rating:   r.mgd_black_rating,
+    result:         objectiveGameResult(r.mgd_player_color, r.mgd_player_result)
   }
 }
 

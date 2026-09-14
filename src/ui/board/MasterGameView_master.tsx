@@ -82,7 +82,6 @@ import { getMovePlayCounts_master, getMoveSummaryForPosition_master, fetchGamesF
 import { getMasterGameEvals_master, saveMasterGameEvaluations_master } from '@/src/lib/master/masterGamesList'
 import { MOVE_COUNT_MIN_MOVE, POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS } from '@/src/lib/constants'
 import { truncateFen } from '@/src/lib/fen'
-import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
 import MoveTree_shared from './MoveTree_shared'
 import GameAnalysisPanel_shared from './GameAnalysisPanel_shared'
@@ -90,6 +89,8 @@ import AlternativeLines_shared from './AlternativeLines_shared'
 import DepthInput_shared from './DepthInput_shared'
 import MasterMovesDbPanel from './MasterMovesDbPanel'
 import MasterGamesDbPanel from './MasterGamesDbPanel'
+import MovesListTable from './MovesListTable'
+import GamesListTable from './GamesListTable'
 
 export interface MasterGameRow {
   mgd_mgdid:            number
@@ -848,7 +849,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
         <span className='ml-1 text-gray-400'>{row.mgd_time_class}</span>
       </div>
 
-      <div className='grid grid-cols-1 gap-6 xl:grid-cols-[480px_480px_600px] xl:items-start'>
+      <div className='grid grid-cols-1 gap-6 xl:grid-cols-[480px_480px_900px] xl:items-start'>
         {/* Column 1: Board */}
         <div className='space-y-1 w-[480px]'>
           {/* Top player */}
@@ -956,19 +957,31 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
           )}
         </div>
 
-        {/* Column 3: Analysis */}
-        <div className='w-[600px] rounded-lg bg-yellow-50 p-2 space-y-2'>
-          <p className='text-sm font-bold text-gray-700'>Position Analysis {currentMoveLabel}</p>
+        {/* Column 3: Analysis — each logical group below (Stockfish, Player-equivalent, Master
+            (Our DB), Lichess, Chess.com) gets its own tinted wrapper so the grouping is visually
+            obvious; individual MyBox panels keep their own look inside. */}
+        <div className='w-[900px] rounded-lg space-y-2'>
+          {/* Badge disambiguates this route (Master, purple) from ChessBoardView_shared's
+              identical-looking layout (Player, blue) — see the "Games Played showing master
+              data" confusion this was added to prevent. FEN/Copy FEN moved here from inside the
+              Stockfish box, so they're visible regardless of whether that box is collapsed. */}
+          <div className='flex items-center justify-between'>
+            <div className='flex items-center gap-2'>
+              <span className='rounded px-2 py-0.5 text-xs font-bold text-white bg-purple-600'>Master</span>
+              <p className='text-sm font-bold text-gray-700'>Position Analysis {currentMoveLabel}</p>
+            </div>
+            <div className='flex items-center gap-2'>
+              <span className='text-xxs font-mono text-gray-500 truncate'>{getCurrentPositionFen()}</span>
+              <MyButton onClick={copyFenToClipboard} overrideClass='h-5 px-2 text-xxs whitespace-nowrap'>
+                {fenCopied ? 'Copied' : 'Copy FEN'}
+              </MyButton>
+            </div>
+          </div>
 
           {/* Stockfish: current-position analysis, live/capped depth */}
+          <div className='rounded-lg bg-gray-100 p-2'>
           <MyBox title='Stockfish' collapsible>
             <div className='space-y-2'>
-              <div className='flex items-center gap-2'>
-                <span className='text-xxs font-mono text-gray-500 truncate'>{getCurrentPositionFen()}</span>
-                <MyButton onClick={copyFenToClipboard} overrideClass='h-5 px-2 text-xxs whitespace-nowrap'>
-                  {fenCopied ? 'Copied' : 'Copy FEN'}
-                </MyButton>
-              </div>
               <div className='flex items-center gap-4'>
                 <DepthInput_shared value={deepAnalysisDepth} onChange={setDeepAnalysisDepth} />
                 <MySelect
@@ -1011,45 +1024,30 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
               />
             </div>
           </MyBox>
+          </div>
 
-          {/* Moves Played: one row per move this master played from the current board
-              position — click a row to highlight it and filter Games Played below */}
+          {/* This master's own: Moves Played (one row per move this master played from the
+              current board position — click a row to highlight it and filter Games Played below)
+              + Games Played, grouped in one wrapper. */}
+          <div className='rounded-lg bg-blue-50 p-2 space-y-2'>
           <MyBox title='Moves Played' collapsible>
             {moveSummary.length === 0 ? (
               <p className='text-xs text-gray-400'>No games reached this position.</p>
             ) : (
-              <div className='overflow-x-auto'>
-                <table className='w-full text-xs'>
-                  <thead>
-                    <tr className='text-left text-gray-500 border-b border-gray-200'>
-                      <th className='py-1 pr-2'>Move</th>
-                      <th className='py-1 pr-2 text-right'>Times</th>
-                      <th className='py-1 pr-2 text-right'>Win%</th>
-                      <th className='py-1 text-right'>Eval</th>
-                    </tr>
-                  </thead>
-                  <tbody className='divide-y divide-gray-100'>
-                    {moveSummary.map(m => {
-                      const wp = winPct(m.mov_wins, m.mov_losses, m.mov_times)
-                      const isSelected = selectedPositionMove === m.move_played
-                      return (
-                        <tr
-                          key={m.move_played}
-                          className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                          onClick={() => setSelectedPositionMove(isSelected ? null : m.move_played)}
-                        >
-                          <td className='py-1 pr-2 font-mono font-medium'>{m.move_played}</td>
-                          <td className='py-1 pr-2 text-right tabular-nums'>{m.mov_times}</td>
-                          <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{wp}%</td>
-                          <td className={`py-1 text-right tabular-nums font-mono ${m.pose_cp != null && m.pose_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                            {m.pose_cp != null ? formatCp(m.pose_cp) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <MovesListTable
+                rows={moveSummary.map(m => ({
+                  key:       m.move_played,
+                  move:      m.move_played,
+                  times:     m.mov_times,
+                  white:     m.white,
+                  draws:     m.draws,
+                  black:     m.black,
+                  avgRating: m.avg_opponent_rating,
+                  eval:      m.pose_cp
+                }))}
+                selectedMove={selectedPositionMove}
+                onSelectMove={setSelectedPositionMove}
+              />
             )}
           </MyBox>
 
@@ -1064,42 +1062,24 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                 {positionGames.length === 0 ? (
                   <p className='text-xs text-gray-400'>No games match the selected move.</p>
                 ) : (
-                  <div className='overflow-x-auto'>
-                    <table className='w-full text-xs'>
-                      <thead>
-                        <tr className='text-left text-gray-500 border-b border-gray-200'>
-                          <th className='py-1 pr-2'>Date</th>
-                          <th className='py-1 pr-2 text-right'>Game</th>
-                          <th className='py-1 pr-2 text-right'>Opp Rating</th>
-                          <th className='py-1 pr-2'>Termination</th>
-                          <th className='py-1 text-center'>Result</th>
-                        </tr>
-                      </thead>
-                      <tbody className='divide-y divide-gray-100'>
-                        {positionGames.map((g, i) => {
-                          const isCurrentGame = g.mgdid != null && g.mgdid === row.mgd_mgdid
-                          return (
-                            <tr
-                              key={i}
-                              className={`hover:bg-gray-50 ${isCurrentGame ? 'border-l-4 border-blue-500' : ''} ${g.mgdid != null ? 'cursor-pointer' : ''}`}
-                              onClick={() => {
-                                if (g.mgdid == null) return
-                                router.push(`/analyzemaster?game=${g.mgdid}`)
-                              }}
-                            >
-                              <td className='py-1 pr-2 text-gray-500'>{g.date ?? '—'}</td>
-                              <td className='py-1 pr-2 text-right text-gray-500'>{g.mgdid ?? '—'}</td>
-                              <td className='py-1 pr-2 text-right tabular-nums'>{g.opponentRating ?? '—'}</td>
-                              <td className='py-1 pr-2 text-gray-500'>{g.termination ?? '—'}</td>
-                              <td className='py-1 text-center'>
-                                {g.playerResult === 'win' ? 'W' : g.playerResult === 'loss' ? 'L' : g.playerResult === 'draw' ? 'D' : '—'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <GamesListTable
+                    rows={positionGames.map((g, i) => ({
+                      key:            g.mgdid != null ? String(g.mgdid) : String(i),
+                      move:           g.move_played,
+                      white:          g.white_username,
+                      whiteRating:    g.white_rating,
+                      whiteIsTracked: g.white_username === g.player,
+                      black:          g.black_username,
+                      blackRating:    g.black_rating,
+                      blackIsTracked: g.black_username === g.player,
+                      date:           g.date,
+                      result:         g.result,
+                      termination:    g.termination,
+                      finalEval:      null
+                    }))}
+                    currentKey={row.mgd_mgdid != null ? String(row.mgd_mgdid) : null}
+                    onRowClick={key => router.push(`/analyzemaster?game=${key}`)}
+                  />
                 )}
                 {positionGamesTotalPages > 1 && (
                   <div className='mt-2'>
@@ -1117,19 +1097,23 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
               </MyBox>
             )
           })()}
+          </div>
 
+          {/* Master (Our DB): from this project's own synced master games. */}
           {currentNode && (
-            <div className='pt-2 border-t border-gray-200 space-y-4'>
+            <div className='rounded-lg bg-purple-50 p-2 space-y-4'>
               <p className='text-xxs font-semibold text-gray-400 uppercase tracking-wide'>From our own synced master games</p>
               <MasterMovesDbPanel fen={currentNode.fen} />
               <MasterGamesDbPanel fen={currentNode.fen} />
             </div>
           )}
 
-          {/* Master Moves — master-level game stats for whatever position is currently on the
-              board, from the Lichess Masters Opening Explorer. Hidden entirely until a
-              position has been clicked on (currentNode set). */}
+          {/* Lichess: Master Moves + Master Games, grouped in one wrapper. Master Moves —
+              master-level game stats for whatever position is currently on the board, from the
+              Lichess Masters Opening Explorer. Hidden entirely until a position has been clicked
+              on (currentNode set). */}
           {currentNode && (
+          <div className='rounded-lg bg-green-50 p-2 space-y-2'>
           <MyBox title='Master Moves (Lichess)' collapsible>
             {!mastersData || mastersData.moves.length === 0 ? (
               <p className='text-xs text-gray-400'>No master games recorded from this position.</p>
@@ -1144,57 +1128,30 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                       {' / '}Draw {total > 0 ? Math.round((mastersData.draws / total) * 100) : 0}%
                       {' / '}Black {total > 0 ? Math.round((mastersData.black / total) * 100) : 0}%
                     </p>
-                    <div className='overflow-x-auto'>
-                      <table className='w-full text-xs'>
-                        <thead>
-                          <tr className='text-left text-gray-500 border-b border-gray-200'>
-                            <th className='py-1 pr-2'>Move</th>
-                            <th className='py-1 pr-2 text-right'>Games</th>
-                            <th className='py-1 pr-2 text-right'>White%</th>
-                            <th className='py-1 pr-2 text-right'>Draw%</th>
-                            <th className='py-1 pr-2 text-right'>Black%</th>
-                            <th className='py-1 text-right'>Avg Rating</th>
-                          </tr>
-                        </thead>
-                        <tbody className='divide-y divide-gray-100'>
-                          {mastersData.moves.map(m => {
-                            const games = m.white + m.draws + m.black
-                            const isSelected = selectedMastersMove === m.uci
-                            return (
-                              <tr
-                                key={m.uci}
-                                className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                                onClick={() => setSelectedMastersMove(isSelected ? null : m.uci)}
-                              >
-                                <td className='py-1 pr-2 font-mono font-medium'>{m.san}</td>
-                                <td className='py-1 pr-2 text-right tabular-nums'>{games.toLocaleString()}</td>
-                                <td className='py-1 pr-2 text-right tabular-nums text-green-700'>
-                                  {games > 0 ? Math.round((m.white / games) * 100) : 0}%
-                                </td>
-                                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>
-                                  {games > 0 ? Math.round((m.draws / games) * 100) : 0}%
-                                </td>
-                                <td className='py-1 pr-2 text-right tabular-nums text-red-600'>
-                                  {games > 0 ? Math.round((m.black / games) * 100) : 0}%
-                                </td>
-                                <td className='py-1 text-right tabular-nums'>{m.averageRating}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <MovesListTable
+                      rows={mastersData.moves.map(m => ({
+                        key:       m.uci,
+                        move:      m.san,
+                        times:     m.white + m.draws + m.black,
+                        white:     m.white,
+                        draws:     m.draws,
+                        black:     m.black,
+                        avgRating: m.averageRating,
+                        eval:      null
+                      }))}
+                      selectedMove={selectedMastersMove}
+                      onSelectMove={setSelectedMastersMove}
+                    />
                   </div>
                 )
               })()
             )}
           </MyBox>
-          )}
 
           {/* Master games — master games list scoped to the current position (and, if a row in
               the Master Moves table above is selected, to that specific move). Hidden entirely
               until a position has been clicked on (currentNode set). */}
-          {currentNode && mastersData && mastersData.topGames.length > 0 && (() => {
+          {mastersData && mastersData.topGames.length > 0 && (() => {
             const filteredTopGames = mastersData.topGames.filter(
               g => !selectedMastersMove || g.uci === selectedMastersMove
             )
@@ -1207,54 +1164,34 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                   {filteredTopGames.length === 0 ? (
                     <p className='text-xs text-gray-400'>No games match the selected move.</p>
                   ) : (
-                    <div className='overflow-x-auto'>
-                      <table className='w-full text-xs'>
-                        <thead>
-                          <tr className='text-left text-gray-500 border-b border-gray-200'>
-                            <th className='py-1 pr-2'>Move</th>
-                            <th className='py-1 pr-2'>White</th>
-                            <th className='py-1 pr-2'>Black</th>
-                            <th className='py-1 pr-2 text-right'>Year</th>
-                            <th className='py-1 pr-2 text-center'>Result</th>
-                            <th className='py-1 text-right'>Game</th>
-                          </tr>
-                        </thead>
-                        <tbody className='divide-y divide-gray-100'>
-                          {filteredTopGames.map((g, i) => {
-                            const moveSan = mastersData.moves.find(m => m.uci === g.uci)?.san ?? g.uci
-                            return (
-                              <tr key={i}>
-                                <td className='py-1 pr-2 font-mono font-medium'>{moveSan}</td>
-                                <td className='py-1 pr-2'>{g.white.name} <span className='text-gray-400'>({g.white.rating})</span></td>
-                                <td className='py-1 pr-2'>{g.black.name} <span className='text-gray-400'>({g.black.rating})</span></td>
-                                <td className='py-1 pr-2 text-right tabular-nums'>{g.year}</td>
-                                <td className='py-1 pr-2 text-center'>
-                                  {g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½'}
-                                </td>
-                                <td className='py-1 text-right'>
-                                  <a
-                                    href={`https://lichess.org/${g.id}`}
-                                    target='_blank'
-                                    rel='noopener noreferrer'
-                                    className='text-blue-600 hover:underline'
-                                  >
-                                    view
-                                  </a>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <GamesListTable
+                      rows={filteredTopGames.map((g, i) => ({
+                        key:            String(i),
+                        move:           mastersData.moves.find(m => m.uci === g.uci)?.san ?? g.uci,
+                        white:          g.white.name,
+                        whiteRating:    g.white.rating,
+                        whiteIsTracked: false,
+                        black:          g.black.name,
+                        blackRating:    g.black.rating,
+                        blackIsTracked: false,
+                        date:           String(g.year),
+                        result:         g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½',
+                        termination:    null,
+                        finalEval:      null,
+                        externalHref:   `https://lichess.org/${g.id}`
+                      }))}
+                    />
                   )}
                 </div>
               </MyBox>
             )
           })()}
+          </div>
+          )}
 
           {/* Chess.com Games — chess.com's own games database, searched live for the exact
               current position (fen) plus the filters below. */}
+          <div className='rounded-lg bg-orange-50 p-2'>
           {(() => {
             const fen = getCurrentPositionFen()
             return (
@@ -1376,6 +1313,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
               </MyBox>
             )
           })()}
+          </div>
         </div>
       </div>
     </div>

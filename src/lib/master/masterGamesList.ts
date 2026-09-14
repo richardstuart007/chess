@@ -13,6 +13,7 @@ import { getMasterHandleNameMap, getMasterPlayers } from '../actions/masterPlaye
 import { truncateFen } from '../fen'
 import { classifyMove } from '../stockfish'
 import { getPositionEvaluationsBulk_shared, upgradePositionEvaluation_shared } from '../analysis/chessdb_shared'
+import { objectiveGameResult } from '../objectiveGameResult'
 import type { GameEvalRow } from '../actions/games'
 
 const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
@@ -180,12 +181,12 @@ export async function getMasterGamesPageCount(
 }
 
 export type MasterFenMoveBreakdown = {
-  move_played: string
-  move_uci:    string | null
-  times:       number
-  wins:        number
-  losses:      number
-  draws:       number
+  move_played:       string
+  move_uci:          string | null
+  times:             number
+  white:             number
+  draws:             number
+  black:             number
   avgOpponentRating: number
 }
 
@@ -194,21 +195,130 @@ export type MasterFenGameHit = {
   move_played:    string
   white_username: string
   black_username: string
-  year:           number
+  white_rating:   number
+  black_rating:   number
+  date:           string   // ISO YYYY-MM-DD, matching chessdb_player.ts's PositionGameHit.date
   player:         string   // the tracked master's chess.com handle (matches white_username or black_username)
   result:         string   // objective chess result: '1-0' | '0-1' | '½-½' — never player-perspective
+  termination:    string | null
 }
 
 //----------------------------------------------------------------------------------
-//  objectiveResult — derives '1-0'/'0-1'/'½-½' from the tracked master's own color +
-//  result, since mgd_player_result is stored relative to whichever side mgd_player
-//  played, which callers can't otherwise tell apart from White/Black in the UI.
+//  getMasterPositionByFen — looks up tmpos_positions' mpos_id/mpos_reached for an exact FEN.
+//  Shared by getMasterGamesForFen, fetchMasterGamesForFenPage, and getMasterGamesForFenCount so
+//  this lookup isn't duplicated three times.
 //----------------------------------------------------------------------------------
-function objectiveResult(playerColor: string, playerResult: string): string {
-  if (playerResult === 'draw') return '½-½'
-  const playerWon = playerResult === 'win'
-  const whiteWon = (playerColor === 'white' && playerWon) || (playerColor === 'black' && !playerWon)
-  return whiteWon ? '1-0' : '0-1'
+async function getMasterPositionByFen(fen: string): Promise<{ posId: number; reached: number } | null> {
+  const posResult = await table_query({
+    caller: 'getMasterPositionByFen',
+    table: 'tmpos_positions',
+    query: `SELECT mpos_id, mpos_reached FROM tmpos_positions WHERE mpos_fen = $1`,
+    params: [truncateFen(fen)],
+    skipCache: true
+  })
+  if (!posResult.ok || posResult.data.length === 0) {
+    if (!posResult.ok) {
+      write_logging({
+        lg_functionname: 'getMasterPositionByFen',
+        lg_caller: 'getMasterPositionByFen',
+        lg_msg: 'Failed to fetch master position: ' + posResult.error,
+        lg_severity: 'E'
+      })
+    }
+    return null
+  }
+  return {
+    posId:   posResult.data[0].mpos_id,
+    reached: parseInt(posResult.data[0].mpos_reached ?? '0')
+  }
+}
+
+//----------------------------------------------------------------------------------
+//  fetchMasterGamesForFenPage — one page of games from synced master players reaching this exact
+//  FEN, real server-side pagination (mirrors fetchGamesForPosition_player). Used by
+//  MasterGamesDbPanel's pagination footer — independent of getMasterGamesForFen's capped
+//  moves-breakdown fetch below, which stays unpaginated (paging a per-move aggregate makes no
+//  sense).
+//----------------------------------------------------------------------------------
+export async function fetchMasterGamesForFenPage(fen: string, page: number, itemsPerPage: number, move?: string): Promise<MasterFenGameHit[]> {
+  const position = await getMasterPositionByFen(fen)
+  if (!position) return []
+
+  const offset = (page - 1) * itemsPerPage
+  const params: (number | string)[] = [position.posId]
+  const moveFilter = move ? `AND g.mgam_move_played = $${params.push(move)}` : ''
+  params.push(itemsPerPage, offset)
+  const gamesResult = await table_query({
+    caller: 'fetchMasterGamesForFenPage',
+    table: 'tmgam_game_positions',
+    query: `
+      SELECT g.mgam_move_played, g.mgam_move_uci,
+             d.mgd_mgdid, d.mgd_white_username, d.mgd_black_username,
+             d.mgd_white_rating, d.mgd_black_rating,
+             d.mgd_player, d.mgd_player_color, d.mgd_player_result,
+             d.mgd_opponent_rating, d.mgd_termination, d.mgd_end_time
+      FROM tmgam_game_positions g
+      JOIN tmgd_gamesdecon d ON d.mgd_mgdid = g.mgam_mgdid
+      WHERE g.mgam_pos_id = $1
+        ${moveFilter}
+      ORDER BY d.mgd_end_time DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `,
+    params,
+    skipCache: true
+  })
+  if (!gamesResult.ok) {
+    write_logging({
+      lg_functionname: 'fetchMasterGamesForFenPage',
+      lg_caller: 'fetchMasterGamesForFenPage',
+      lg_msg: 'Failed to fetch master games page for position: ' + gamesResult.error,
+      lg_severity: 'E'
+    })
+    return []
+  }
+
+  return gamesResult.data.map((r: any) => ({
+    mgd_mgdid:      r.mgd_mgdid,
+    move_played:    r.mgam_move_played,
+    white_username: r.mgd_white_username,
+    black_username: r.mgd_black_username,
+    white_rating:   r.mgd_white_rating,
+    black_rating:   r.mgd_black_rating,
+    date:           new Date(r.mgd_end_time * 1000).toISOString().slice(0, 10),
+    player:         r.mgd_player,
+    result:         objectiveGameResult(r.mgd_player_color, r.mgd_player_result),
+    termination:    r.mgd_termination ?? null
+  }))
+}
+
+//----------------------------------------------------------------------------------
+//  getMasterGamesForFenCount — total row count for fetchMasterGamesForFenPage's same position and
+//  move filter. With no move filter, mpos_reached is already the exact count reaching this
+//  position (see getMasterPositionByFen), so no query is needed; a move filter needs its own
+//  COUNT(*) since mpos_reached covers every move, not just the filtered one.
+//----------------------------------------------------------------------------------
+export async function getMasterGamesForFenCount(fen: string, move?: string): Promise<number> {
+  const position = await getMasterPositionByFen(fen)
+  if (!position) return 0
+  if (!move) return position.reached
+
+  const countResult = await table_query({
+    caller: 'getMasterGamesForFenCount',
+    table: 'tmgam_game_positions',
+    query: `SELECT COUNT(*)::int AS total FROM tmgam_game_positions WHERE mgam_pos_id = $1 AND mgam_move_played = $2`,
+    params: [position.posId, move],
+    skipCache: true
+  })
+  if (!countResult.ok) {
+    write_logging({
+      lg_functionname: 'getMasterGamesForFenCount',
+      lg_caller: 'getMasterGamesForFenCount',
+      lg_msg: 'Failed to fetch master games count for position: ' + countResult.error,
+      lg_severity: 'E'
+    })
+    return 0
+  }
+  return countResult.data.length > 0 ? Number(countResult.data[0].total) : 0
 }
 
 //----------------------------------------------------------------------------------
@@ -223,26 +333,9 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
   moves:   MasterFenMoveBreakdown[]
   games:   MasterFenGameHit[]
 }> {
-  const posResult = await table_query({
-    caller: 'getMasterGamesForFen_position',
-    table: 'tmpos_positions',
-    query: `SELECT mpos_id, mpos_reached FROM tmpos_positions WHERE mpos_fen = $1`,
-    params: [truncateFen(fen)],
-    skipCache: true
-  })
-  if (!posResult.ok || posResult.data.length === 0) {
-    if (!posResult.ok) {
-      write_logging({
-        lg_functionname: 'getMasterGamesForFen',
-        lg_caller: 'getMasterGamesForFen_position',
-        lg_msg: 'Failed to fetch master position: ' + posResult.error,
-        lg_severity: 'E'
-      })
-    }
-    return { reached: 0, moves: [], games: [] }
-  }
-  const posId   = posResult.data[0].mpos_id
-  const reached = parseInt(posResult.data[0].mpos_reached ?? '0')
+  const position = await getMasterPositionByFen(fen)
+  if (!position) return { reached: 0, moves: [], games: [] }
+  const { posId, reached } = position
 
   const gamesResult = await table_query({
     caller: 'getMasterGamesForFen_games',
@@ -250,8 +343,9 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     query: `
       SELECT g.mgam_move_played, g.mgam_move_uci,
              d.mgd_mgdid, d.mgd_white_username, d.mgd_black_username,
+             d.mgd_white_rating, d.mgd_black_rating,
              d.mgd_player, d.mgd_player_color, d.mgd_player_result,
-             d.mgd_opponent_rating, d.mgd_end_time
+             d.mgd_opponent_rating, d.mgd_termination, d.mgd_end_time
       FROM tmgam_game_positions g
       JOIN tmgd_gamesdecon d ON d.mgd_mgdid = g.mgam_mgdid
       WHERE g.mgam_pos_id = $1
@@ -276,31 +370,41 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     move_played:    r.mgam_move_played,
     white_username: r.mgd_white_username,
     black_username: r.mgd_black_username,
-    year:           new Date(r.mgd_end_time * 1000).getUTCFullYear(),
+    white_rating:   r.mgd_white_rating,
+    black_rating:   r.mgd_black_rating,
+    date:           new Date(r.mgd_end_time * 1000).toISOString().slice(0, 10),
     player:         r.mgd_player,
-    result:         objectiveResult(r.mgd_player_color, r.mgd_player_result)
+    result:         objectiveGameResult(r.mgd_player_color, r.mgd_player_result),
+    termination:    r.mgd_termination ?? null
   }))
 
-  const byMove = new Map<string, { move_uci: string | null; times: number; wins: number; losses: number; draws: number; ratingSum: number }>()
+  // Dedup by mgdid per move (a transposition can revisit the same position+move within
+  // one game) and tally the OBJECTIVE white/draw/black outcome — never the tracked
+  // master's own personal win/loss, which would mix perspectives across games where
+  // different masters (or the same master as different colors) reached this move.
+  const byMove = new Map<string, { move_uci: string | null; gdids: Set<number>; white: number; draws: number; black: number; ratingSum: number }>()
   for (const r of gamesResult.data) {
     const key = r.mgam_move_played as string
-    const entry = byMove.get(key) ?? { move_uci: r.mgam_move_uci, times: 0, wins: 0, losses: 0, draws: 0, ratingSum: 0 }
-    entry.times++
-    entry.ratingSum += r.mgd_opponent_rating ?? 0
-    if (r.mgd_player_result === 'win') entry.wins++
-    else if (r.mgd_player_result === 'loss') entry.losses++
-    else if (r.mgd_player_result === 'draw') entry.draws++
+    const entry = byMove.get(key) ?? { move_uci: r.mgam_move_uci, gdids: new Set<number>(), white: 0, draws: 0, black: 0, ratingSum: 0 }
+    if (!entry.gdids.has(r.mgd_mgdid)) {
+      entry.gdids.add(r.mgd_mgdid)
+      entry.ratingSum += r.mgd_opponent_rating ?? 0
+      const objResult = objectiveGameResult(r.mgd_player_color, r.mgd_player_result)
+      if (objResult === '1-0') entry.white++
+      else if (objResult === '0-1') entry.black++
+      else entry.draws++
+    }
     byMove.set(key, entry)
   }
   const moves: MasterFenMoveBreakdown[] = [...byMove.entries()]
     .map(([move_played, e]) => ({
       move_played,
       move_uci: e.move_uci,
-      times: e.times,
-      wins: e.wins,
-      losses: e.losses,
+      times: e.gdids.size,
+      white: e.white,
       draws: e.draws,
-      avgOpponentRating: e.times > 0 ? Math.round(e.ratingSum / e.times) : 0
+      black: e.black,
+      avgOpponentRating: e.gdids.size > 0 ? Math.round(e.ratingSum / e.gdids.size) : 0
     }))
     .sort((a, b) => b.times - a.times)
 

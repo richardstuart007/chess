@@ -21,15 +21,18 @@ import { write_logging } from 'nextjs-shared/write_logging'
 import { truncateFen }  from '../fen'
 import { RESULT_MISMATCH_CP_THRESHOLD_Player } from '../constants'
 import type { PositionRow, EvaluationRow } from './chessdb_shared'
+import { objectiveGameResult } from '../objectiveGameResult'
 
 export interface MoveRow {
-  move_played: string
-  move_uci:    string | null
-  mov_times:   number
-  mov_wins:    number
-  mov_losses:  number
-  pose_cp:      number | null
-  pose_depth:   number | null
+  move_played:        string
+  move_uci:           string | null
+  mov_times:          number
+  white:              number
+  draws:              number
+  black:              number
+  avg_opponent_rating: number | null
+  pose_cp:            number | null
+  pose_depth:         number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +45,12 @@ export interface MoveRow {
 //  the position resulting from each move (deterministic per position+move — every
 //  game sharing a move from this position reaches the identical resulting position),
 //  not an average — looked up once via the subquery's resulting_pos_id, not aggregated.
+//  mov_times is a distinct-game count (COUNT(DISTINCT gam_gdid)) so a transposition
+//  revisiting the same position+move within one game isn't counted twice. white/draws/
+//  black are the OBJECTIVE outcome for these games (from gd_player_color +
+//  gd_player_result, inverted when the tracked player was Black) — never the tracked
+//  player's own personal win/loss, since that would mix two different perspectives
+//  depending on which color they happened to play in each game.
 //----------------------------------------------------------------------------------
 export async function getMovesForPosition_player(posId: number, player?: string): Promise<MoveRow[]> {
   const params: (number | string)[] = [posId]
@@ -52,14 +61,23 @@ export async function getMovesForPosition_player(posId: number, player?: string)
     caller: 'getMovesForPosition_player',
     table: 'tgam_game_positions',
     query: `
-      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp, e.pose_depth
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.white, sub.draws, sub.black,
+             sub.avg_opponent_rating, e.pose_cp, e.pose_depth
       FROM (
         SELECT
           gp.gam_move_played                                   AS move_played,
           gp.gam_move_uci                                      AS move_uci,
-          COUNT(*)::int                                        AS mov_times,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+          COUNT(DISTINCT gp.gam_gdid)::int                     AS mov_times,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (
+            WHERE (d.gd_player_color = 'white' AND d.gd_player_result = 'win')
+               OR (d.gd_player_color = 'black' AND d.gd_player_result = 'loss')
+          )::int                                                AS white,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (WHERE d.gd_player_result = 'draw')::int AS draws,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (
+            WHERE (d.gd_player_color = 'black' AND d.gd_player_result = 'win')
+               OR (d.gd_player_color = 'white' AND d.gd_player_result = 'loss')
+          )::int                                                AS black,
+          ROUND(AVG(d.gd_opponent_rating))::int                 AS avg_opponent_rating,
           MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
         FROM tgam_game_positions gp
         JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
@@ -143,21 +161,31 @@ export async function getMovePlayCounts_player(fens: string[], player: string): 
 //  fetchGamesForPosition_player), used by the Analyze page's "Moves From This
 //  Position" panel for any position on the board. pose_cp is the resulting
 //  position's Stockfish eval (deterministic per position+move), not an average —
-//  see getMovesForPosition_player's comment.
+//  see getMovesForPosition_player's comment, including its note on mov_times/
+//  white/draws/black semantics (distinct-game dedup, objective color outcome).
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition_player(fen: string, player: string): Promise<MoveRow[]> {
   const result = await table_query({
     caller: 'getMoveSummaryForPosition_player',
     table: 'tpos_positions',
     query: `
-      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp, e.pose_depth
+      SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.white, sub.draws, sub.black,
+             sub.avg_opponent_rating, e.pose_cp, e.pose_depth
       FROM (
         SELECT
           gp.gam_move_played                                   AS move_played,
           gp.gam_move_uci                                      AS move_uci,
-          COUNT(*)::int                                        AS mov_times,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+          COUNT(DISTINCT gp.gam_gdid)::int                     AS mov_times,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (
+            WHERE (d.gd_player_color = 'white' AND d.gd_player_result = 'win')
+               OR (d.gd_player_color = 'black' AND d.gd_player_result = 'loss')
+          )::int                                                AS white,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (WHERE d.gd_player_result = 'draw')::int AS draws,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (
+            WHERE (d.gd_player_color = 'black' AND d.gd_player_result = 'win')
+               OR (d.gd_player_color = 'white' AND d.gd_player_result = 'loss')
+          )::int                                                AS black,
+          ROUND(AVG(d.gd_opponent_rating))::int                 AS avg_opponent_rating,
           MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
         FROM tpos_positions p
         JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
@@ -195,6 +223,11 @@ export interface PositionGameHit {
   termination:    string | null
   finalEval:      number | null
   resultMismatch: 'lostWinning' | 'wonLosing' | null
+  white_username: string
+  black_username: string
+  white_rating:   number
+  black_rating:   number
+  result:         string   // objective chess result: '1-0' | '0-1' | '½-½' — never player-perspective
 }
 
 //
@@ -238,7 +271,12 @@ function mapPositionGameRow(r: any): PositionGameHit {
     opponentRating: r.gd_opponent_rating != null ? Number(r.gd_opponent_rating) : null,
     termination:    r.gd_termination ?? null,
     finalEval,
-    resultMismatch
+    resultMismatch,
+    white_username: r.gd_white_username,
+    black_username: r.gd_black_username,
+    white_rating:   r.gd_white_rating,
+    black_rating:   r.gd_black_rating,
+    result:         objectiveGameResult(r.gd_player_color, r.gd_player_result)
   }
 }
 
@@ -635,14 +673,23 @@ export async function getPositionDetail_player(posId: number, player?: string): 
       caller: 'getPositionDetail_player',
       table: 'tgam_game_positions',
       query: `
-        SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.mov_wins, sub.mov_losses, e.pose_cp
+        SELECT sub.move_played, sub.move_uci, sub.mov_times, sub.white, sub.draws, sub.black,
+               sub.avg_opponent_rating, e.pose_cp
         FROM (
           SELECT
             gp.gam_move_played                                   AS move_played,
             gp.gam_move_uci                                      AS move_uci,
-            COUNT(*)::int                                        AS mov_times,
-            COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int  AS mov_wins,
-            COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int AS mov_losses,
+            COUNT(DISTINCT gp.gam_gdid)::int                     AS mov_times,
+            COUNT(DISTINCT gp.gam_gdid) FILTER (
+              WHERE (d.gd_player_color = 'white' AND d.gd_player_result = 'win')
+                 OR (d.gd_player_color = 'black' AND d.gd_player_result = 'loss')
+            )::int                                                AS white,
+            COUNT(DISTINCT gp.gam_gdid) FILTER (WHERE d.gd_player_result = 'draw')::int AS draws,
+            COUNT(DISTINCT gp.gam_gdid) FILTER (
+              WHERE (d.gd_player_color = 'black' AND d.gd_player_result = 'win')
+                 OR (d.gd_player_color = 'white' AND d.gd_player_result = 'loss')
+            )::int                                                AS black,
+            ROUND(AVG(d.gd_opponent_rating))::int                 AS avg_opponent_rating,
             MAX(gp.gam_resulting_pos_id)                          AS resulting_pos_id
           FROM tgam_game_positions gp
           JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid

@@ -4,9 +4,9 @@
 //  1) DESCRIPTION
 //    MasterMovesDbPanel — move-breakdown table for an exact FEN, sourced from this project's own
 //    synced master-games database (tmpos_positions/tmgam_game_positions/tmgd_gamesdecon), not an
-//    external API. Mirrors "Master Moves (Lichess)"'s shape (Move/Games/Score%/Avg Rating).
-//    Fully self-contained — fetches its own data from just the fen prop, so it can be dropped
-//    onto any page without shared parent state.
+//    external API. Renders via the shared MovesListTable (same shape as Moves Played and Master
+//    Moves (Lichess)). Fully self-contained — fetches its own data from just the fen prop, so it
+//    can be dropped onto any page without shared parent state.
 //
 //    Parameters:
 //      fen         — exact FEN to look up
@@ -14,14 +14,21 @@
 //                    "Fetch" button instead
 //      defaultOpen — MyBox's initial collapsed state (default true)
 //      limit       — max games to fetch (default MASTER_GAMES_FOR_FEN_LIMIT)
+//
+//  3) CHANGE HISTORY
+//    2026-09-13 — switched to the shared MovesListTable (Move/Times/White%/Draw%/Black%/Avg
+//                 Rating/Eval) instead of its own Move/Games/Score%/Avg Rating table; Score%
+//                 (personal, mgd_player_result-based) replaced by objective White%/Draw%/Black%
+//                 (see masterGamesList.ts's getMasterGamesForFen for why); Eval is always blank
+//                 here — not worth a cross-database join for this panel
 //==================================================================================================
 
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import { getMasterGamesForFen } from '@/src/lib/master/masterGamesList'
-import { winPct } from '@/src/lib/winPct'
 import { MASTER_GAMES_FOR_FEN_LIMIT } from '@/src/lib/constants'
 import { useLazyFetch } from 'nextjs-shared/useLazyFetch'
+import MovesListTable from './MovesListTable'
 
 interface MasterMovesDbPanelProps {
   fen: string
@@ -50,28 +57,18 @@ export default function MasterMovesDbPanel({ fen, autoFetch = true, defaultOpen 
       ) : (
         <div className='space-y-2'>
           <p className='text-xxs text-gray-500'>{reached.toLocaleString()} times reached</p>
-          <div className='overflow-x-auto'>
-            <table className='w-full text-xs'>
-              <thead>
-                <tr className='text-left text-gray-500 border-b border-gray-200'>
-                  <th className='py-1 pr-2'>Move</th>
-                  <th className='py-1 pr-2 text-right'>Games</th>
-                  <th className='py-1 pr-2 text-right'>Score%</th>
-                  <th className='py-1 text-right'>Avg Opp Rating</th>
-                </tr>
-              </thead>
-              <tbody className='divide-y divide-gray-100'>
-                {moves.map(m => (
-                  <tr key={m.move_played}>
-                    <td className='py-1 pr-2 font-mono font-medium'>{m.move_played}</td>
-                    <td className='py-1 pr-2 text-right tabular-nums'>{m.times.toLocaleString()}</td>
-                    <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{winPct(m.wins, m.losses, m.times)}%</td>
-                    <td className='py-1 text-right tabular-nums'>{m.avgOpponentRating}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <MovesListTable
+            rows={moves.map(m => ({
+              key:       m.move_played,
+              move:      m.move_played,
+              times:     m.times,
+              white:     m.white,
+              draws:     m.draws,
+              black:     m.black,
+              avgRating: m.avgOpponentRating,
+              eval:      null
+            }))}
+          />
         </div>
       )}
     </MyBox>

@@ -22,7 +22,6 @@ import AppTab from '@/src/ui/AppTab'
 import { Chessboard } from 'react-chessboard'
 import type { PositionRow, EvaluationRow } from '@/src/lib/analysis/chessdb_shared'
 import type { MoveRow } from '@/src/lib/analysis/chessdb_player'
-import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
 import { pushBackTarget } from '@/src/lib/backNav'
 import { POSITION_BOARD_SIZE_PX } from '@/src/lib/constants'
@@ -181,13 +180,15 @@ export default function PositionDetail({
                   <tr className="text-xs text-gray-500 uppercase text-left border-b">
                     <th className="py-1.5 pr-3">Move</th>
                     <th className="py-1.5 pr-3 text-right">Times</th>
-                    <th className="py-1.5 pr-3 text-right">Win%</th>
+                    <th className="py-1.5 pr-3 text-right">White%</th>
+                    <th className="py-1.5 pr-3 text-right">Draw%</th>
+                    <th className="py-1.5 pr-3 text-right">Black%</th>
                     <th className="py-1.5 text-right">Eval</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {moves.map(m => {
-                    const wp      = winPct(m.mov_wins, m.mov_losses, m.mov_times)
+                    const pct = (count: number) => m.mov_times > 0 ? Math.round((count / m.mov_times) * 100) : 0
                     const isSelected = selectedMove === m.move_played
                     return (
                       <tr
@@ -205,7 +206,9 @@ export default function PositionDetail({
                             ({totalTimes > 0 ? Math.round((m.mov_times / totalTimes) * 100) : 0}%)
                           </span>
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{wp}%</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums text-green-700">{pct(m.white)}%</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums text-gray-500">{pct(m.draws)}%</td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums text-red-600">{pct(m.black)}%</td>
                         <td className={`py-1.5 text-right tabular-nums font-mono ${m.pose_cp != null && m.pose_cp < 0 ? 'text-red-600' : 'text-green-700'}`}>
                           {m.pose_cp != null ? formatCp(m.pose_cp) : '—'}
                         </td>

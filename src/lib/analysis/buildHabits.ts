@@ -87,7 +87,12 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
 //  fetchHabitAggregates — the aggregate query behind buildHabits' full rebuild. Habits
 //  are deliberately never refreshed live from an interactive analysis click — only this
 //  nightly unscoped rebuild updates thab_habits, per user decision — so this has no
-//  position-scoped variant to keep in sync with.
+//  position-scoped variant to keep in sync with. move_times/move_wins/move_losses are
+//  distinct-game counts (COUNT(DISTINCT gam_gdid)) so a transposition revisiting the same
+//  position+move within one game isn't counted twice — the existing p.pos_color check
+//  above already guarantees every counted row really is the player's own move (unlike
+//  chessdb_player.ts's equivalent, which lacked that check), so move_wins/move_losses stay
+//  a personal, meaningful win/loss here and are NOT converted to White/Draw/Black.
 //----------------------------------------------------------------------------------
 async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
   const params: number[] = [MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player]
@@ -102,9 +107,9 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
           gp.gam_move_played                                        AS move_san,
           MIN(gp.gam_move_uci)                                      AS move_uci,
           MIN(gp.gam_move_num)::int                                 AS move_num,
-          COUNT(*)::int                                             AS move_times,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'win')::int   AS move_wins,
-          COUNT(*) FILTER (WHERE d.gd_player_result = 'loss')::int  AS move_losses,
+          COUNT(DISTINCT gp.gam_gdid)::int                          AS move_times,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (WHERE d.gd_player_result = 'win')::int   AS move_wins,
+          COUNT(DISTINCT gp.gam_gdid) FILTER (WHERE d.gd_player_result = 'loss')::int  AS move_losses,
           (ARRAY_AGG(gp.gam_cp_change ORDER BY ABS(gp.gam_cp_change) DESC))[1] AS move_cp,
           (ARRAY_AGG(gp.gam_resulting_pos_id))[1]                   AS resulting_pos_id,
           MAX(d.gd_end_time)::int                                   AS last_occurred
@@ -114,7 +119,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
         WHERE gp.gam_move_num >= $1
           AND p.pos_color = CASE WHEN d.gd_player_color = 'white' THEN 'w' ELSE 'b' END
         GROUP BY d.gd_player, gp.gam_pos_id, gp.gam_move_played
-        HAVING COUNT(*) >= $2
+        HAVING COUNT(DISTINCT gp.gam_gdid) >= $2
       )
       SELECT
         agg.*,
