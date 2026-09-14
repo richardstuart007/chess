@@ -20,7 +20,8 @@ const TOOLS_PLAYERS = [
 ]
 
 const TOOLS_MASTERS = [
-  { href: '/owner/pipelinemastergames', label: 'Pipeline (Master Games)', description: 'Step-by-step control panel for the master-games position database pipeline (sync, deconstruct, build tree), for one or more selected master players and a chosen year.', step: '🧪' }
+  { href: '/owner/pipelinemastergames', label: 'Pipeline (Master Games)', description: 'Step-by-step control panel for the master-games position database pipeline (sync, deconstruct, build tree), for one or more selected master players and a chosen year.', step: '🧪' },
+  { href: '/owner/pipelinehistoricalgames', label: 'Pipeline (Historical Games)', description: 'Bulk PGN-file import pipeline for a historical games collection (e.g. World Chess Championship, Morphy games) — upload, deconstruct, then reuses the Master Games pipeline\'s own Build/Sync Position Tree steps.', step: '👑' }
 ]
 
 const TOOLS_FIDE = [

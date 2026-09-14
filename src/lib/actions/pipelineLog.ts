@@ -2,9 +2,9 @@
 
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
-import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS, PIPELINE_TYPE_MASTERGAMES } from '@/src/lib/constants'
+import { PIPELINE_TYPE_GAMES, PIPELINE_TYPE_MASTERS, PIPELINE_TYPE_MASTERGAMES, PIPELINE_TYPE_HISTORICALGAMES } from '@/src/lib/constants'
 
-type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | typeof PIPELINE_TYPE_MASTERGAMES
+type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | typeof PIPELINE_TYPE_MASTERGAMES | typeof PIPELINE_TYPE_HISTORICALGAMES
 
 //----------------------------------------------------------------------------------
 //  logPipelineStep — single INSERT once a step (or one table-write within a

@@ -144,6 +144,7 @@ export const GAME_ENDINGS_CONCURRENCY_Player = 4
 export const PIPELINE_TYPE_GAMES = 'games'
 export const PIPELINE_TYPE_MASTERS = 'masters'
 export const PIPELINE_TYPE_MASTERGAMES = 'mastergames'
+export const PIPELINE_TYPE_HISTORICALGAMES = 'historicalgames'
 export const PIPELINE_CRON_SCHEDULE_Player: Record<number, string> = {
   1: '3:00am',  // Game Sync
   2: '3:20am',  // Build Game Positions
@@ -201,6 +202,11 @@ export const GAME_LIST_ROWS_DEFAULT_Master = 20
 export const GAME_LIST_ROWS_OPTIONS_Master = [10, 15, 20, 50] as const
 export const GAMES_SYNC_YEARS_Master = [2026, 2025, 2024, 2023, 2022, 2021, 2020] as const
 export const MASTER_GAMES_FOR_FEN_LIMIT = 50
+
+//----------------------------------------------------------------------------------
+//  Historical Games Import (bulk PGN collections — e.g. World Chess Championship, Morphy)
+//----------------------------------------------------------------------------------
+export const HISTORICAL_TIME_CLASS = 'classical'
 
 //----------------------------------------------------------------------------------
 //  UI Display

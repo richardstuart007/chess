@@ -43,6 +43,7 @@ import {
   PIPELINE_TYPE_GAMES,
   PIPELINE_TYPE_MASTERS,
   PIPELINE_TYPE_MASTERGAMES,
+  PIPELINE_TYPE_HISTORICALGAMES,
   TIME_CLASSES_Player,
   STOCKFISH_DEPTH,
   STOCKFISH_REANALYZE_DEFAULT_DEPTH,
@@ -105,6 +106,7 @@ import {
   POSITION_TREE_LIMIT_Player,
   POSITION_TREE_LIMIT_Master,
   MASTER_GAMES_FOR_FEN_LIMIT,
+  HISTORICAL_TIME_CLASS,
 } from '@/src/lib/constants'
 
 //----------------------------------------------------------------------------------
@@ -198,7 +200,8 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'PIPELINE_CRON_SCHEDULE_Player', value: PIPELINE_CRON_SCHEDULE_Player, description: "Human-readable display time for each pipeline step's scheduled cron run, keyed by step number — must be kept in sync by hand with vercel.json's actual cron expressions, which are static JSON and can't import this constant.", consumers: ['owner/pipelinegames/page.tsx: PipelinePage'] },
       { name: 'PIPELINE_TYPE_GAMES', value: PIPELINE_TYPE_GAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the game-sync/analysis pipeline (steps 1-9) — keeps its run-id allocation and Run selector scoped separately from the masters pipeline.', consumers: ['sync.ts: runGameSync', 'buildPositionTree_Player.ts: buildPositionTree_Player, syncTposFromTgam_Player', 'purgePositions.ts: purgeStaleReachOnePositions', 'buildHabits.ts: buildHabits', 'enrichPositionsStockfish.ts: bulkUpdateCpLoss, enrichPositionsStockfish, deepenPopularPositions, evaluateGameEndings', 'owner/pipelinegames/page.tsx: PipelinePage'] },
       { name: 'PIPELINE_TYPE_MASTERS', value: PIPELINE_TYPE_MASTERS, description: 'tpip_pipelinelog.pip_pipeline_type value for the FIDE master-players pipeline (own steps 1-5) — keeps its run-id allocation and Run selector scoped separately from the games and master-games pipelines.', consumers: ['fideStaging.ts: downloadFideZip, unzipFideZip, parseFideXml', 'fidePipeline.ts: populateFideTopPlayers, refreshFideRatings', 'owner/pipelinemasters/page.tsx: PipelineMastersPage'] },
-      { name: 'PIPELINE_TYPE_MASTERGAMES', value: PIPELINE_TYPE_MASTERGAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the master-games position database pipeline (own steps 1-3) — keeps its run-id allocation and Run selector scoped separately from the games and FIDE masters pipelines.', consumers: ['masterSync.ts: syncMasterGames', 'buildPositionTree_Master.ts: buildPositionTree_Master, syncTposFromTgam_Master', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] }
+      { name: 'PIPELINE_TYPE_MASTERGAMES', value: PIPELINE_TYPE_MASTERGAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the master-games position database pipeline (own steps 1-3) — keeps its run-id allocation and Run selector scoped separately from the games and FIDE masters pipelines.', consumers: ['masterSync.ts: syncMasterGames', 'buildPositionTree_Master.ts: buildPositionTree_Master, syncTposFromTgam_Master', 'owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
+      { name: 'PIPELINE_TYPE_HISTORICALGAMES', value: PIPELINE_TYPE_HISTORICALGAMES, description: 'tpip_pipelinelog.pip_pipeline_type value for the bulk historical-PGN-collection import pipeline (own steps 1-2, then reuses the master-games pipeline\'s own steps 3-4) — keeps its run-id allocation and Run selector scoped separately from every other pipeline.', consumers: ['importHistoricalGames.ts: uploadHistoricalPgn, deconstructHistoricalGames', 'owner/pipelinehistoricalgames/page.tsx: PipelineHistoricalGamesPage'] }
     ]
   },
   {
@@ -270,6 +273,12 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
       { name: 'GAME_LIST_ROWS_OPTIONS_Master', value: GAME_LIST_ROWS_OPTIONS_Master, description: 'Rows-per-page dropdown options for the Masters Games list — own constant, never reuses GAME_LIST_ROWS_OPTIONS_Player.', consumers: ['MasterGameList.tsx: MasterGameList'] },
       { name: 'GAMES_SYNC_YEARS_Master', value: GAMES_SYNC_YEARS_Master, description: 'Year dropdown options for the master-games sync pipeline (most recent first).', consumers: ['owner/pipelinemastergames/page.tsx: PipelineMasterGamesPage'] },
       { name: 'MASTER_GAMES_FOR_FEN_LIMIT', value: MASTER_GAMES_FOR_FEN_LIMIT, description: 'Default cap on games fetched by getMasterGamesForFen for one exact FEN — keeps the Master Moves/Games (Our DB) panels fast even on very popular positions.', consumers: ['masterGamesList.ts: getMasterGamesForFen', 'MasterMovesDbPanel.tsx: MasterMovesDbPanel', 'MasterGamesDbPanel.tsx: MasterGamesDbPanel'] }
+    ]
+  },
+  {
+    heading: 'Historical Games Import (bulk PGN collections)',
+    entries: [
+      { name: 'HISTORICAL_TIME_CLASS', value: HISTORICAL_TIME_CLASS, description: 'mgd_time_class value written for every game imported from a bulk historical PGN collection (e.g. World Chess Championship, Morphy games) — these predate chess.com\'s blitz/rapid/bullet time-class concept entirely.', consumers: ['importHistoricalGames.ts: deconstructHistoricalGames'] }
     ]
   }
 ]

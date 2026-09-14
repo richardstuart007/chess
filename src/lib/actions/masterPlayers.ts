@@ -6,6 +6,7 @@ import { ColumnValuePair } from 'nextjs-shared/structures'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
+import { historicalPlayerSlug } from '../historicalPlayerSlug'
 
 const MASTER_PLAYERS_TABLE = 'tmst_master_players'
 const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
@@ -55,18 +56,19 @@ export async function getMasterPlayerNames(): Promise<string[]> {
 }
 
 //----------------------------------------------------------------------------------
-//  getMasterHandleNameMap — chess.com handle (lowercased) → display name, for every
-//  master player that has a handle. Used to attach a real name onto master-games rows
-//  (tmgd_gamesdecon, secondary database) in app code, since that table only
-//  stores the handle and the two tables can never be SQL-joined across databases.
+//  getMasterHandleNameMap — mgd_player-style identifier (lowercased) → display name, for every
+//  master player. Used to attach a real name onto master-games rows (tmgd_gamesdecon, secondary
+//  database) in app code, since that table only stores the identifier and the two tables can
+//  never be SQL-joined across databases. Keyed on the real chess.com handle when a player has
+//  one; falls back to historicalPlayerSlug (importHistoricalGames.ts) for a player with no
+//  handle, matching the identifier a historical-collection import wrote as mgd_player.
 //----------------------------------------------------------------------------------
 export async function getMasterHandleNameMap(): Promise<Record<string, string>> {
   const players = await getMasterPlayers('')
   const map: Record<string, string> = {}
   for (const p of players) {
-    if (p.chesscomHandle) {
-      map[p.chesscomHandle.toLowerCase()] = combineName(p.firstName, p.lastName)
-    }
+    const identifier = p.chesscomHandle ?? historicalPlayerSlug(p.firstName, p.lastName)
+    map[identifier.toLowerCase()] = combineName(p.firstName, p.lastName)
   }
   return map
 }
