@@ -390,3 +390,126 @@ export async function getPositionEvaluationsBulk_shared(fens: string[]): Promise
   }
   return result
 }
+
+//----------------------------------------------------------------------------------
+//  getFenEvalsFromGev_shared — bulk tgev_game_evals lookup for a list of FENs, keyed by
+//  truncated gev_fen_after. The same FEN can appear in more than one analyzed game (each
+//  with its own depth), so DISTINCT ON picks the deepest row per FEN.
+//----------------------------------------------------------------------------------
+export async function getFenEvalsFromGev_shared(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
+  const truncated = fens.map(truncateFen)
+  const queryResult = await table_query({
+    caller: 'getFenEvalsFromGev_shared',
+    table: 'tgev_game_evals',
+    query: `
+      SELECT DISTINCT ON (gev_fen_after) gev_fen_after, gev_cp, gev_best_move, gev_depth
+      FROM tgev_game_evals
+      WHERE gev_fen_after = ANY($1) AND gev_cp IS NOT NULL AND gev_depth IS NOT NULL
+      ORDER BY gev_fen_after, gev_depth DESC
+    `,
+    params: [truncated] as unknown as string[]
+  })
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getFenEvalsFromGev_shared',
+      lg_caller: 'getFenEvalsFromGev_shared',
+      lg_msg: 'Failed to fetch bulk gev evaluations: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return {}
+  }
+  const rows = queryResult.data as { gev_fen_after: string; gev_cp: number; gev_best_move: string | null; gev_depth: number }[]
+
+  const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = {}
+  for (const row of rows) {
+    result[row.gev_fen_after] = { cp: row.gev_cp, bestMove: row.gev_best_move, depth: row.gev_depth }
+  }
+  return result
+}
+
+//----------------------------------------------------------------------------------
+//  getFenEvalsFromMgev_shared — the same lookup as getFenEvalsFromGev_shared, against
+//  tmgev_game_evals (secondary database) by mgev_fen_after, for master games.
+//----------------------------------------------------------------------------------
+export async function getFenEvalsFromMgev_shared(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
+  const truncated = fens.map(truncateFen)
+  const queryResult = await table_query({
+    caller: 'getFenEvalsFromMgev_shared',
+    table: 'tmgev_game_evals',
+    query: `
+      SELECT DISTINCT ON (mgev_fen_after) mgev_fen_after, mgev_cp, mgev_best_move, mgev_depth
+      FROM tmgev_game_evals
+      WHERE mgev_fen_after = ANY($1) AND mgev_cp IS NOT NULL AND mgev_depth IS NOT NULL
+      ORDER BY mgev_fen_after, mgev_depth DESC
+    `,
+    params: [truncated] as unknown as string[]
+  })
+  if (!queryResult.ok) {
+    write_logging({
+      lg_functionname: 'getFenEvalsFromMgev_shared',
+      lg_caller: 'getFenEvalsFromMgev_shared',
+      lg_msg: 'Failed to fetch bulk mgev evaluations: ' + queryResult.error,
+      lg_severity: 'E'
+    })
+    return {}
+  }
+  const rows = queryResult.data as { mgev_fen_after: string; mgev_cp: number; mgev_best_move: string | null; mgev_depth: number }[]
+
+  const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = {}
+  for (const row of rows) {
+    result[row.mgev_fen_after] = { cp: row.mgev_cp, bestMove: row.mgev_best_move, depth: row.mgev_depth }
+  }
+  return result
+}
+
+//----------------------------------------------------------------------------------
+//  getFenEvalsWithFallback_shared — the per-game analysis table matching context (tgev for
+//  player, tmgev for master) is checked first, since each game is analyzed individually and
+//  holds the real, authoritative evaluation; tpose_positions_eval (whose main purpose is
+//  feeding habit detection, not being an evaluation store in its own right) is only consulted
+//  for whatever FEN isn't found there. Read-only — never creates a tpos_positions row, so this
+//  can't interact with purgeStaleReachOnePositions.
+//----------------------------------------------------------------------------------
+export async function getFenEvalsWithFallback_shared(fens: string[], context: 'player' | 'master'): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
+  const ownEvals = context === 'player'
+    ? await getFenEvalsFromGev_shared(fens)
+    : await getFenEvalsFromMgev_shared(fens)
+
+  const remaining = fens.map(truncateFen).filter(f => !ownEvals[f])
+  const poseEvals = remaining.length > 0 ? await getPositionEvaluationsBulk_shared(remaining) : {}
+
+  const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = { ...ownEvals }
+  for (const fen of remaining) {
+    const pose = poseEvals[fen]
+    if (pose) result[fen] = { cp: pose.cp, bestMove: pose.bestMove, depth: pose.depth }
+  }
+  return result
+}
+
+//----------------------------------------------------------------------------------
+//  getFenEvalsForSkipCheck_shared — for deciding whether "Analyze Game"/"Re-analyse" can skip
+//  re-running Stockfish on a position: checks both tpose_positions_eval and the context's own
+//  per-game table (tgev for player, tmgev for master) and keeps whichever has the GREATER
+//  depth per FEN. Deliberately a different merge rule than getFenEvalsWithFallback_shared
+//  (which always prefers the own-table value for display, even if tpose happens to be deeper) —
+//  here we only care whether a sufficiently deep result exists ANYWHERE, not which source is
+//  more "authoritative" to show.
+//----------------------------------------------------------------------------------
+export async function getFenEvalsForSkipCheck_shared(fens: string[], context: 'player' | 'master'): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
+  const [poseEvals, ownEvals] = await Promise.all([
+    getPositionEvaluationsBulk_shared(fens),
+    context === 'player' ? getFenEvalsFromGev_shared(fens) : getFenEvalsFromMgev_shared(fens)
+  ])
+
+  const result: Record<string, { cp: number; bestMove: string | null; depth: number }> = {}
+  for (const fen of fens.map(truncateFen)) {
+    const pose = poseEvals[fen]
+    const own = ownEvals[fen]
+    if (pose && (!own || pose.depth >= own.depth)) {
+      result[fen] = { cp: pose.cp, bestMove: pose.bestMove, depth: pose.depth }
+    } else if (own) {
+      result[fen] = own
+    }
+  }
+  return result
+}

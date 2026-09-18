@@ -230,6 +230,18 @@ export function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[
 }
 
 // --------------------------------------------------------------------------
+//  Full move number + side to move for a 1-indexed ply (ply 1 = White's first
+//  move, ply 2 = Black's first move, ...) — shared by getCurrentMoveLabel below
+//  and runAnalysis's progress display (ChessBoardView_shared/MasterGameView_master).
+// --------------------------------------------------------------------------
+
+export function getMoveNumberAndColor(ply: number): { moveNumber: number; isWhite: boolean } {
+  const moveNumber = Math.floor((ply - 1) / 2) + 1
+  const isWhite = (ply - 1) % 2 === 0
+  return { moveNumber, isWhite }
+}
+
+// --------------------------------------------------------------------------
 //  "16.Ng6" / "16...Ng6" for whatever position is currently on the board
 //  (matching MoveTree_shared.tsx's own move-number notation), "Starting
 //  position" at the root (no move played yet) — shared by ChessBoardView_shared
@@ -238,7 +250,6 @@ export function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[
 
 export function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
   if (!currentNode) return 'Starting position'
-  const moveNum = Math.floor((currentPly - 1) / 2) + 1
-  const isWhite = (currentPly - 1) % 2 === 0
-  return `${moveNum}${isWhite ? '.' : '...'}${currentNode.san}`
+  const { moveNumber, isWhite } = getMoveNumberAndColor(currentPly)
+  return `${moveNumber}${isWhite ? '.' : '...'}${currentNode.san}`
 }

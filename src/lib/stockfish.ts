@@ -261,6 +261,18 @@ export class StockfishEngine {
     }
   }
 
+  //----------------------------------------------------------------------------------
+  //  requestStop — interrupts whatever search is currently running, unconditionally
+  //  (unlike stopAnalysis, which only fires for an active startInfiniteAnalysis search).
+  //  Used by analyzeGame's Stop button: sends UCI stop so the engine emits bestmove
+  //  immediately for the in-flight evaluate() call — analyzeGame then discards that
+  //  result via its own shouldStop check, so what depth it actually reached doesn't
+  //  matter.
+  //----------------------------------------------------------------------------------
+  requestStop(): void {
+    this.send('stop')
+  }
+
   async evaluate(fen: string, depth: number = STOCKFISH_DEFAULTS.depth): Promise<{ cp: number; bestMove: string; pv: string }> {
     if (!this.worker || !this.ready) throw new Error('Stockfish not initialized')
 
@@ -330,8 +342,9 @@ export class StockfishEngine {
     onProgress?: ProgressCallback,
     depth?: number,
     poseEvals?: Record<string, { cp: number; bestMove: string | null; depth: number }>,
-    onPlyEvaluated?: (plyEval: PlyEvaluation, index: number) => void
-  ): Promise<{ plyEvals: PlyEvaluation[]; finalPosition: { fen: string; cp: number; bestMove: string } }> {
+    onPlyEvaluated?: (plyEval: PlyEvaluation, index: number) => void,
+    shouldStop?: () => boolean
+  ): Promise<{ plyEvals: PlyEvaluation[]; finalPosition: { fen: string; cp: number; bestMove: string }; stopped: boolean }> {
     const plyEvals: PlyEvaluation[] = []
     const analysisDepth = depth ?? STOCKFISH_DEFAULTS.depth
 
@@ -341,6 +354,7 @@ export class StockfishEngine {
     // "after" position finishes), not in a separate pass once every position is done —
     // lets onPlyEvaluated fire live, ply by ply, instead of only once at the very end.
     const mergedPlyPositionEvals: { cp: number; bestMove: string; pv: string; depth: number }[] = []
+    let stopped = false
 
     for (let i = 0; i <= sans.length; i++) {
       onProgress?.({ current: i, total: sans.length, move: i > 0 ? sans[i - 1] : 'starting position' })
@@ -379,6 +393,14 @@ export class StockfishEngine {
           depth: analysisDepth
         })
       }
+
+      // shouldStop() is checked here, right after this position's own evaluation
+      // resolves (which requestStop() interrupts early if a search was in flight) —
+      // whatever this position's result was is discarded (never built into a ply, never
+      // persisted) per the "not interested in the current ply" decision: only plies
+      // that had already fully completed and been reported via onPlyEvaluated before
+      // Stop was pressed are kept.
+      if (shouldStop?.()) { stopped = true; break }
 
       if (i === 0) continue
 
@@ -431,14 +453,17 @@ export class StockfishEngine {
       onPlyEvaluated?.(plyEval, idx)
     }
 
-    const lastPositionEval = mergedPlyPositionEvals[mergedPlyPositionEvals.length - 1]
-    const finalPosition = {
-      fen: fens[fens.length - 1],
-      cp: lastPositionEval.cp,
-      bestMove: lastPositionEval.bestMove
-    }
+    // The true final position reached is always the last completed ply's own resulting
+    // position — for a full, uninterrupted run this is exactly fens[fens.length - 1]
+    // anyway (the last ply's "after" position is the range's own endpoint), and it's
+    // also correct when stopped early, since plyEvals then simply ends sooner. Falls
+    // back to the anchor position's own eval (always evaluated first, before any stop
+    // check) for the edge case of stopping before a single ply completed.
+    const finalPosition = plyEvals.length > 0
+      ? { fen: plyEvals[plyEvals.length - 1].fen, cp: plyEvals[plyEvals.length - 1].cp, bestMove: plyEvals[plyEvals.length - 1].bestMove }
+      : { fen: fens[0], cp: mergedPlyPositionEvals[0].cp, bestMove: mergedPlyPositionEvals[0].bestMove }
 
-    return { plyEvals, finalPosition }
+    return { plyEvals, finalPosition, stopped }
   }
 
   destroy(): void {

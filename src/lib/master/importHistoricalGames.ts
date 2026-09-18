@@ -149,7 +149,13 @@ async function resolveHistoricalMasterIdentifiers(names: { firstName: string; la
     }
 
     if (match) {
-      identifierMap.set(key, match.chesscomHandle ?? historicalPlayerSlug(match.firstName, match.lastName))
+      //
+      //  mgd_player/mgd_white_username/mgd_black_username are always lowercase (matches the
+      //  regular chess.com-sync pipeline, deconstructGames_Master.ts) — chesscomHandle is stored
+      //  with its original chess.com casing, so it must be lowercased here too; historicalPlayerSlug
+      //  is already lowercase.
+      //
+      identifierMap.set(key, (match.chesscomHandle ?? historicalPlayerSlug(match.firstName, match.lastName)).toLowerCase())
       continue
     }
 

@@ -4,7 +4,6 @@ import { fetchFiltered } from 'nextjs-shared/fetchFiltered'
 import { fetchTotalPages } from 'nextjs-shared/fetchTotalPages'
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_query } from 'nextjs-shared/table_query'
-import { table_delete } from 'nextjs-shared/table_delete'
 import { write_logging } from 'nextjs-shared/write_logging'
 import type { Filter } from 'nextjs-shared/structures'
 import { Chess } from 'chess.js'
@@ -12,7 +11,7 @@ import { GAME_LIST_ROWS_DEFAULT_Master, MASTER_GAMES_FOR_FEN_LIMIT } from '../co
 import { getMasterHandleNameMap, getMasterPlayers } from '../actions/masterPlayers'
 import { truncateFen } from '../fen'
 import { classifyMove } from '../stockfish'
-import { getPositionEvaluationsBulk_shared, upgradePositionEvaluation_shared } from '../analysis/chessdb_shared'
+import { getPositionEvaluationsBulk_shared, getFenEvalsWithFallback_shared, upgradePositionEvaluation_shared } from '../analysis/chessdb_shared'
 import { objectiveGameResult } from '../objectiveGameResult'
 import type { GameEvalRow } from '../actions/games'
 
@@ -188,6 +187,8 @@ export type MasterFenMoveBreakdown = {
   draws:             number
   black:             number
   avgOpponentRating: number
+  cp:                number | null
+  depth:             number | null
 }
 
 export type MasterFenGameHit = {
@@ -326,7 +327,9 @@ export async function getMasterGamesForFenCount(fen: string, move?: string): Pro
 //  master players, via tmpos_positions (mpos_fen, unique-indexed) -> tmgam_game_positions
 //  (mgam_pos_id, indexed) -> tmgd_gamesdecon (mgam_mgdid). Returns both a per-move
 //  breakdown (mirrors buildHabits' move-grouping shape) and the raw per-game rows,
-//  so callers can render either a summary table or a full game list from one fetch.
+//  so callers can render either a summary table or a full game list from one fetch. Each
+//  move's cp/depth come from getFenEvalsWithFallback_shared against that move's resulting
+//  FEN (tmgev_game_evals first, tpose_positions_eval fallback) — null if neither has it.
 //----------------------------------------------------------------------------------
 export async function getMasterGamesForFen(fen: string, limit: number = MASTER_GAMES_FOR_FEN_LIMIT): Promise<{
   reached: number
@@ -341,7 +344,7 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     caller: 'getMasterGamesForFen_games',
     table: 'tmgam_game_positions',
     query: `
-      SELECT g.mgam_move_played, g.mgam_move_uci,
+      SELECT g.mgam_move_played, g.mgam_move_uci, g.mgam_resulting_fen,
              d.mgd_mgdid, d.mgd_white_username, d.mgd_black_username,
              d.mgd_white_rating, d.mgd_black_rating,
              d.mgd_player, d.mgd_player_color, d.mgd_player_result,
@@ -382,10 +385,10 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
   // one game) and tally the OBJECTIVE white/draw/black outcome — never the tracked
   // master's own personal win/loss, which would mix perspectives across games where
   // different masters (or the same master as different colors) reached this move.
-  const byMove = new Map<string, { move_uci: string | null; gdids: Set<number>; white: number; draws: number; black: number; ratingSum: number }>()
+  const byMove = new Map<string, { move_uci: string | null; resultingFen: string | null; gdids: Set<number>; white: number; draws: number; black: number; ratingSum: number }>()
   for (const r of gamesResult.data) {
     const key = r.mgam_move_played as string
-    const entry = byMove.get(key) ?? { move_uci: r.mgam_move_uci, gdids: new Set<number>(), white: 0, draws: 0, black: 0, ratingSum: 0 }
+    const entry = byMove.get(key) ?? { move_uci: r.mgam_move_uci, resultingFen: r.mgam_resulting_fen ?? null, gdids: new Set<number>(), white: 0, draws: 0, black: 0, ratingSum: 0 }
     if (!entry.gdids.has(r.mgd_mgdid)) {
       entry.gdids.add(r.mgd_mgdid)
       entry.ratingSum += r.mgd_opponent_rating ?? 0
@@ -396,16 +399,28 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     }
     byMove.set(key, entry)
   }
+
+  // Eval is resolved per move's resulting FEN — the same position regardless of which game
+  // reached it, so a bulk fallback lookup (tmgev_game_evals first, tpose_positions_eval
+  // second) covers every move in one round trip.
+  const evalFens = [...byMove.values()].map(e => e.resultingFen).filter((f): f is string => f != null)
+  const fenEvals = evalFens.length > 0 ? await getFenEvalsWithFallback_shared(evalFens, 'master') : {}
+
   const moves: MasterFenMoveBreakdown[] = [...byMove.entries()]
-    .map(([move_played, e]) => ({
-      move_played,
-      move_uci: e.move_uci,
-      times: e.gdids.size,
-      white: e.white,
-      draws: e.draws,
-      black: e.black,
-      avgOpponentRating: e.gdids.size > 0 ? Math.round(e.ratingSum / e.gdids.size) : 0
-    }))
+    .map(([move_played, e]) => {
+      const fenEval = e.resultingFen ? fenEvals[truncateFen(e.resultingFen)] : undefined
+      return {
+        move_played,
+        move_uci: e.move_uci,
+        times: e.gdids.size,
+        white: e.white,
+        draws: e.draws,
+        black: e.black,
+        avgOpponentRating: e.gdids.size > 0 ? Math.round(e.ratingSum / e.gdids.size) : 0,
+        cp: fenEval?.cp ?? null,
+        depth: fenEval?.depth ?? null
+      }
+    })
     .sort((a, b) => b.times - a.times)
 
   return { reached, moves, games }
@@ -416,20 +431,29 @@ export type SyncedMasterPlayer = { handle: string; name: string; grade: number |
 //----------------------------------------------------------------------------------
 //  getSyncedMasterPlayers — distinct mgd_player handles actually present in
 //  tmgd_gamesdecon, each paired with its real name and grade (merged in from
-//  tmst_master_players, primary database — no cross-database join possible), for the
-//  Masters Games list's Player filter (as opposed to MasterPlayerSelect, which lists
-//  every known master player regardless of whether they've been synced — this only
-//  lists ones with real data to filter by). Sorted by grade descending (NULLS last).
+//  tmst_master_players, primary database — no cross-database join possible), for
+//  MasterPlayerSelect's scope='synced' option (only masters with real data to filter
+//  by, as opposed to scope='all', every known master regardless of sync status).
+//  Returned in whatever order the DISTINCT query yields — MasterPlayerSelect does its
+//  own alphabetical-by-name sort on the result, so sorting here too would be pointless.
 //
 //  Change history:
 //    2026-08-28 — row now carries `grade`; result sorted grade-descending instead of
 //                 alphabetical by handle (FilterMasterPlayerSelect shows "Name (grade)")
+//    2026-09-15 — dropped the grade-descending sort (now sorted by the caller,
+//                 MasterPlayerSelect, alphabetically by name) after merging
+//                 FilterMasterPlayerSelect into MasterPlayerSelect
 //----------------------------------------------------------------------------------
 export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
   const result = await table_query({
     caller: 'getSyncedMasterPlayers',
     table: MASTER_DECON_TABLE,
-    query: `SELECT DISTINCT mgd_player FROM ${MASTER_DECON_TABLE} ORDER BY mgd_player`,
+    // DISTINCT on LOWER(mgd_player), not the bare column — mgd_player is supposed to always be
+    // stored lowercase (see AppNav.tsx's handleMasterClick), but a case-variant value from a
+    // data-entry slip would otherwise pass DISTINCT as a second, separate row, then resolve to
+    // the exact same display name via infoMap's .toLowerCase() lookup below — showing as a
+    // duplicate in the filter dropdown even though it's the same master.
+    query: `SELECT DISTINCT LOWER(mgd_player) AS mgd_player FROM ${MASTER_DECON_TABLE} ORDER BY LOWER(mgd_player)`,
     params: [],
     skipCache: true
   })
@@ -462,62 +486,49 @@ export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
     const info = infoMap[handle.toLowerCase()]
     return { handle, name: info?.name ?? handle, grade: info?.grade ?? null }
   })
-  players.sort((a, b) => (b.grade ?? -Infinity) - (a.grade ?? -Infinity))
   return players
 }
 
 //----------------------------------------------------------------------------------
-//  saveMasterGameEvaluations_master — write per-move Stockfish evals from
-//  MasterGameView_master's "Analyze Game" to tmgev_game_evals (secondary database,
-//  this game's own durable cache — mirrors games.ts's saveGameEvaluations_player
-//  exactly). For any ply whose FEN already exists in the primary database's
-//  tpos_positions, also tops up tpose_positions_eval via
-//  upgradePositionEvaluation_shared with createIfMissing:false — a master game may
-//  deepen a position the tracked player has already reached, but never creates a
-//  new tpos_positions row of its own.
+//  upsertGameEval_master — upsert a single ply's Stockfish eval into tmgev_game_evals
+//  (secondary database), called incrementally as each ply completes during
+//  MasterGameView_master's "Analyze Game"/"Re-analyse" (and from a single-ply "Analyze
+//  Position" write-back) — so an interrupted run keeps whatever's already finished,
+//  instead of losing it all the way the previous whole-array delete-then-reinsert
+//  (saveMasterGameEvaluations_master) did. Depth-guarded, mirrors games.ts's
+//  upsertGameEval_player. Also tops up tpose_positions_eval (primary database) for this
+//  one ply's own resulting position via upgradePositionEvaluation_shared with
+//  createIfMissing:false — a master game may deepen a position the tracked player has
+//  already reached, but never creates a new tpos_positions row of its own — matching
+//  what the old whole-array function did per row, just scoped to the one row now
+//  actually being written instead of re-running it over the entire game every call.
 //----------------------------------------------------------------------------------
-export async function saveMasterGameEvaluations_master(mgdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
-  await table_delete({
-    caller: 'saveMasterGameEvaluations_master_delete',
-    table: 'tmgev_game_evals',
-    whereColumnValuePairs: [{ column: 'mgev_mgdid', value: mgdid }],
-    skipCache: true
-  })
-
-  const rows = evaluations
-    .map((e, ply) => ({ e, ply }))
-    .filter((r): r is { e: GameEvalRow; ply: number } => r.e != null)
-  if (rows.length === 0) return
-
-  const values = rows.map((_, idx) => {
-    const b = idx * 10
-    return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`
-  }).join(',')
-  const params = rows.flatMap(({ e, ply }) => [
-    mgdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth
-  ])
-
+export async function upsertGameEval_master(mgdid: number, ply: number, e: GameEvalRow): Promise<void> {
   await table_query({
-    caller: 'saveMasterGameEvaluations_master_insert',
+    caller: 'upsertGameEval_master',
     table: 'tmgev_game_evals',
     query: `
       INSERT INTO tmgev_game_evals
         (mgev_mgdid, mgev_ply, mgev_san, mgev_fen_after, mgev_cp, mgev_cp_change, mgev_best_move, mgev_best_move_san, mgev_best_line, mgev_depth)
-      VALUES ${values}
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (mgev_mgdid, mgev_ply) DO UPDATE
+        SET mgev_san = EXCLUDED.mgev_san, mgev_fen_after = EXCLUDED.mgev_fen_after, mgev_cp = EXCLUDED.mgev_cp,
+            mgev_cp_change = EXCLUDED.mgev_cp_change, mgev_best_move = EXCLUDED.mgev_best_move,
+            mgev_best_move_san = EXCLUDED.mgev_best_move_san, mgev_best_line = EXCLUDED.mgev_best_line,
+            mgev_depth = EXCLUDED.mgev_depth
+        WHERE tmgev_game_evals.mgev_depth < EXCLUDED.mgev_depth
     `,
-    params,
+    params: [mgdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth],
     isupdate: true
   })
 
-  for (const { e } of rows) {
-    await upgradePositionEvaluation_shared({
-      fen: e.fen,
-      cp: e.cp,
-      bestMove: e.bestMove || null,
-      depth: e.depth,
-      createIfMissing: false
-    })
-  }
+  await upgradePositionEvaluation_shared({
+    fen: e.fen,
+    cp: e.cp,
+    bestMove: e.bestMove || null,
+    depth: e.depth,
+    createIfMissing: false
+  })
 }
 
 //----------------------------------------------------------------------------------

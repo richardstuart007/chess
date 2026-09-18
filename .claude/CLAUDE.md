@@ -188,3 +188,16 @@ two-reference-pair problem shape.
   — would need a data source (likely top-N `tmst_master_players` by `mst_grade`), a decision on
   which masters qualify as "top" (highest grade? most games synced?), and layout/sizing to match
   the Master box's own height.
+
+- **Master/all filter toggle on the "All Masters" panel** (identified 2026-09-15, not to be done
+  now) — on `/analyzemaster`, the per-master "Moves"/"Games" panel (named after the specific
+  master being viewed, e.g. "Magnus Carlsen") was removed as redundant with the "All Masters"
+  panel (`MasterMovesDbPanel`/`MasterGamesDbPanel`), which already pools every synced master with
+  no player filter — including the one being viewed. The user suggested a future filter on "All
+  Masters" itself, letting it narrow down to just the current master (vs. every master), as a
+  lighter-weight way to get that same "just this master" view back without a permanently separate
+  panel. Master-page only — doesn't make sense on `/analyze`, where there's no "current master" to
+  filter by. Not designed further — would need `getMasterGamesForFen`/`getMasterGamesForFenCount`/
+  `fetchMasterGamesForFenPage` (in `masterGamesList.ts`) to accept an optional player filter, and
+  a small toggle/select UI in `MasterMovesDbPanel`/`MasterGamesDbPanel` (only rendered when a
+  master context is available to filter by).

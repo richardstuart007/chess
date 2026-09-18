@@ -30,32 +30,6 @@ function combineName(firstName: string | null, lastName: string): string {
 }
 
 //----------------------------------------------------------------------------------
-//  getMasterPlayerNames — every known master player name, for the Player 1/2 select
-//  on the Analyze page's Chess.com Games panel. Populated entirely by the FIDE
-//  pipeline (see /owner/pipelinemasters) — this table no longer grows from live game
-//  search sightings.
-//----------------------------------------------------------------------------------
-export async function getMasterPlayerNames(): Promise<string[]> {
-  const result = await table_fetch({
-    caller: 'getMasterPlayerNames',
-    table: MASTER_PLAYERS_TABLE,
-    orderBy: 'mst_last_name, mst_first_name',
-    columns: ['mst_first_name', 'mst_last_name'],
-    skipCache: true
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'getMasterPlayerNames',
-      lg_caller: 'getMasterPlayerNames',
-      lg_msg: 'Failed to fetch master player names: ' + result.error,
-      lg_severity: 'E'
-    })
-    return []
-  }
-  return result.data.map((r: any) => combineName(r.mst_first_name, r.mst_last_name))
-}
-
-//----------------------------------------------------------------------------------
 //  getMasterHandleNameMap — mgd_player-style identifier (lowercased) → display name, for every
 //  master player. Used to attach a real name onto master-games rows (tmgd_gamesdecon, secondary
 //  database) in app code, since that table only stores the identifier and the two tables can

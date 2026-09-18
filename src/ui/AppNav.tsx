@@ -3,9 +3,9 @@
 //==================================================================================================
 //  1) DESCRIPTION
 //    AppNav — top-level section tab bar, split into two boxed groups: Player
-//    (Games/Habits/Graph/Openings/Endings) and Master (Masters Games). Both groups always render,
-//    on every page. Carries every global filter (player/timeClass/dateFrom/opening/eco) across
-//    tab navigation, and highlights the active tab based on the current pathname.
+//    (Games/Habits/Graph/Openings/Endings) and Master (Games/Chess.com). Both groups always
+//    render, on every page. Carries every global filter (player/timeClass/dateFrom/opening/eco)
+//    across tab navigation, and highlights the active tab based on the current pathname.
 //
 //    Parameters:
 //      playerCards — optional; rendered inside the Player box in place of a title (AppShell's
@@ -27,6 +27,8 @@
 //                 MASTER_AVATARS constants map
 //    2026-08-29 — master cards are now clickable: navigate to /mastergames pre-filtered to that
 //                 master (?master=<handle>), with a selected-outline highlight while active
+//    2026-09-15 — added a second Master tab, "Chess.com" (/masterchesscom) — the general chess.com
+//                 game search previously embedded on /analyze and /analyzemaster now lives here
 //==================================================================================================
 
 import { useState, useEffect } from 'react'
@@ -58,7 +60,8 @@ const PLAYER_SECTIONS = [
 ] as const
 
 const MASTER_SECTIONS = [
-  { key: 'mastergames', label: 'Games', href: '/mastergames' }
+  { key: 'mastergames', label: 'Games', href: '/mastergames' },
+  { key: 'masterchesscom', label: 'Chess.com', href: '/masterchesscom' }
 ] as const
 
 //
@@ -110,13 +113,15 @@ export default function AppNav({ playerCards }: AppNavProps) {
   //  technically the same (also reachable via /position/[id]), but always highlights
   //  'games' anyway — matching AppShell's own back-button fallback, which already treats
   //  Games as /analyze's assumed default parent. /analyzemaster always highlights
-  //  'mastergames' — MASTER_SECTIONS has only one tab ("Games"), so it's unambiguous there.
+  //  'mastergames' — the "Chess.com Games" search panel it used to embed now lives on its
+  //  own 'masterchesscom' tab instead.
   //
   const activeKey = pathname === '/habits' ? 'habits'
     : pathname === '/graph' ? 'graph'
     : pathname === '/openings' ? 'openings'
     : pathname === '/endings' ? 'endings'
     : pathname === '/mastergames' ? 'mastergames'
+    : pathname === '/masterchesscom' ? 'masterchesscom'
     : pathname === '/analyzemaster' ? 'mastergames'
     : pathname === '/' || pathname === '/analyze' ? 'games'
     : null
@@ -132,8 +137,8 @@ export default function AppNav({ playerCards }: AppNavProps) {
     if (!handle) return
     const params = new URLSearchParams()
     //
-    //  Lowercase — mgd_player is stored lowercase, so ?master= must match it (and the
-    //  FilterMasterPlayerSelect option values, and openMasterGame's row.mgd_player).
+    //  Lowercase — mgd_player is stored lowercase, so ?master= must match it (and
+    //  MasterPlayerSelect's scope='synced' option values, and openMasterGame's row.mgd_player).
     //
     params.set('master', handle.toLowerCase())
     for (const key of MASTER_CARRY_KEYS) {

@@ -3,7 +3,6 @@
 import { table_fetch } from 'nextjs-shared/table_fetch'
 import { table_write } from 'nextjs-shared/table_write'
 import { table_count } from 'nextjs-shared/table_count'
-import { table_delete } from 'nextjs-shared/table_delete'
 import { table_update } from 'nextjs-shared/table_update'
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
@@ -147,44 +146,30 @@ export async function insertRawGame(data: {
 }
 
 //----------------------------------------------------------------------------------
-//  saveGameEvaluations_player — write per-move Stockfish evals from /analyze to tgev_game_evals.
-//  evaluations can have gaps (undefined) for plies with no real data — no row is written
-//  for those (matches "not actually analyzed"), rather than inserting a placeholder.
-//  Full delete-then-reinsert of this game's row set, batched into a single multi-row
-//  INSERT rather than one INSERT per ply — measured at ~1.9s for a ~20-ply range with
-//  the old one-row-at-a-time loop, entirely DB round-trip overhead unrelated to
-//  Stockfish (which may not have run at all if everything was already cached).
+//  upsertGameEval_player — upsert a single ply's Stockfish eval into tgev_game_evals, called
+//  incrementally as each ply completes during "Analyze Game"/"Re-analyse" (and from a
+//  single-ply "Analyze Position" write-back) — so an interrupted run keeps whatever's
+//  already finished, instead of losing it all the way the previous whole-array
+//  delete-then-reinsert (saveGameEvaluations_player) did. Depth-guarded, same as
+//  upgradePositionEvaluation_shared's own tpose/tgev guards, so a shallower pass never
+//  overwrites an existing deeper value for that ply.
 //----------------------------------------------------------------------------------
-export async function saveGameEvaluations_player(gdid: number, evaluations: (GameEvalRow | undefined)[]): Promise<void> {
-  await table_delete({
-    caller: 'saveGameEvaluations_player_delete',
-    table: 'tgev_game_evals',
-    whereColumnValuePairs: [{ column: 'gev_gdid', value: gdid }],
-    skipCache: true
-  })
-
-  const rows = evaluations
-    .map((e, ply) => ({ e, ply }))
-    .filter((r): r is { e: GameEvalRow; ply: number } => r.e != null)
-  if (rows.length === 0) return
-
-  const values = rows.map((_, idx) => {
-    const b = idx * 10
-    return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`
-  }).join(',')
-  const params = rows.flatMap(({ e, ply }) => [
-    gdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth
-  ])
-
+export async function upsertGameEval_player(gdid: number, ply: number, e: GameEvalRow): Promise<void> {
   await table_query({
-    caller: 'saveGameEvaluations_player_insert',
+    caller: 'upsertGameEval_player',
     table: 'tgev_game_evals',
     query: `
       INSERT INTO tgev_game_evals
         (gev_gdid, gev_ply, gev_san, gev_fen_after, gev_cp, gev_cp_change, gev_best_move, gev_best_move_san, gev_best_line, gev_depth)
-      VALUES ${values}
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (gev_gdid, gev_ply) DO UPDATE
+        SET gev_san = EXCLUDED.gev_san, gev_fen_after = EXCLUDED.gev_fen_after, gev_cp = EXCLUDED.gev_cp,
+            gev_cp_change = EXCLUDED.gev_cp_change, gev_best_move = EXCLUDED.gev_best_move,
+            gev_best_move_san = EXCLUDED.gev_best_move_san, gev_best_line = EXCLUDED.gev_best_line,
+            gev_depth = EXCLUDED.gev_depth
+        WHERE tgev_game_evals.gev_depth < EXCLUDED.gev_depth
     `,
-    params,
+    params: [gdid, ply, e.san, truncateFen(e.fen), e.cp, e.cpChange, e.bestMove, e.bestMoveSan, JSON.stringify(e.bestLineSans), e.depth],
     isupdate: true
   })
 }

@@ -14,7 +14,7 @@ import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import FilterDateInput from '@/src/ui/filters/FilterDateInput'
-import FilterMasterPlayerSelect from '@/src/ui/filters/FilterMasterPlayerSelect'
+import MasterPlayerSelect from '@/src/ui/filters/MasterPlayerSelect'
 import FilterTextInput from '@/src/ui/filters/FilterTextInput'
 import FilterNumberRange from '@/src/ui/filters/FilterNumberRange'
 import FilterActionButton from '@/src/ui/filters/FilterActionButton'
@@ -236,9 +236,10 @@ export default function MasterGameList() {
             <tr>
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
-                <FilterMasterPlayerSelect
+                <MasterPlayerSelect
                   value={draftFilters.player ?? ''}
                   onChange={v => updateFilter('player', v)}
+                  scope='synced'
                   label=''
                 />
               </th>
@@ -291,6 +292,7 @@ export default function MasterGameList() {
                   onMinChange={v => updateFilter('opponentRatingMin', v)}
                   onMaxChange={v => updateFilter('opponentRatingMax', v)}
                   width={WIDTH_OPPONENT_RATING}
+                  showMax={false}
                 />
               </th>
               <th className='pb-2 pr-2'></th>
@@ -356,10 +358,13 @@ export default function MasterGameList() {
               const date = new Date(row.mgd_end_time * 1000)
               const dd = String(date.getDate()).padStart(2, '0')
               const mm = String(date.getMonth() + 1).padStart(2, '0')
-              const yy = String(date.getFullYear()).slice(2)
+              const yyyy = String(date.getFullYear())
               const hh = String(date.getHours()).padStart(2, '0')
               const min = String(date.getMinutes()).padStart(2, '0')
-              const dateStr = `${dd}/${mm}/${yy} ${hh}:${min}`
+              // No time recorded (e.g. a historical import that only ever had a date) defaults
+              // to midnight — showing "00:00" would look like a real time, so it's omitted.
+              const hasTime = !(hh === '00' && min === '00')
+              const dateStr = hasTime ? `${dd}/${mm}/${yyyy} ${hh}:${min}` : `${dd}/${mm}/${yyyy}`
               const gameNumber = (currentPage - 1) * rowsPerPage + index + 1
 
               return (

@@ -17,21 +17,19 @@
 //    Times/White/Draws/Black are objective, color-based counts (see chessdb_player.ts's
 //    getMoveSummaryForPosition_player header for the full rationale) — never a personal win/loss
 //    perspective, which would mix different perspectives across games played as different colors.
-//    Avg Rating and Eval are optional per row (null renders as "—") since not every source has them
-//    (Lichess has no Eval; Master (Our DB)'s Eval was dropped as not worth a cross-database join).
+//    Eval is optional per row (null renders as "—") since not every source has one.
 //==================================================================================================
 
 import { formatCp } from '@/src/lib/formatCp'
 
 export type MovesListRow = {
-  key:       string
-  move:      string
-  times:     number
-  white:     number
-  draws:     number
-  black:     number
-  avgRating: number | null
-  eval:      number | null
+  key:   string
+  move:  string
+  times: number
+  white: number
+  draws: number
+  black: number
+  eval:  number | null
 }
 
 interface MovesListTableProps {
@@ -51,7 +49,6 @@ export default function MovesListTable({ rows, selectedMove, onSelectMove }: Mov
             <th className='py-1 pr-2 text-right'>White%</th>
             <th className='py-1 pr-2 text-right'>Draw%</th>
             <th className='py-1 pr-2 text-right'>Black%</th>
-            <th className='py-1 pr-2 text-right'>Avg Rating</th>
             <th className='py-1 text-right'>Eval</th>
           </tr>
         </thead>
@@ -69,7 +66,6 @@ export default function MovesListTable({ rows, selectedMove, onSelectMove }: Mov
                 <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{pct(r.white, r.times)}%</td>
                 <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>{pct(r.draws, r.times)}%</td>
                 <td className='py-1 pr-2 text-right tabular-nums text-red-600'>{pct(r.black, r.times)}%</td>
-                <td className='py-1 pr-2 text-right tabular-nums'>{r.avgRating ?? '—'}</td>
                 <td className={`py-1 text-right tabular-nums font-mono ${r.eval != null && r.eval < 0 ? 'text-red-600' : 'text-green-700'}`}>
                   {r.eval != null ? formatCp(r.eval) : '—'}
                 </td>

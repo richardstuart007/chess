@@ -12,6 +12,11 @@
 //      onMinChange — called with the new min value on change
 //      onMaxChange — called with the new max value on change
 //      width       — override width class (default 'w-12')
+//      showMax     — renders the Max input (default true); pass false for a min-only filter
+//
+//  3) CHANGE HISTORY
+//    2026-09-17 — added showMax (default true) — MasterGameList's opponent-rating filter only
+//                 needed a minimum, not a range
 //==================================================================================================
 
 import { MyInput } from 'nextjs-shared/MyInput'
@@ -23,10 +28,11 @@ interface FilterNumberRangeProps {
   onMinChange: (value: string) => void
   onMaxChange: (value: string) => void
   width?: string
+  showMax?: boolean
 }
 
-export default function FilterNumberRange({ label, min, max, onMinChange, onMaxChange, width = 'w-12' }: FilterNumberRangeProps) {
-  const overlap = min !== '' && max !== '' && Number(min) > Number(max)
+export default function FilterNumberRange({ label, min, max, onMinChange, onMaxChange, width = 'w-12', showMax = true }: FilterNumberRangeProps) {
+  const overlap = showMax && min !== '' && max !== '' && Number(min) > Number(max)
   const inputClass = `${width} h-6 md:h-6 rounded-md border px-1 text-xxs text-gray-700 ${overlap ? 'border-red-400' : 'border-blue-500'}`
 
   return (
@@ -41,14 +47,16 @@ export default function FilterNumberRange({ label, min, max, onMinChange, onMaxC
           placeholder='Min'
           overrideClass={inputClass}
         />
-        <MyInput
-          type='text'
-          inputMode='numeric'
-          value={max}
-          onChange={e => onMaxChange(e.target.value.replace(/\D/g, ''))}
-          placeholder='Max'
-          overrideClass={inputClass}
-        />
+        {showMax && (
+          <MyInput
+            type='text'
+            inputMode='numeric'
+            value={max}
+            onChange={e => onMaxChange(e.target.value.replace(/\D/g, ''))}
+            placeholder='Max'
+            overrideClass={inputClass}
+          />
+        )}
       </div>
       {overlap && <div className='text-center text-xxs text-red-500'>min &gt; max</div>}
     </div>

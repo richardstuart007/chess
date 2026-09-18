@@ -7,7 +7,7 @@
 //    search, so the server-rendered results table is parsed directly with cheerio.
 //
 //    Parameters:
-//      fen     — position to search for
+//      fen     — position to search for; omit for a general search with no position constraint
 //      filters — chess.com search filter values (see ChessComSearchFilters)
 //      page    — result page, 2+ (page 1 is the implicit default)
 //
@@ -21,6 +21,14 @@
 //    matches. Returns [] on any failure (network error, no matching games, or chess.com changing
 //    its markup). page (2+) pages through chess.com's own result pages — live-tested: page 1 is
 //    the implicit default (no `page` param), `&page=N` for N>1 returns genuinely different games.
+//    lstresult is always sent as '0' (Any) — the Result filter and the fixedcolors (P1=White)
+//    toggle were both dropped from the UI after live testing against chess.com found them
+//    unreliable; lstresult stays a fixed constant in the URL rather than omitted, matching what
+//    chess.com's own URLs always show.
+//
+//  3) CHANGE HISTORY
+//    2026-09-17 — removed fixedcolors and lstresult from ChessComSearchFilters (no longer
+//                 caller-configurable); lstresult is now always sent as the fixed '0' (Any)
 //==================================================================================================
 
 import * as cheerio from 'cheerio'
@@ -47,15 +55,13 @@ export interface ChessComSearchGame {
 export interface ChessComSearchFilters {
   p1:         string
   p2:         string
-  fixedcolors: boolean
   mr:         number | ''
   year:       number | ''
   lsty:       string
-  lstresult:  string
   sort:       string
 }
 
-export async function searchChessComGames(fen: string, filters: ChessComSearchFilters, page?: number): Promise<{ games: ChessComSearchGame[]; url: string }> {
+export async function searchChessComGames(fen: string | undefined, filters: ChessComSearchFilters, page?: number): Promise<{ games: ChessComSearchGame[]; url: string }> {
   const params = new URLSearchParams({
     opening: '',
     openingId: '',
@@ -66,11 +72,13 @@ export async function searchChessComGames(fen: string, filters: ChessComSearchFi
     year: filters.year === '' ? '' : String(filters.year),
     lstMoves: '3',
     moves: '',
-    fen,
+    fen: fen ?? '',
     sort: filters.sort,
-    lstresult: filters.lstresult
+    //
+    //  '0' = Any — the Result filter this paired with was dropped from the UI (see NOTES above)
+    //
+    lstresult: '0'
   })
-  if (filters.fixedcolors) params.set('fixedcolors', '1')
   if (page && page > 1) params.set('page', String(page))
   const url = `https://www.chess.com/games/search?${params.toString()}`
 

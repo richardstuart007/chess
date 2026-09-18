@@ -15,14 +15,33 @@
 //      plyEvals                — per-ply evaluations; drives the blunder/mistake/inaccuracy badges
 //                                and the Analyze/Re-analyse button label
 //      analyzing               — whether an analysis run is currently in progress
-//      analysisProgress        — { current, total, move? } for the progress bar
+//      analysisProgress        — { current, total, move?, moveNumber?, isWhite? } for the
+//                                progress bar; moveNumber/isWhite (absolute, whole-game) drive the
+//                                "Move Nw"/"Move Nb" prefix, omitted while still on the anchor
+//                                position (current === 0)
 //      depth / onDepthChange   — the DepthInput_shared control
 //      existingDepthRange      — "Saved at depth: N" text for the current From/To range, or null
 //      fromMove / toMove / totalFullMoves — re-analyze move range (full move numbers)
 //      onFromMoveChange / onToMoveChange  — range change handlers
 //      onRunAnalysis           — button handler (Analyze Game / Re-analyse)
+//      onStopAnalysis          — Stop button handler, shown next to the progress bar while
+//                                analyzing is true; requests the in-progress run stop after
+//                                whatever ply is currently in flight
 //      analysisResultMessage   — post-run summary text (e.g. "Updated 12 plies")
 //      analysisError           — error text; shows a Retry button when non-empty
+//      disableRun              — disables the Analyze Game/Re-analyse button, with a hint,
+//                                when some other Stockfish run (e.g. Analyze Position) already
+//                                owns this view's shared engine (default false)
+//
+//  3) CHANGE HISTORY
+//    2026-09-15 — added disableRun — Analyze Game and Analyze Position share one
+//                 StockfishEngine/Worker instance with no mutual exclusion; running both at once
+//                 left two message listeners fighting over the same worker's info/bestmove lines,
+//                 so the awaited analysis promise never resolved and "analyzing" got stuck true
+//    2026-09-15 — added onStopAnalysis — a long Analyze Game/Re-analyse run had no way to stop
+//                 early even when the user was already happy with the progress so far
+//    2026-09-15 — progress line now leads with "Move Nw"/"Move Nb" (absolute move number + side
+//                 to move), ahead of the existing "Ply X/Y — move" text
 //==================================================================================================
 
 import { useRef } from 'react'
@@ -36,7 +55,7 @@ export interface GameAnalysisPanelProps {
   variant: 'player' | 'master'
   plyEvals: (PlyEvaluation | undefined)[]
   analyzing: boolean
-  analysisProgress: { current: number; total: number; move?: string }
+  analysisProgress: { current: number; total: number; move?: string; moveNumber?: number; isWhite?: boolean }
   depth: number
   onDepthChange: (depth: number) => void
   existingDepthRange: string | null
@@ -46,8 +65,10 @@ export interface GameAnalysisPanelProps {
   onFromMoveChange: (value: number) => void
   onToMoveChange: (value: number) => void
   onRunAnalysis: () => void
+  onStopAnalysis: () => void
   analysisResultMessage: string
   analysisError: string
+  disableRun?: boolean
 }
 
 export default function GameAnalysisPanel_shared({
@@ -64,8 +85,10 @@ export default function GameAnalysisPanel_shared({
   onFromMoveChange,
   onToMoveChange,
   onRunAnalysis,
+  onStopAnalysis,
   analysisResultMessage,
-  analysisError
+  analysisError,
+  disableRun = false
 }: GameAnalysisPanelProps) {
   const fromMoveLatestRef = useRef(fromMove)
   const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
@@ -141,9 +164,14 @@ export default function GameAnalysisPanel_shared({
             </div>
           )}
           {!analyzing && (
-            <MyButton onClick={onRunAnalysis} overrideClass='w-full'>
-              {plyEvals.length > 0 ? 'Re-analyse' : 'Analyze Game'}
-            </MyButton>
+            <div className='space-y-1'>
+              <MyButton onClick={onRunAnalysis} disabled={disableRun} overrideClass='w-full'>
+                {plyEvals.length > 0 ? 'Re-analyse' : 'Analyze Game'}
+              </MyButton>
+              {disableRun && (
+                <p className='text-xxs text-gray-400'>Stockfish busy — finish or stop the current analysis first.</p>
+              )}
+            </div>
           )}
           {analysisResultMessage && (
             <span className='text-xxs text-green-600 font-bold'>{analysisResultMessage}</span>
@@ -162,9 +190,14 @@ export default function GameAnalysisPanel_shared({
                   />
                 </div>
                 <p className='text-xs text-gray-600'>
+                  {analysisProgress.moveNumber != null &&
+                    `Move ${analysisProgress.moveNumber}${analysisProgress.isWhite ? 'w' : 'b'} — `}
                   Ply {analysisProgress.current} / {analysisProgress.total}
                   {analysisProgress.move && ` — ${analysisProgress.move}`}
                 </p>
+                <MyButton onClick={onStopAnalysis} overrideClass='w-full bg-red-500 hover:bg-red-600'>
+                  Stop
+                </MyButton>
               </div>
             </MyBox>
           )}

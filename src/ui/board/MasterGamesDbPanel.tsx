@@ -29,6 +29,8 @@
 //                 underlying MasterFenGameHit.year field was replaced with .date
 //    2026-09-13 — switched to the shared GamesListTable, adding White/Black ratings and a
 //                 Termination column (Final Eval always blank — no master equivalent exists)
+//    2026-09-15 — title shortened "Master Games (Our DB)" -> "Games"; the "All Masters" group
+//                 label above this panel (added by its callers) now carries that context instead
 //==================================================================================================
 
 import { useEffect, useRef, useState } from 'react'
@@ -75,10 +77,10 @@ export default function MasterGamesDbPanel({ fen, autoFetch = true, defaultOpen 
   }, [fen, moveFilter])
 
   return (
-    <MyBox title='Master Games (Our DB)' collapsible defaultOpen={defaultOpen}>
+    <MyBox title='Games' collapsible defaultOpen={defaultOpen}>
       {!loaded ? (
         <MyButton onClick={load} disabled={loading} overrideClass='text-xs'>
-          {loading ? 'Loading...' : 'Fetch Master Games'}
+          {loading ? 'Loading...' : 'Fetch Games'}
         </MyButton>
       ) : games.length === 0 ? (
         <p className='text-xs text-gray-400'>No synced master games recorded from this position.</p>
