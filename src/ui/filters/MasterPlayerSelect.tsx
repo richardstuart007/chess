@@ -52,6 +52,9 @@ export default function MasterPlayerSelect({
   const [players, setPlayers] = useState<{ handle: string; name: string }[]>([])
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  load — loads the players for the dropdown: masters already synced when scope is 'synced', otherwise every master player with a handle
+    //----------------------------------------------------------------------------------------------
     async function load() {
       if (scope === 'synced') {
         const rows = await getSyncedMasterPlayers()

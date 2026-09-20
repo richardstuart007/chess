@@ -145,6 +145,9 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
     if (!hydrated || players.length === 0) return
     let cancelled = false
     setLoading(true)
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the opening scores for the applied filters and stores them in state
+    //----------------------------------------------------------------------------------------------
     async function load() {
       const limit   = appliedResultsCount === '0' ? 0 : parseInt(appliedResultsCount, 10)
       const sortDir = appliedFrom === 'Best' ? 'DESC' : 'ASC'
@@ -170,16 +173,22 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
     } catch {}
   }, [color, from, minGames, resultsCount, hydrated])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleBarClick — a bar click hands the clicked opening (and the applied colour) to onSelectOpening
+  //
+  //  Params:
+  //    barDatum — the clicked bar's chart datum
+  //----------------------------------------------------------------------------------------------
   function handleBarClick(barDatum: any) {
     const eco = barDatum?.eco
     if (!eco) return
     onSelectOpening?.(eco, barDatum.fullName ?? eco, appliedColor)
   }
 
-  //
-  //  Refresh — commit every live/draft filter into the applied snapshot (and the date back to
-  //  the global URL), then bump the nonce to force the load effect to run.
-  //
+  //----------------------------------------------------------------------------------------------
+  //  handleRefresh — commit every live/draft filter into the applied snapshot (and the date back to
+  //  the global URL), then bump the nonce to force the load effect to run
+  //----------------------------------------------------------------------------------------------
   function handleRefresh() {
     setDateFromFilter(draftDateFrom)
     setAppliedPlayer(playerFilter)
@@ -313,6 +322,13 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
 
 //----------------------------------------------------------------------------------------------
 //  sso — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function sso<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
@@ -320,6 +336,12 @@ function sso<T>(key: string, fallback: T): T {
 
 //----------------------------------------------------------------------------------------------
 //  barColor — bar fill color by score percentage (green 60+, gray 40-59, red below 40)
+//
+//  Params:
+//    score — the opening's score percentage
+//
+//  Returns:
+//    the bar's colour
 //----------------------------------------------------------------------------------------------
 function barColor(score: number): string {
   if (score >= 60) return '#16a34a'

@@ -58,6 +58,12 @@ export default function ConstantsViewer({
   const activeSection = sections[sectionIndex] ?? sections[0]
   const functionIndex = buildFunctionIndex(constantsSections, envSections)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleTabChange — switches tab and returns to the first section
+  //
+  //  Params:
+  //    next — the tab to show
+  //----------------------------------------------------------------------------------------------
   function handleTabChange(next: Tab) {
     setTab(next)
     setSectionIndex(0)
@@ -106,10 +112,24 @@ export default function ConstantsViewer({
 //  per function/module-scope reference, listing which constants/env vars that reference uses.
 //  constantsSections and envSections are kept separate (not pre-merged) so each matched name can
 //  be tagged with its origin for the Functions tab's blue/red color coding.
+//
+//  Params:
+//    constantsSections — the constants sections
+//    envSections — the env-var sections
+//
+//  Returns:
+//    the function index entries built from every section's consumers
 //----------------------------------------------------------------------------------------------
 function buildFunctionIndex(constantsSections: ConstantSection[], envSections: ConstantSection[]): FunctionIndexEntry[] {
   const namesByUsedIn = new Map<string, Map<string, boolean>>()
 
+  //----------------------------------------------------------------------------------------------
+  //  addSections — adds the consumers of every entry in the given sections to the function index
+  //
+  //  Params:
+  //    sections — the sections to index
+  //    isEnv — true when the sections are env vars rather than constants
+  //----------------------------------------------------------------------------------------------
   function addSections(sections: ConstantSection[], isEnv: boolean) {
     for (const section of sections) {
       for (const entry of section.entries) {
@@ -150,6 +170,13 @@ function buildFunctionIndex(constantsSections: ConstantSection[], envSections: C
 //----------------------------------------------------------------------------------------------
 //  FunctionIndexTable — flat table of every function/module-scope reference and the
 //  constants/env vars it uses, driven by buildFunctionIndex
+//
+//  Params:
+//    index — the function index entries
+//    functionDescriptions — function name → description
+//
+//  Returns:
+//    the function index table
 //----------------------------------------------------------------------------------------------
 function FunctionIndexTable({ index, functionDescriptions }: { index: FunctionIndexEntry[]; functionDescriptions: Record<string, string> }) {
   return (
@@ -180,6 +207,13 @@ function FunctionIndexTable({ index, functionDescriptions }: { index: FunctionIn
 //  FunctionIndexPopup — always-a-popup display of a function's description followed by its
 //  matched constant/env-var names, one per line, color-coded by origin (blue for constants.ts,
 //  red for .env)
+//
+//  Params:
+//    description — the function's description
+//    names — the constants/env vars the function uses
+//
+//  Returns:
+//    the popup listing them
 //----------------------------------------------------------------------------------------------
 function FunctionIndexPopup({ description, names }: { description: string; names: FunctionIndexName[] }) {
   return (
@@ -197,6 +231,12 @@ function FunctionIndexPopup({ description, names }: { description: string; names
 //----------------------------------------------------------------------------------------------
 //  SectionTable — fixed-width table of entries for one section; same column widths on every
 //  table, on both tabs, so they all line up and look identical
+//
+//  Params:
+//    section — the constants section to show
+//
+//  Returns:
+//    the section's table of constants
 //----------------------------------------------------------------------------------------------
 function SectionTable({ section }: { section: ConstantSection }) {
   return (
@@ -234,6 +274,12 @@ function SectionTable({ section }: { section: ConstantSection }) {
 //----------------------------------------------------------------------------------------------
 //  renderValue — short scalars print as-is; objects/arrays and long scalars (over
 //  VALUE_DISPLAY_MAX_LENGTH characters) render behind a Show popover button
+//
+//  Params:
+//    value — a constant's value
+//
+//  Returns:
+//    the value as display content
 //----------------------------------------------------------------------------------------------
 function renderValue(value: unknown) {
   const isObject = value !== null && typeof value === 'object'
@@ -255,6 +301,14 @@ function renderValue(value: unknown) {
 //  in a table with no shared "which one is open" state needed. NOTE: called from three different
 //  helpers (FunctionIndexPopup, SectionTable, renderValue) — no single caller to anchor its
 //  position to, so it's placed last as a judgment call, not a strict first-use derivation.
+//
+//  Params:
+//    label — the button's label
+//    align — which edge the popover aligns to (default 'right')
+//    children — the popover content
+//
+//  Returns:
+//    the button with its popover
 //----------------------------------------------------------------------------------------------
 function PopoverButton({ label, align = 'right', children }: { label: string; align?: 'left' | 'right'; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)

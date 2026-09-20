@@ -33,6 +33,15 @@ const DECON_TABLE = 'tgd_gamesdecon'
 // Games
 // -----------------------------------------------------------------------
 
+//----------------------------------------------------------------------------------
+//  getGameCount — counts a player's raw games
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the number of raw games for that player
+//----------------------------------------------------------------------------------
 export async function getGameCount(player: string): Promise<number> {
   const result = await table_count({
     table: GAMES_TABLE,
@@ -51,6 +60,16 @@ export async function getGameCount(player: string): Promise<number> {
   return result.data
 }
 
+//----------------------------------------------------------------------------------
+//  getRecentGames — a player's most recent raw games, newest first
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//    limit — maximum rows to return (default 100)
+//
+//  Returns:
+//    the raw game rows, most recent first
+//----------------------------------------------------------------------------------
 export async function getRecentGames(player: string, limit: number = 100) {
   const result = await table_fetch({
     caller: 'getRecentGames',
@@ -73,6 +92,12 @@ export async function getRecentGames(player: string, limit: number = 100) {
 
 //----------------------------------------------------------------------------------
 //  getGameById — reads from tgd_gamesdecon, matched by its own permanent gd_gdid
+//
+//  Params:
+//    gdid — the game's permanent tgd_gamesdecon id
+//
+//  Returns:
+//    the game's row, or null when not found or the fetch failed
 //----------------------------------------------------------------------------------
 export async function getGameById(gdid: number) {
   const result = await table_fetch({
@@ -92,6 +117,15 @@ export async function getGameById(gdid: number) {
   return result.data[0] ?? null
 }
 
+//----------------------------------------------------------------------------------
+//  getLatestGameEndTime — the end time of a player's most recent raw game
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the latest gr_end_time, or null when there is none
+//----------------------------------------------------------------------------------
 export async function getLatestGameEndTime(player: string): Promise<number | null> {
   const result = await table_fetch({
     caller: 'getLatestGameEndTime',
@@ -113,6 +147,20 @@ export async function getLatestGameEndTime(player: string): Promise<number | nul
   return result.data[0]?.gr_end_time ?? null
 }
 
+//----------------------------------------------------------------------------------
+//  insertRawGame — inserts one raw game row
+//
+//  Params:
+//    data.player — the tracked player's username (lowercased before the write)
+//    data.chesscom_uuid — the game's chess.com UUID
+//    data.raw_data — the raw chess.com game JSON
+//    data.pgn — the game's PGN (optional)
+//    data.end_time — the game's end time
+//    data.time_class — the game's time class
+//
+//  Returns:
+//    the insert result data, or null if the insert failed
+//----------------------------------------------------------------------------------
 export async function insertRawGame(data: {
   player: string
   chesscom_uuid: string
@@ -153,6 +201,11 @@ export async function insertRawGame(data: {
 //  delete-then-reinsert (saveGameEvaluations_player) did. Depth-guarded, same as
 //  upgradePositionEvaluation_shared's own tpose/tgev guards, so a shallower pass never
 //  overwrites an existing deeper value for that ply.
+//
+//  Params:
+//    gdid — the game's tgd_gamesdecon id
+//    ply — the ply (half-move) the eval is for
+//    e — the ply's evaluation row
 //----------------------------------------------------------------------------------
 export async function upsertGameEval_player(gdid: number, ply: number, e: GameEvalRow): Promise<void> {
   await table_query({
@@ -191,6 +244,12 @@ export async function upsertGameEval_player(gdid: number, ply: number, e: GameEv
 //  gev_best_move/gev_best_move_san/gev_best_line describe the recommendation from the
 //  position BEFORE this ply, not a property of this ply's own resulting position, so
 //  they always come from gev (blank if no tgev row exists for that ply).
+//
+//  Params:
+//    gdid — the game's tgd_gamesdecon id
+//
+//  Returns:
+//    one entry per ply of the game's PGN; a ply with no known eval comes back undefined
 //----------------------------------------------------------------------------------
 export async function getGameEvals_player(gdid: number): Promise<(GameEvalRow | undefined)[]> {
   const gameResult = await table_fetch({
@@ -302,6 +361,16 @@ export async function getGameEvals_player(gdid: number): Promise<(GameEvalRow | 
 // Deconstructed Games
 // -----------------------------------------------------------------------
 
+//----------------------------------------------------------------------------------
+//  getDeconGames — a player's most recent deconstructed games, newest first
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//    limit — maximum rows to return (default 100)
+//
+//  Returns:
+//    the deconstructed game rows, most recent first
+//----------------------------------------------------------------------------------
 export async function getDeconGames(player: string, limit: number = 100) {
   const result = await table_fetch({
     caller: 'getDeconGames',
@@ -322,6 +391,15 @@ export async function getDeconGames(player: string, limit: number = 100) {
   return result.data
 }
 
+//----------------------------------------------------------------------------------
+//  getDeconGameCount — counts a player's deconstructed games
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the number of deconstructed games for that player
+//----------------------------------------------------------------------------------
 export async function getDeconGameCount(player: string): Promise<number> {
   const result = await table_count({
     table: DECON_TABLE,
@@ -365,6 +443,16 @@ export type GameFilters = {
   dateTo?: string
 }
 
+//----------------------------------------------------------------------------------
+//  buildFilters — builds the filter list shared by the games list's page fetch and its page count
+//
+//  Params:
+//    players — tracked player usernames to include (lowercased); empty for no player filter
+//    filters — the games-list filters (opponent, result, color, dates, opening, ...)
+//
+//  Returns:
+//    the filter array for fetchFiltered/fetchTotalPages
+//----------------------------------------------------------------------------------
 function buildFilters(players: string[], filters: GameFilters): Filter[] {
   const lowered = players.map(u => u.toLowerCase())
   const result: Filter[] = lowered.length === 0
@@ -420,6 +508,18 @@ function buildFilters(players: string[], filters: GameFilters): Filter[] {
   return result
 }
 
+//----------------------------------------------------------------------------------
+//  fetchFilteredGames — one page of deconstructed games matching the filters
+//
+//  Params:
+//    players — tracked player usernames to include; empty for no player filter
+//    filters — the games-list filters
+//    page — 1-based page number
+//    itemsPerPage — rows per page (default GAMES_ITEMS_PER_PAGE_Player)
+//
+//  Returns:
+//    the games on that page
+//----------------------------------------------------------------------------------
 export async function fetchFilteredGames(
   players: string[],
   filters: GameFilters,
@@ -451,6 +551,14 @@ export async function fetchFilteredGames(
 
 //----------------------------------------------------------------------------------
 //  getGamesPageCount — total page count for fetchFilteredGames' same filter set
+//
+//  Params:
+//    players — tracked player usernames to include; empty for no player filter
+//    filters — the games-list filters
+//    itemsPerPage — rows per page (default GAMES_ITEMS_PER_PAGE_Player)
+//
+//  Returns:
+//    the total number of pages
 //----------------------------------------------------------------------------------
 export async function getGamesPageCount(
   players: string[],
@@ -476,6 +584,21 @@ export async function getGamesPageCount(
   return result.data
 }
 
+//----------------------------------------------------------------------------------
+//  getOpeningScores — per-opening game counts and score percentage for the Openings chart
+//
+//  Params:
+//    players — tracked player usernames to include; empty for no player filter
+//    color — 'white' | 'black' to restrict to one colour, or '' for both
+//    minGames — minimum games an opening needs to be included (default 100)
+//    limit — maximum openings returned; 0 for no limit (default 20)
+//    sortDir — sort direction (default 'DESC')
+//    dateFrom — only games on/after this date (optional)
+//    timeClass — only this time class (optional)
+//
+//  Returns:
+//    eco_code, opening_name, games and score_pct for each opening
+//----------------------------------------------------------------------------------
 export async function getOpeningScores(
   players: string[],
   color: 'white' | 'black' | '',
@@ -551,6 +674,18 @@ export async function getOpeningScores(
   }))
 }
 
+//----------------------------------------------------------------------------------
+//  getTerminationStats — win / loss / total games per termination type
+//
+//  Params:
+//    players — tracked player usernames to include
+//    dateFrom — only games on/after this date (optional)
+//    color — restrict to one colour (optional)
+//    timeClass — only this time class (optional)
+//
+//  Returns:
+//    termination, win, loss and total for each termination type
+//----------------------------------------------------------------------------------
 export async function getTerminationStats(
   players: string[],
   dateFrom?: string,
@@ -613,6 +748,18 @@ export async function getTerminationStats(
   }))
 }
 
+//----------------------------------------------------------------------------------
+//  backfillOpeningMoves — batch-backfills gd_opening_moves (parsed from the PGN) for a player's deconstructed
+//  games that don't have it yet
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//    batchSize — games to backfill per call (default 500)
+//
+//  Returns:
+//    updated — games updated in this batch
+//    remaining — games still missing gd_opening_moves
+//----------------------------------------------------------------------------------
 export async function backfillOpeningMoves(
   player: string,
   batchSize: number = 500
@@ -674,6 +821,15 @@ export async function backfillOpeningMoves(
   }
 }
 
+//----------------------------------------------------------------------------------
+//  getEarliestGameDate — the earliest game end time across the given players
+//
+//  Params:
+//    players — tracked player usernames to include (lowercased); empty for every player
+//
+//  Returns:
+//    the earliest game date, or null when there are no games
+//----------------------------------------------------------------------------------
 export async function getEarliestGameDate(players: string[]): Promise<string | null> {
   const placeholders = players.map((_, i) => `$${i + 1}`).join(', ')
   const playerFilter = players.length > 0 ? `WHERE gd_player IN (${placeholders})` : ''
@@ -705,6 +861,19 @@ export interface RatingDataPoint {
 
 export type RatingGranularity = 'month' | 'week' | 'day' | 'game'
 
+//----------------------------------------------------------------------------------
+//  getPlayerRatingOverTime — a player's rating history for the rating chart, bucketed by granularity
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//    timeClass — only this time class (optional)
+//    granularity — bucket size for the data points (default 'month')
+//    dateFrom — only games on/after this date (optional)
+//    dateTo — only games on/before this date (optional)
+//
+//  Returns:
+//    the rating data points, one per bucket
+//----------------------------------------------------------------------------------
 export async function getPlayerRatingOverTime(
   player: string,
   timeClass?: string,

@@ -25,6 +25,12 @@ const EMPTY_PIPELINE_STATUS: PipelineStatus = {
   positions: 0, positionsUnresolved: 0, gamePositions: 0, evaluated: 0, evaluationsRemaining: 0
 }
 
+//----------------------------------------------------------------------------------
+//  getPipelineStatus — snapshot of the games pipeline's status counts, for the Pipeline page
+//
+//  Returns:
+//    the pipeline's status counts (PipelineStatus)
+//----------------------------------------------------------------------------------
 export async function getPipelineStatus(): Promise<PipelineStatus> {
   const queryResult = await table_query({
     caller: 'getPipelineStatus',
@@ -87,6 +93,13 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 //  Per-step refresh functions — each queries only that step's tables
 //----------------------------------------------------------------------------------
 
+//----------------------------------------------------------------------------------
+//  refreshStep1 — re-queries step 1's (deconstruct) status counts
+//
+//  Returns:
+//    pending — raw games not yet deconstructed
+//    allDecon — total deconstructed games
+//----------------------------------------------------------------------------------
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
   const queryResult = await table_query({
     caller: 'refreshStep1', table: 'wk_gr_gamesraw', params: [], skipCache: true,
@@ -112,6 +125,13 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
   return result
 }
 
+//----------------------------------------------------------------------------------
+//  refreshStep3 — re-queries step 3's (build game positions) status counts
+//
+//  Returns:
+//    allProcessed — eligible games already processed
+//    allRemaining — eligible games still to process
+//----------------------------------------------------------------------------------
 export async function refreshStep3(): Promise<{
   allProcessed: number; allRemaining: number
 }> {
@@ -142,6 +162,13 @@ export async function refreshStep3(): Promise<{
   return result
 }
 
+//----------------------------------------------------------------------------------
+//  refreshTposStatus — re-queries the position-tree sync status counts
+//
+//  Returns:
+//    positions — tpos_positions rows
+//    unresolved — tgam_game_positions rows with no resolved position id yet
+//----------------------------------------------------------------------------------
 export async function refreshTposStatus(): Promise<{ positions: number; unresolved: number }> {
   const queryResult = await table_query({
     caller: 'refreshTposStatus', table: 'tpos_positions', params: [], skipCache: true,
@@ -163,6 +190,13 @@ export async function refreshTposStatus(): Promise<{ positions: number; unresolv
   return result
 }
 
+//----------------------------------------------------------------------------------
+//  refreshStep4 — re-queries step 4's (evaluate positions) status counts
+//
+//  Returns:
+//    evaluated — tpose_positions_eval rows
+//    remaining — positions reached more than MIN_REACH_TO_KEEP_Player times with no eval yet
+//----------------------------------------------------------------------------------
 export async function refreshStep4(): Promise<{ evaluated: number; remaining: number }> {
   const queryResult = await table_query({
     caller: 'refreshStep4', table: 'tpose_positions_eval', params: [], skipCache: true,
@@ -189,6 +223,12 @@ export async function refreshStep4(): Promise<{ evaluated: number; remaining: nu
   return result
 }
 
+//----------------------------------------------------------------------------------
+//  refreshCpChangeStatus — re-queries how many tgam_game_positions rows still await a gam_cp_change
+//
+//  Returns:
+//    pending — rows still to be updated
+//----------------------------------------------------------------------------------
 export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
   const queryResult = await table_query({
     caller: 'refreshCpChangeStatus', table: 'tgam_game_positions', params: [], skipCache: true,
@@ -309,6 +349,12 @@ export async function refreshDeepenPopularStatus(): Promise<{ tiers: { depth: nu
   return { tiers }
 }
 
+//----------------------------------------------------------------------------------
+//  refreshPurgeStatus — re-queries how many positions the purge would currently remove
+//
+//  Returns:
+//    eligible — positions eligible for purge
+//----------------------------------------------------------------------------------
 export async function refreshPurgeStatus(): Promise<{ eligible: number }> {
   const candidatesRes = await table_query({
     caller: 'refreshPurgeStatus_find', table: 'tpos_positions', params: [], skipCache: true,

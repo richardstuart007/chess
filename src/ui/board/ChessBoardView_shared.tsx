@@ -231,6 +231,9 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
     if (!fen) { setMastersData(null); setMastersFenEvals({}); return }
     let cancelled = false
 
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the Lichess masters explorer data for the current position and stores it in mastersData (clearing mastersFenEvals)
+    //----------------------------------------------------------------------------------------------
     async function load() {
       try {
         const data = await getMastersExplorer(fen!)
@@ -324,6 +327,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
   // Keyboard navigation
   // -----------------------------------------------------------------------
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  handleKey — keyboard navigation: ArrowLeft / ArrowRight step back and forward through the moves
+    //
+    //  Params:
+    //    e — the keydown event
+    //----------------------------------------------------------------------------------------------
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
@@ -535,7 +544,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
     engineRef.current?.requestStop()
   }
 
-  // Trigger multi-PV when clicking a node in exploration mode
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectNode — Trigger multi-PV when clicking a node in exploration mode
+  //
+  //  Params:
+  //    node — the move node clicked
+  //----------------------------------------------------------------------------------------------
   function handleSelectNode(node: MoveNode) {
     goToNode(node)
   }
@@ -590,6 +604,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
       }
     } catch { /* if FEN is invalid, skip validation */ }
 
+    //----------------------------------------------------------------------------------------------
+    //  processUpdate — handles one streaming update from the infinite analysis: drops lines whose best move is illegal in this position, and de-duplicates by best move (the engine can repeat one when fewer distinct moves exist than requested)
+    //
+    //  Params:
+    //    update — the engine's latest analysis update
+    //----------------------------------------------------------------------------------------------
     function processUpdate(update: InfiniteAnalysisUpdate) {
       // Filter out any moves that are illegal in this position
       const legal = legalUcis.size > 0
@@ -648,6 +668,9 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
     )
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  stopDeepAnalysis — stops the engine's infinite analysis and clears the deepAnalyzing flag
+  //----------------------------------------------------------------------------------------------
   function stopDeepAnalysis() {
     engineRef.current?.stopAnalysis()
     setDeepAnalyzing(false)
@@ -697,6 +720,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
   // fen/ply are the position/ply that was actually analyzed, captured at the start
   // of that run — not read fresh here, since the user may have already navigated
   // elsewhere by the time this fires.
+  //
+  //  Params:
+  //    fen — the position that was analysed
+  //    ply — that position's 1-indexed ply
+  //    lines — the engine lines to persist
+  //    depth — the search depth reached
   // -----------------------------------------------------------------------
   async function persistAnalysisLines(fen: string, ply: number, lines: MultiPvResult[], depth: number) {
     if (lines.length === 0) return
@@ -792,6 +821,9 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
 
   // -----------------------------------------------------------------------
   // Handle selecting an alternative PV line
+  //
+  //  Params:
+  //    line — the engine line the user selected
   // -----------------------------------------------------------------------
   function handleSelectPvLine(line: MultiPvResult) {
     if (!tree) return
@@ -809,6 +841,13 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
 
   // -----------------------------------------------------------------------
   // Interactive board: handle piece drop
+  //
+  //  Params:
+  //    sourceSquare — the square the piece was dragged from
+  //    targetSquare — the square it was dropped on
+  //
+  //  Returns:
+  //    true when the drop was accepted as a move, false otherwise
   // -----------------------------------------------------------------------
   function handlePieceDrop(sourceSquare: string, targetSquare: string): boolean {
     if (!tree) return false
@@ -851,6 +890,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
     return true
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  evaluateNodePosition — evaluates one node's position with Stockfish, starting the engine on first use
+  //
+  //  Params:
+  //    node — the move node whose position to evaluate
+  //----------------------------------------------------------------------------------------------
   async function evaluateNodePosition(node: MoveNode) {
     try {
       let engine = engineRef.current
@@ -1364,6 +1409,12 @@ export default function ChessBoardView_shared({ game, gdid, player, stockfishDep
 //----------------------------------------------------------------------------------
 //  formatGameDate — unix epoch seconds -> dd/mm/yy, matching the same convention
 //  already used in GameList.tsx and HabitsTable.tsx
+//
+//  Params:
+//    endTime — the game's end time, in unix seconds
+//
+//  Returns:
+//    the date as display text
 //----------------------------------------------------------------------------------
 function formatGameDate(endTime: number): string {
   const date = new Date(endTime * 1000)

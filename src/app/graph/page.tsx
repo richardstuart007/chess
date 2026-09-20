@@ -81,6 +81,9 @@ function GraphContent() {
   const [refreshNonce,   setRefreshNonce]   = useState(0)
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  loadPlayers — loads the tracked players list into state
+    //----------------------------------------------------------------------------------------------
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -108,11 +111,12 @@ function GraphContent() {
   }, [limit, hydrated])
 
   useEffect(() => {
-    //
-    //  "All" (playerFilter unset) means no player filter at all, not every tracked
-    //  username enumerated — the players.length guard below covers "player list not
-    //  loaded yet" instead, since queryPlayers is legitimately [] once players.length > 0.
-    //
+    //----------------------------------------------------------------------------------------------
+    //  fetchMin — fetches the earliest game date for the selected player and stores it as minDate.
+    //  'All' (playerFilter unset) means no player filter at all, not every tracked
+    //  username enumerated — the players.length guard covers 'player list not
+    //  loaded yet' instead, since queryPlayers is legitimately [] once players.length > 0
+    //----------------------------------------------------------------------------------------------
     async function fetchMin() {
       if (players.length === 0) return
       const queryPlayers = playerFilter ? [playerFilter] : []
@@ -133,6 +137,9 @@ function GraphContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerFilter, hydrated])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleRefresh — applies the draft date and limit, and bumps refreshNonce to re-run the chart's fetch
+  //----------------------------------------------------------------------------------------------
   function handleRefresh() {
     setDateFromFilter(draftDateFrom)
     setAppliedLimit(limit)
@@ -205,6 +212,13 @@ function GraphContent() {
 
 //----------------------------------------------------------------------------------
 //  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }

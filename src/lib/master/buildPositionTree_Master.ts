@@ -180,6 +180,14 @@ export async function buildPositionTree_Master(opts: {
 //----------------------------------------------------------------------------------
 //  getPositionsFromGame_Master — pure chess.js, no DB, returns all recordable
 //  positions. Mirrors buildPositionTree_Player.ts's getPositionsFromGame_Player.
+//
+//  Params:
+//    game — the master game record (its PGN is replayed)
+//    minHalfMove — first half-move to record
+//    maxHalfMove — last half-move to record
+//
+//  Returns:
+//    the recordable positions, in move order
 //----------------------------------------------------------------------------------
 function getPositionsFromGame_Master(
   game: MasterGameRecord,
@@ -243,6 +251,10 @@ function getPositionsFromGame_Master(
 //----------------------------------------------------------------------------------
 //  insertGamePositions_Master — Phase A: write tmgam_game_positions directly from
 //  parsed records. Mirrors buildPositionTree_Player.ts's insertGamePositions_Player.
+//
+//  Params:
+//    records — the parsed position records to insert
+//    level — logging level
 //----------------------------------------------------------------------------------
 async function insertGamePositions_Master(records: MasterPositionRecord[], level: number): Promise<void> {
   await logStart('insertGamePositions_Master', 'buildPositionTree_Master', `inserting ${records.length} game-position rows`, level)
@@ -274,6 +286,14 @@ async function insertGamePositions_Master(records: MasterPositionRecord[], level
 //  syncTposFromTgam_Master — Phase B: derive tmpos_positions from
 //  tmgam_game_positions. Mirrors buildPositionTree_Player.ts's syncTposFromTgam_Player
 //  exactly (three steps: ensure, backfill ids, recompute touched only).
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//    playerLabel — the master being processed, for the pipeline log (optional)
+//
+//  Returns:
+//    positionsSynced — the number of positions synced
 //----------------------------------------------------------------------------------
 export async function syncTposFromTgam_Master(level: number = 1, forceNewRun?: boolean, playerLabel?: string): Promise<{ positionsSynced: number }> {
   await logStart('syncTposFromTgam_Master', 'buildPositionTree_Master', 'deriving tmpos_positions from unresolved tmgam_game_positions rows', level)
@@ -379,6 +399,10 @@ export async function syncTposFromTgam_Master(level: number = 1, forceNewRun?: b
 //  recomputePosReachedByIds_Master — accurate count from tmgam_game_positions for a
 //  specific set of positions. Mirrors buildPositionTree_Player.ts's
 //  recomputePosReachedByIds_Player.
+//
+//  Params:
+//    posIds — the tmpos_positions ids to recount
+//    level — logging level
 //----------------------------------------------------------------------------------
 async function recomputePosReachedByIds_Master(posIds: number[], level: number): Promise<void> {
   if (posIds.length === 0) return

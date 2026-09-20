@@ -203,6 +203,13 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     eco: ecoFilter || undefined
   }), [filters, timeClassFilter, dateFromFilter, openingFilter, ecoFilter])
 
+  //----------------------------------------------------------------------------------------------
+  //  updateFilter — sets one draft filter, or clears it when the value is empty; numeric keys (opponent rating, gdid) are parsed as integers
+  //
+  //  Params:
+  //    key — the filter to change
+  //    value — the new value ('' clears it)
+  //----------------------------------------------------------------------------------------------
   function updateFilter(key: keyof GameFilters, value: string) {
     setDraftFilters(prev => {
       const next = { ...prev }
@@ -217,6 +224,12 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     })
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  updateTerminationFilter — sets the draft termination filter, or clears it when nothing is selected
+  //
+  //  Params:
+  //    terms — the selected termination types
+  //----------------------------------------------------------------------------------------------
   function updateTerminationFilter(terms: string[]) {
     setDraftFilters(prev => {
       const next = { ...prev }
@@ -225,6 +238,9 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     })
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleApplyFilters — applies the draft filters, and writes the draft date, opening and ECO to the global URL params
+  //----------------------------------------------------------------------------------------------
   function handleApplyFilters() {
     setFilters(draftFilters)
     setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
@@ -264,6 +280,9 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
   useEffect(() => {
     if (!hydrated) return
     let cancelled = false
+    //----------------------------------------------------------------------------------------------
+    //  fetchCount — fetches the total number of matching games and stores it as totalCount (0 when there are no players to fetch)
+    //----------------------------------------------------------------------------------------------
     async function fetchCount() {
       if (playersToFetch.length === 0) {
         if (!cancelled) { setTotalCount(0) }
@@ -283,6 +302,9 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     let cancelled = false
     setLoading(true)
 
+    //----------------------------------------------------------------------------------------------
+    //  fetchPage — fetches the current page of games for the applied filters and stores it in state (none when there are no players to fetch)
+    //----------------------------------------------------------------------------------------------
     async function fetchPage() {
       if (playersToFetch.length === 0) {
         if (!cancelled) { setGames([]); setLoading(false) }
@@ -301,6 +323,12 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     return () => { cancelled = true }
   }, [playersToFetch, queryPlayers, effectiveFilters, currentPage, rowsPerPage, hydrated])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectGame — builds a ChessComGame-shaped object from the clicked row (the opposite side's result derived from the player's own) and hands it to onSelectGame with the row's player
+  //
+  //  Params:
+  //    row — the clicked games-list row
+  //----------------------------------------------------------------------------------------------
   function handleSelectGame(row: any) {
     const rowPlayer = row.gd_player
     const game: ChessComGame = {
@@ -561,6 +589,13 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
 
 //----------------------------------------------------------------------------------------------
 //  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }

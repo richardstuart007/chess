@@ -9,15 +9,13 @@ export interface PgnHeaders {
 }
 
 //----------------------------------------------------------------------------------
-//  getHeader — extract a single PGN header value by tag name
-//----------------------------------------------------------------------------------
-function getHeader(pgn: string, tag: string): string {
-  const match = pgn.match(new RegExp(`\\[${tag}\\s+"([^"]*)"\\]`))
-  return match?.[1] ?? ''
-}
-
-//----------------------------------------------------------------------------------
 //  parsePgnHeaders — parse all relevant headers from a PGN string
+//
+//  Params:
+//    pgn — the game's PGN
+//
+//  Returns:
+//    the parsed PGN headers
 //----------------------------------------------------------------------------------
 export function parsePgnHeaders(pgn: string): PgnHeaders {
   const eco = getHeader(pgn, 'ECO')
@@ -34,6 +32,13 @@ export function parsePgnHeaders(pgn: string): PgnHeaders {
 
 //----------------------------------------------------------------------------------
 //  extractOpeningName — parse opening name from ECOUrl
+//
+//  Params:
+//    ecoUrl — the ECO/opening URL from the PGN
+//    _ecoCode — the ECO code (unused)
+//
+//  Returns:
+//    the opening name
 //----------------------------------------------------------------------------------
 export function extractOpeningName(ecoUrl: string, _ecoCode: string): string {
   if (!ecoUrl) return ''
@@ -54,6 +59,12 @@ export function extractOpeningName(ecoUrl: string, _ecoCode: string): string {
 
 //----------------------------------------------------------------------------------
 //  countMoves — count half-moves (ply) from PGN move text
+//
+//  Params:
+//    pgn — the game's PGN
+//
+//  Returns:
+//    the number of moves in the game
 //----------------------------------------------------------------------------------
 export function countMoves(pgn: string): number {
   const moveText = pgn.replace(/\[.*?\]\s*/g, '').trim()
@@ -74,6 +85,13 @@ export function countMoves(pgn: string): number {
 
 //----------------------------------------------------------------------------------
 //  parsePgnOpening — extract first N half-moves from a PGN string
+//
+//  Params:
+//    pgn — the game's PGN
+//    halfMoves — how many half-moves of the opening to keep (default 999)
+//
+//  Returns:
+//    the game's opening moves
 //----------------------------------------------------------------------------------
 export function parsePgnOpening(pgn: string, halfMoves: number = 999): string {
   const moveText = pgn.replace(/\[.*?\]\s*/gs, '').trim()
@@ -89,6 +107,12 @@ export function parsePgnOpening(pgn: string, halfMoves: number = 999): string {
 
 //----------------------------------------------------------------------------------
 //  parsePlayedDate — convert UTCDate "YYYY.MM.DD" to "YYYY-MM-DD"
+//
+//  Params:
+//    utcDate — the PGN's UTC date header
+//
+//  Returns:
+//    the played date, or null if unparseable
 //----------------------------------------------------------------------------------
 export function parsePlayedDate(utcDate: string): string | null {
   if (!utcDate) return null
@@ -97,6 +121,12 @@ export function parsePlayedDate(utcDate: string): string | null {
 
 //----------------------------------------------------------------------------------
 //  normalizeTermination — map raw chess.com termination string to short label
+//
+//  Params:
+//    raw — the raw termination text (may be undefined)
+//
+//  Returns:
+//    the normalized termination label
 //----------------------------------------------------------------------------------
 export function normalizeTermination(raw: string | undefined): string {
   if (!raw) return ''
@@ -112,4 +142,19 @@ export function normalizeTermination(raw: string | undefined): string {
   if (t.includes('drawn by stalemate'))    return 'Stalemate'
   if (t.includes('drawn by 50-move'))      return '50 Moves'
   return raw
+}
+
+//----------------------------------------------------------------------------------
+//  getHeader — extract a single PGN header value by tag name
+//
+//  Params:
+//    pgn — the game's PGN
+//    tag — the header tag name, e.g. 'ECO'
+//
+//  Returns:
+//    the tag's value
+//----------------------------------------------------------------------------------
+function getHeader(pgn: string, tag: string): string {
+  const match = pgn.match(new RegExp(`\\[${tag}\\s+"([^"]*)"\\]`))
+  return match?.[1] ?? ''
 }

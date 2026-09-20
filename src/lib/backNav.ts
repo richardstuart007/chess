@@ -16,26 +16,12 @@ const BACK_STACK_KEY = `${SESSION_STORAGE_PREFIX}back_stack`
 //
 const GLOBAL_FILTER_BACK_KEYS = ['player']
 
-function readStack(): string[] {
-  try {
-    const raw = sessionStorage.getItem(BACK_STACK_KEY)
-    return raw ? JSON.parse(raw) as string[] : []
-  } catch {
-    return []
-  }
-}
-
-function writeStack(stack: string[]): void {
-  try {
-    sessionStorage.setItem(BACK_STACK_KEY, JSON.stringify(stack))
-  } catch {
-    // Non-critical — worst case, back navigation falls back to the caller's default
-  }
-}
-
 //----------------------------------------------------------------------------------------------
 //  pushBackTarget — call immediately before navigating to a "deeper" page, with the URL
 //  (path + search) of the page being left
+//
+//  Params:
+//    url — the URL (path + search) of the page being left
 //----------------------------------------------------------------------------------------------
 export function pushBackTarget(url: string): void {
   const stack = readStack()
@@ -47,6 +33,13 @@ export function pushBackTarget(url: string): void {
 //  popBackTarget — call from a "← Back" click. Pops the last pushed URL (if any, else
 //  fallback), then overrides its global-filter params with their current live values from
 //  currentSearchParams (the page being left) before returning the URL to navigate to.
+//
+//  Params:
+//    currentSearchParams — the search params of the page being left, whose live global-filter values override the popped URL's
+//    fallback — the URL to return when nothing has been pushed
+//
+//  Returns:
+//    the URL to navigate back to
 //----------------------------------------------------------------------------------------------
 export function popBackTarget(currentSearchParams: URLSearchParams, fallback: string): string {
   const stack = readStack()
@@ -63,4 +56,33 @@ export function popBackTarget(currentSearchParams: URLSearchParams, fallback: st
   }
   const newQs = params.toString()
   return newQs ? `${path}?${newQs}` : path
+}
+
+//----------------------------------------------------------------------------------
+//  readStack — reads the back-navigation stack from sessionStorage
+//
+//  Returns:
+//    the stack of URLs (empty when unset, corrupt or sessionStorage is unavailable)
+//----------------------------------------------------------------------------------
+function readStack(): string[] {
+  try {
+    const raw = sessionStorage.getItem(BACK_STACK_KEY)
+    return raw ? JSON.parse(raw) as string[] : []
+  } catch {
+    return []
+  }
+}
+
+//----------------------------------------------------------------------------------
+//  writeStack — writes the back-navigation stack to sessionStorage (silently ignores failures)
+//
+//  Params:
+//    stack — the stack of URLs to store
+//----------------------------------------------------------------------------------
+function writeStack(stack: string[]): void {
+  try {
+    sessionStorage.setItem(BACK_STACK_KEY, JSON.stringify(stack))
+  } catch {
+    // Non-critical — worst case, back navigation falls back to the caller's default
+  }
 }

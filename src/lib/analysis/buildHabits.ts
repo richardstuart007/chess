@@ -169,6 +169,13 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
 //----------------------------------------------------------------------------------
 //  upsertHabitAggregates — chunked upsert into thab_habits, shared by buildHabits and
 //  refreshHabitsForPosition
+//
+//  Params:
+//    aggregates — the habit aggregates to upsert
+//    level — logging level
+//
+//  Returns:
+//    the number of habit rows built
 //----------------------------------------------------------------------------------
 async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number): Promise<number> {
   let built = 0
@@ -223,6 +230,13 @@ async function upsertHabitAggregates(aggregates: HabitAggregate[], level: number
 //----------------------------------------------------------------------------------
 //  chunkRows — plain fixed-size chunking; unlike buildPositionTree_Player's chunkByGame,
 //  each habit row is independent so no grouping constraint is needed.
+//
+//  Params:
+//    rows — the rows to split
+//    maxRows — maximum rows per chunk
+//
+//  Returns:
+//    the rows split into chunks of at most maxRows
 //----------------------------------------------------------------------------------
 function chunkRows<T>(rows: T[], maxRows: number): T[][] {
   const chunks: T[][] = []

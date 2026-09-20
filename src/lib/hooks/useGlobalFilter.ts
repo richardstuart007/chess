@@ -23,6 +23,12 @@ export function useGlobalFilter(key: string): [string, (next: string) => void] {
   const searchParams = useSearchParams()
   const value = searchParams.get(key) ?? ''
 
+  //----------------------------------------------------------------------------------------------
+  //  setValue — sets this hook's URL param
+  //
+  //  Params:
+  //    next — the new value
+  //----------------------------------------------------------------------------------------------
   function setValue(next: string) {
     setMultiple({ [key]: next })
   }

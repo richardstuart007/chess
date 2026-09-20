@@ -137,6 +137,17 @@ export default function MasterGamesDbPanel({ fen, autoFetch = true, defaultOpen 
 //  fetchGamesPage — fetches one page of master games plus the total row count for the same
 //  filter, and (unpaginated, from the existing capped moves breakdown) the distinct move list for
 //  the filter dropdown, in parallel
+//
+//  Params:
+//    fen — the position to look up
+//    page — 1-based page number
+//    itemsPerPage — rows per page
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    games — the page's games
+//    totalRows — total matching games
+//    moveOptions — the moves available for the move filter
 //----------------------------------------------------------------------------------
 async function fetchGamesPage(fen: string, page: number, itemsPerPage: number, move: string | undefined): Promise<{
   games:       MasterFenGameHit[]

@@ -52,139 +52,6 @@ const HISTORICAL_MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Master - 1) * 2
 
 type ExistingMaster = { mstid: number; firstName: string; lastName: string; chesscomHandle: string | null }
 
-//----------------------------------------------------------------------------------
-//  getHeader — extract a single PGN header value by tag name (generic, not chess.com-specific)
-//----------------------------------------------------------------------------------
-function getHeader(pgn: string, tag: string): string {
-  const match = pgn.match(new RegExp(`\\[${tag}\\s+"([^"]*)"\\]`))
-  return match?.[1] ?? ''
-}
-
-//----------------------------------------------------------------------------------
-//  splitIntoGames — splits a multi-game PGN blob into individual game texts, on the boundary
-//  right before each "[Event " tag
-//----------------------------------------------------------------------------------
-function splitIntoGames(pgnText: string): string[] {
-  return pgnText
-    .split(/\n(?=\[Event )/)
-    .map(g => g.trim())
-    .filter(g => g.length > 0)
-}
-
-//----------------------------------------------------------------------------------
-//  splitPgnPlayerName — a PGN White/Black header is "Firstname [Middle...] Lastname"; the last
-//  space-separated word becomes the surname, everything before it the first/middle name(s). A
-//  single-word name (no space) becomes an empty first name, matching splitFideName's fallback
-//  (fidePipeline.ts) for the same no-separator case.
-//----------------------------------------------------------------------------------
-function splitPgnPlayerName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim()
-  const lastSpace = trimmed.lastIndexOf(' ')
-  if (lastSpace === -1) return { firstName: '', lastName: trimmed }
-  return { firstName: trimmed.slice(0, lastSpace).trim(), lastName: trimmed.slice(lastSpace + 1).trim() }
-}
-
-//----------------------------------------------------------------------------------
-//  parseHistoricalDate — PGN Date header "YYYY.MM.DD" (unknown parts as "??") to a unix-seconds
-//  UTC-midnight timestamp for mgd_end_time. Returns null if unparseable (game is then skipped —
-//  mgd_end_time is NOT NULL). The real date, unmodified — mgd_end_time is bigint, so any real
-//  historical date (including pre-1901 games, which overflow a 32-bit integer) fits exactly.
-//----------------------------------------------------------------------------------
-function parseHistoricalDate(dateHeader: string): number | null {
-  const match = dateHeader.match(/^(\d{4})\.(\d{2}|\?\?)\.(\d{2}|\?\?)$/)
-  if (!match) return null
-  const year = parseInt(match[1], 10)
-  const month = match[2] === '??' ? 1 : parseInt(match[2], 10)
-  const day = match[3] === '??' ? 1 : parseInt(match[3], 10)
-  return Math.floor(Date.UTC(year, month - 1, day) / 1000)
-}
-
-//----------------------------------------------------------------------------------
-//  resolveHistoricalMasterIdentifiers — given every unique (firstName, lastName) pair appearing
-//  as White/Black across the batch, returns a "firstName|lastName" (lowercased) -> identifier map,
-//  where identifier is the master's real chess.com handle if it already has one, else its
-//  historicalPlayerSlug. Matches an existing tmst_master_players row by surname (case-insensitive),
-//  disambiguating by first name only on a surname collision — mirrors fidePipeline.ts's
-//  findUnlinkedRowByName, except it matches against every existing row (not only fideid-less ones),
-//  since a historical player may already be a fully-linked master under a spelling variant of their
-//  first name (e.g. PGN "Alexey Shirov" vs. the already-tracked "Alexei Shirov"). Inserts a new,
-//  handle-less tmst_master_players row for any name with no match.
-//----------------------------------------------------------------------------------
-async function resolveHistoricalMasterIdentifiers(names: { firstName: string; lastName: string }[]): Promise<Map<string, string>> {
-  const existingResult = await table_fetch({
-    caller: 'resolveHistoricalMasterIdentifiers',
-    table: MASTER_PLAYERS_TABLE,
-    columns: ['mst_mstid', 'mst_first_name', 'mst_last_name', 'mst_chesscom_handle'],
-    skipCache: true
-  })
-  const existing: ExistingMaster[] = existingResult.ok
-    ? existingResult.data.map((r: any) => ({
-        mstid: Number(r.mst_mstid),
-        firstName: (r.mst_first_name as string) ?? '',
-        lastName: r.mst_last_name as string,
-        chesscomHandle: (r.mst_chesscom_handle as string) ?? null
-      }))
-    : []
-  if (!existingResult.ok) {
-    write_logging({
-      lg_functionname: 'resolveHistoricalMasterIdentifiers',
-      lg_caller: 'resolveHistoricalMasterIdentifiers',
-      lg_msg: 'Failed to fetch existing master players: ' + existingResult.error,
-      lg_severity: 'E'
-    })
-  }
-
-  const uniqueNames = new Map<string, { firstName: string; lastName: string }>()
-  for (const n of names) uniqueNames.set(`${n.firstName.toLowerCase()}|${n.lastName.toLowerCase()}`, n)
-
-  const identifierMap = new Map<string, string>()
-
-  for (const [key, { firstName, lastName }] of uniqueNames) {
-    const bySurname = existing.filter(e => e.lastName.toLowerCase() === lastName.toLowerCase())
-    let match: ExistingMaster | null = null
-    if (bySurname.length === 1) match = bySurname[0]
-    else if (bySurname.length > 1) {
-      const byFirstNameToo = bySurname.filter(e => e.firstName.toLowerCase() === firstName.toLowerCase())
-      if (byFirstNameToo.length === 1) match = byFirstNameToo[0]
-    }
-
-    if (match) {
-      //
-      //  mgd_player/mgd_white_username/mgd_black_username are always lowercase (matches the
-      //  regular chess.com-sync pipeline, deconstructGames_Master.ts) — chesscomHandle is stored
-      //  with its original chess.com casing, so it must be lowercased here too; historicalPlayerSlug
-      //  is already lowercase.
-      //
-      identifierMap.set(key, (match.chesscomHandle ?? historicalPlayerSlug(match.firstName, match.lastName)).toLowerCase())
-      continue
-    }
-
-    const insertResult = await table_write({
-      caller: 'resolveHistoricalMasterIdentifiers',
-      table: MASTER_PLAYERS_TABLE,
-      columnValuePairs: [
-        { column: 'mst_first_name', value: firstName || null },
-        { column: 'mst_last_name', value: lastName },
-        { column: 'mst_fideid', value: null },
-        { column: 'mst_grade', value: null },
-        { column: 'mst_priority', value: false },
-        { column: 'mst_chesscom_handle', value: null }
-      ]
-    })
-    if (!insertResult.ok) {
-      write_logging({
-        lg_functionname: 'resolveHistoricalMasterIdentifiers',
-        lg_caller: 'resolveHistoricalMasterIdentifiers',
-        lg_msg: `Failed to insert new master player ${firstName} ${lastName}: ` + insertResult.error,
-        lg_severity: 'E'
-      })
-    }
-    identifierMap.set(key, historicalPlayerSlug(firstName, lastName))
-  }
-
-  return identifierMap
-}
-
 //==================================================================================================
 //  1) DESCRIPTION
 //    uploadHistoricalPgn — pipeline stage 1. Splits an uploaded PGN blob (one or more files'
@@ -444,4 +311,168 @@ export async function refreshHistoricalStatus(): Promise<{ staged: number; decon
   }
   const r = result.data[0] ?? {}
   return { staged: parseInt(r.staged ?? '0'), decon: parseInt(r.decon ?? '0') }
+}
+
+//----------------------------------------------------------------------------------
+//  getHeader — extract a single PGN header value by tag name (generic, not chess.com-specific)
+//
+//  Params:
+//    pgn — the game's PGN
+//    tag — the header tag name, e.g. 'White'
+//
+//  Returns:
+//    the tag's value
+//----------------------------------------------------------------------------------
+function getHeader(pgn: string, tag: string): string {
+  const match = pgn.match(new RegExp(`\\[${tag}\\s+"([^"]*)"\\]`))
+  return match?.[1] ?? ''
+}
+
+//----------------------------------------------------------------------------------
+//  splitIntoGames — splits a multi-game PGN blob into individual game texts, on the boundary
+//  right before each "[Event " tag
+//
+//  Params:
+//    pgnText — the full text of an uploaded PGN file
+//
+//  Returns:
+//    the individual games' PGN text
+//----------------------------------------------------------------------------------
+function splitIntoGames(pgnText: string): string[] {
+  return pgnText
+    .split(/\n(?=\[Event )/)
+    .map(g => g.trim())
+    .filter(g => g.length > 0)
+}
+
+//----------------------------------------------------------------------------------
+//  splitPgnPlayerName — a PGN White/Black header is "Firstname [Middle...] Lastname"; the last
+//  space-separated word becomes the surname, everything before it the first/middle name(s). A
+//  single-word name (no space) becomes an empty first name, matching splitFideName's fallback
+//  (fidePipeline.ts) for the same no-separator case.
+//
+//  Params:
+//    name — the PGN player name
+//
+//  Returns:
+//    firstName and lastName (the whole name is the last name when there is no space)
+//----------------------------------------------------------------------------------
+function splitPgnPlayerName(name: string): { firstName: string; lastName: string } {
+  const trimmed = name.trim()
+  const lastSpace = trimmed.lastIndexOf(' ')
+  if (lastSpace === -1) return { firstName: '', lastName: trimmed }
+  return { firstName: trimmed.slice(0, lastSpace).trim(), lastName: trimmed.slice(lastSpace + 1).trim() }
+}
+
+//----------------------------------------------------------------------------------
+//  parseHistoricalDate — PGN Date header "YYYY.MM.DD" (unknown parts as "??") to a unix-seconds
+//  UTC-midnight timestamp for mgd_end_time. Returns null if unparseable (game is then skipped —
+//  mgd_end_time is NOT NULL). The real date, unmodified — mgd_end_time is bigint, so any real
+//  historical date (including pre-1901 games, which overflow a 32-bit integer) fits exactly.
+//
+//  Params:
+//    dateHeader — the PGN Date header, 'YYYY.MM.DD' with unknown parts as '??'
+//
+//  Returns:
+//    the unix-seconds UTC-midnight timestamp, or null if unparseable
+//----------------------------------------------------------------------------------
+function parseHistoricalDate(dateHeader: string): number | null {
+  const match = dateHeader.match(/^(\d{4})\.(\d{2}|\?\?)\.(\d{2}|\?\?)$/)
+  if (!match) return null
+  const year = parseInt(match[1], 10)
+  const month = match[2] === '??' ? 1 : parseInt(match[2], 10)
+  const day = match[3] === '??' ? 1 : parseInt(match[3], 10)
+  return Math.floor(Date.UTC(year, month - 1, day) / 1000)
+}
+
+//----------------------------------------------------------------------------------
+//  resolveHistoricalMasterIdentifiers — given every unique (firstName, lastName) pair appearing
+//  as White/Black across the batch, returns a "firstName|lastName" (lowercased) -> identifier map,
+//  where identifier is the master's real chess.com handle if it already has one, else its
+//  historicalPlayerSlug. Matches an existing tmst_master_players row by surname (case-insensitive),
+//  disambiguating by first name only on a surname collision — mirrors fidePipeline.ts's
+//  findUnlinkedRowByName, except it matches against every existing row (not only fideid-less ones),
+//  since a historical player may already be a fully-linked master under a spelling variant of their
+//  first name (e.g. PGN "Alexey Shirov" vs. the already-tracked "Alexei Shirov"). Inserts a new,
+//  handle-less tmst_master_players row for any name with no match.
+//
+//  Params:
+//    names — the first/last name of each historical player in the batch
+//
+//  Returns:
+//    a map from each player (keyed by name) to the identifier used for them in mgd_player
+//----------------------------------------------------------------------------------
+async function resolveHistoricalMasterIdentifiers(names: { firstName: string; lastName: string }[]): Promise<Map<string, string>> {
+  const existingResult = await table_fetch({
+    caller: 'resolveHistoricalMasterIdentifiers',
+    table: MASTER_PLAYERS_TABLE,
+    columns: ['mst_mstid', 'mst_first_name', 'mst_last_name', 'mst_chesscom_handle'],
+    skipCache: true
+  })
+  const existing: ExistingMaster[] = existingResult.ok
+    ? existingResult.data.map((r: any) => ({
+        mstid: Number(r.mst_mstid),
+        firstName: (r.mst_first_name as string) ?? '',
+        lastName: r.mst_last_name as string,
+        chesscomHandle: (r.mst_chesscom_handle as string) ?? null
+      }))
+    : []
+  if (!existingResult.ok) {
+    write_logging({
+      lg_functionname: 'resolveHistoricalMasterIdentifiers',
+      lg_caller: 'resolveHistoricalMasterIdentifiers',
+      lg_msg: 'Failed to fetch existing master players: ' + existingResult.error,
+      lg_severity: 'E'
+    })
+  }
+
+  const uniqueNames = new Map<string, { firstName: string; lastName: string }>()
+  for (const n of names) uniqueNames.set(`${n.firstName.toLowerCase()}|${n.lastName.toLowerCase()}`, n)
+
+  const identifierMap = new Map<string, string>()
+
+  for (const [key, { firstName, lastName }] of uniqueNames) {
+    const bySurname = existing.filter(e => e.lastName.toLowerCase() === lastName.toLowerCase())
+    let match: ExistingMaster | null = null
+    if (bySurname.length === 1) match = bySurname[0]
+    else if (bySurname.length > 1) {
+      const byFirstNameToo = bySurname.filter(e => e.firstName.toLowerCase() === firstName.toLowerCase())
+      if (byFirstNameToo.length === 1) match = byFirstNameToo[0]
+    }
+
+    if (match) {
+      //
+      //  mgd_player/mgd_white_username/mgd_black_username are always lowercase (matches the
+      //  regular chess.com-sync pipeline, deconstructGames_Master.ts) — chesscomHandle is stored
+      //  with its original chess.com casing, so it must be lowercased here too; historicalPlayerSlug
+      //  is already lowercase.
+      //
+      identifierMap.set(key, (match.chesscomHandle ?? historicalPlayerSlug(match.firstName, match.lastName)).toLowerCase())
+      continue
+    }
+
+    const insertResult = await table_write({
+      caller: 'resolveHistoricalMasterIdentifiers',
+      table: MASTER_PLAYERS_TABLE,
+      columnValuePairs: [
+        { column: 'mst_first_name', value: firstName || null },
+        { column: 'mst_last_name', value: lastName },
+        { column: 'mst_fideid', value: null },
+        { column: 'mst_grade', value: null },
+        { column: 'mst_priority', value: false },
+        { column: 'mst_chesscom_handle', value: null }
+      ]
+    })
+    if (!insertResult.ok) {
+      write_logging({
+        lg_functionname: 'resolveHistoricalMasterIdentifiers',
+        lg_caller: 'resolveHistoricalMasterIdentifiers',
+        lg_msg: `Failed to insert new master player ${firstName} ${lastName}: ` + insertResult.error,
+        lg_severity: 'E'
+      })
+    }
+    identifierMap.set(key, historicalPlayerSlug(firstName, lastName))
+  }
+
+  return identifierMap
 }

@@ -57,6 +57,9 @@ export function useMissingEvalAnalysis(rows: MissingEvalRow[]) {
 
   const missingCount = rows.filter(r => !overrides[r.key]).length
 
+  //----------------------------------------------------------------------------------------------
+  //  analyzeMissing — runs Stockfish over every row that has no evaluation override yet, starting the engine on first use
+  //----------------------------------------------------------------------------------------------
   async function analyzeMissing() {
     const missing = rows.filter(r => !overrides[r.key])
     if (missing.length === 0) return
@@ -93,6 +96,14 @@ export function useMissingEvalAnalysis(rows: MissingEvalRow[]) {
 //  analyzeSingleFen — runs a single-line Stockfish search to maxDepth and resolves with the
 //  final cp (already white's-perspective, per StockfishEngine.startInfiniteAnalysis), or null
 //  if the engine never reported a line
+//
+//  Params:
+//    engine — the initialised Stockfish engine
+//    fen — the position to analyse
+//    maxDepth — the depth to search to
+//
+//  Returns:
+//    a promise of the evaluation in centipawns, or null when none was found
 //----------------------------------------------------------------------------------
 function analyzeSingleFen(engine: StockfishEngine, fen: string, maxDepth: number): Promise<number | null> {
   const result = new Promise<number | null>(resolve => {

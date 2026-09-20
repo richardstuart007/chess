@@ -32,6 +32,9 @@ function OpeningsContent() {
   const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  loadPlayers — loads the tracked players list into state
+    //----------------------------------------------------------------------------------------------
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -39,12 +42,17 @@ function OpeningsContent() {
     loadPlayers()
   }, [])
 
-  //
-  //  Bar click → Games tab with the opening preset. eco/opening/color are set on top of the
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectOpening — bar click → Games tab with the opening preset. eco/opening/color are set on top of the
   //  current search params; player/timeClass/dateFrom carry across automatically (all global URL
   //  params). Together these are every attribute that decides which games a bar represents, so
-  //  the Games tab shows the identical set. color is omitted when the chart's Colour is "All".
+  //  the Games tab shows the identical set. color is omitted when the chart's Colour is 'All'
   //
+  //  Params:
+  //    eco — ECO code of the clicked opening
+  //    openingName — name of the clicked opening
+  //    color — 'white' | 'black' for a colour-specific bar, or '' when the chart's Colour is 'All'
+  //----------------------------------------------------------------------------------------------
   function handleSelectOpening(eco: string, openingName: string, color: '' | 'white' | 'black') {
     const qs = searchParams.toString()
     pushBackTarget(qs ? `${pathname}?${qs}` : pathname)

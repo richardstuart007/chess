@@ -167,6 +167,12 @@ export const TIME_CLASSES_Player: Record<string, string[]> = {
 
 //----------------------------------------------------------------------------------
 //  getPlayerTimeClasses — per-player allowed time classes, falls back to the global default
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the player's allowed time classes, or INCLUDED_TIME_CLASSES_Player when there is no override
 //----------------------------------------------------------------------------------
 export function getPlayerTimeClasses(player: string): string[] {
   return TIME_CLASSES_Player[player.toLowerCase()] ?? INCLUDED_TIME_CLASSES_Player

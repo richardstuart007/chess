@@ -110,6 +110,14 @@ export async function runGameSync(): Promise<{
 
 //----------------------------------------------------------------------------------
 //  initSync — fetch chess.com archive list; optionally clear existing games first
+//
+//  Params:
+//    playerParam — the chess.com username (lowercased)
+//    syncType — 'full_replace' or 'refresh'
+//
+//  Returns:
+//    archives — the monthly archive URLs
+//    latestEndTime — the resume cutoff for a refresh, or null
 //----------------------------------------------------------------------------------
 export async function initSync(
   playerParam: string,
@@ -133,6 +141,12 @@ export async function initSync(
 //----------------------------------------------------------------------------------
 //  getLatestGameEndTime — resume cutoff for a player, read from tpl_players
 //  (not wk_gr_gamesraw) so wk_gr_gamesraw can be archived/truncated independently
+//
+//  Params:
+//    player — the tracked player's username
+//
+//  Returns:
+//    the last synced end_time, or null
 //----------------------------------------------------------------------------------
 async function getLatestGameEndTime(player: string): Promise<number | null> {
   return getPlayerLastSyncedEndTime(player)
@@ -140,6 +154,17 @@ async function getLatestGameEndTime(player: string): Promise<number | null> {
 
 //----------------------------------------------------------------------------------
 //  syncArchive — download one monthly archive and insert new games
+//
+//  Params:
+//    params.player — the tracked player's username
+//    params.archiveUrl — the monthly archive URL to download
+//    params.syncType — 'full_replace' or 'refresh'
+//    params.latestEndTime — resume cutoff for a refresh — archives from earlier months are skipped entirely, and games ending at or before it are skipped; null for none
+//
+//  Returns:
+//    inserted — games newly inserted
+//    skipped — games skipped (past the cutoff, or already present)
+//    total — games in the archive
 //----------------------------------------------------------------------------------
 export async function syncArchive(params: {
   player: string
@@ -215,6 +240,17 @@ export async function syncArchive(params: {
 
 //----------------------------------------------------------------------------------
 //  insertRawGame — insert one raw game row; returns true if inserted, false if already existed
+//
+//  Params:
+//    data.player — the tracked player's username
+//    data.chesscom_uuid — the game's chess.com UUID
+//    data.raw_data — the raw chess.com game JSON
+//    data.pgn — the game's PGN (optional)
+//    data.end_time — the game's end time
+//    data.time_class — the game's time class
+//
+//  Returns:
+//    true if inserted, false if it already existed
 //----------------------------------------------------------------------------------
 async function insertRawGame(data: {
   player: string

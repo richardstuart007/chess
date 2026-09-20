@@ -213,6 +213,9 @@ export default function PipelinePage() {
   const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRuns — reloads the recent run ids and the latest run's pipeline-log rows
+  //----------------------------------------------------------------------------------------------
   async function doRefreshRuns() {
     setRunsLoading(true)
     const ids = await getRecentRunIds(PIPELINE_TYPE_GAMES)
@@ -223,23 +226,59 @@ export default function PipelinePage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectRunId — shows the selected run's pipeline-log rows
+  //
+  //  Params:
+  //    runId — the pipeline run to show
+  //----------------------------------------------------------------------------------------------
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
     setRuns(await getLatestPipelineRuns(PIPELINE_TYPE_GAMES, runId))
     setRunsLoading(false)
   }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshStep1 — re-queries step 1's (deconstruct) status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshStep1() { setS1Loading(true); setS1(await refreshStep1()); setS1Loading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshStep3 — re-queries step 3's (build game positions) status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshStep3() { setS3Loading(true); setS3(await refreshStep3()); setS3Loading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshStep3b — re-queries the position-tree sync status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshStep3b() { setS3bLoading(true); setS3b(await refreshTposStatus()); setS3bLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshStep4 — re-queries step 4's (evaluate positions) status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshStep4() { setS4Loading(true); setS4(await refreshStep4()); setS4Loading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshCp — re-queries the cp-change status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshCp() { setSCpLoading(true); setSCp(await refreshCpChangeStatus()); setSCpLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshPurge — re-queries the purge status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshPurge() { setSPurgeLoading(true); setSPurge(await refreshPurgeStatus()); setSPurgeLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshHabits — re-queries the build-habits status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshHabits() { setSHabitsLoading(true); setSHabits(await refreshHabitsStatus()); setSHabitsLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshGameEndings — re-queries the evaluate-game-endings status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshGameEndings() { setSGameEndingsLoading(true); setSGameEndings(await refreshGameEndingsStatus()); setSGameEndingsLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshDeepenPopular — re-queries the deepen-popular-positions status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshDeepenPopular() { setSDeepenPopularLoading(true); setSDeepenPopular(await refreshDeepenPopularStatus()); setSDeepenPopularLoading(false) }
 
   const [refreshAllLoading, setRefreshAllLoading] = useState(false)
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshAll — refreshes every step's status at once, with a loading flag per step and overall
+  //----------------------------------------------------------------------------------------------
   async function doRefreshAll() {
     setRefreshAllLoading(true)
     setS1Loading(true); setS3Loading(true); setS3bLoading(true); setS4Loading(true); setSCpLoading(true); setSPurgeLoading(true); setSHabitsLoading(true); setSGameEndingsLoading(true); setSDeepenPopularLoading(true)
@@ -261,6 +300,9 @@ export default function PipelinePage() {
   }
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  load — loads the tracked players list into state
+    //----------------------------------------------------------------------------------------------
     async function load() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -279,6 +321,9 @@ export default function PipelinePage() {
   const [syncResult,  setSyncResult]  = useState<{ players: { player: string; inserted: number; deconstructed: number }[] } | null>(null)
   const [syncError,   setSyncError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleGameSync — runs the game sync step and shows its result
+  //----------------------------------------------------------------------------------------------
   async function handleGameSync() {
     setSyncRunning(true)
     setSyncResult(null)
@@ -300,6 +345,12 @@ export default function PipelinePage() {
   const [treeRunning, setTreeRunning] = useState(false)
   const [treeResult,  setTreeResult]  = useState<{ ok: boolean; gamesProcessed?: number; positions?: number; treeBuilt?: number; remaining?: number; errors?: number; error?: string } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleBuildTree — runs the build-game-positions step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleBuildTree(forceNewRun: boolean = true) {
     setTreeRunning(true)
     setTreeResult(null)
@@ -325,6 +376,12 @@ export default function PipelinePage() {
   const [tposRunning, setTposRunning] = useState(false)
   const [tposResult,  setTposResult]  = useState<{ ok: boolean; positionsSynced?: number; error?: string } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSyncTpos — runs the position-tree sync step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleSyncTpos(forceNewRun: boolean = true) {
     setTposRunning(true)
     setTposResult(null)
@@ -350,6 +407,12 @@ export default function PipelinePage() {
   const [posResult,      setPosResult]      = useState<{ processed: number; errors: number; remaining: number } | null>(null)
   const [posError,       setPosError]       = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleEvaluatePositions — runs the evaluate-positions step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleEvaluatePositions(forceNewRun: boolean = true) {
     setPosRunning(true)
     setPosResult(null)
@@ -377,6 +440,12 @@ export default function PipelinePage() {
   const [cpRunning, setCpRunning] = useState(false)
   const [cpResult,  setCpResult]  = useState<{ ok: boolean; updated?: number; error?: string } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleUpdateCp — runs the cp-change update step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleUpdateCp(forceNewRun: boolean = true) {
     setCpRunning(true)
     setCpResult(null)
@@ -399,6 +468,12 @@ export default function PipelinePage() {
   const [purgeRunning, setPurgeRunning] = useState(false)
   const [purgeResult,  setPurgeResult]  = useState<{ ok: boolean; purged?: number; error?: string } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handlePurge — runs the purge step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handlePurge(forceNewRun: boolean = true) {
     setPurgeRunning(true)
     setPurgeResult(null)
@@ -425,6 +500,12 @@ export default function PipelinePage() {
   const [habitsRunning, setHabitsRunning] = useState(false)
   const [habitsResult,  setHabitsResult]  = useState<{ ok: boolean; built?: number; error?: string } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleBuildHabits — runs the build-habits step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleBuildHabits(forceNewRun: boolean = true) {
     setHabitsRunning(true)
     setHabitsResult(null)
@@ -448,6 +529,12 @@ export default function PipelinePage() {
   const [gameEndingsResult,  setGameEndingsResult]  = useState<{ processed: number; reused: number; errors: number; remaining: number } | null>(null)
   const [gameEndingsError,   setGameEndingsError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleEvaluateGameEndings — runs the evaluate-game-endings step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleEvaluateGameEndings(forceNewRun: boolean = true) {
     setGameEndingsRunning(true)
     setGameEndingsResult(null)
@@ -474,6 +561,12 @@ export default function PipelinePage() {
   const [deepenPopularResult,  setDeepenPopularResult]  = useState<{ processed: number; errors: number; remaining: number } | null>(null)
   const [deepenPopularError,   setDeepenPopularError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleDeepenPopular — runs the deepen-popular-positions step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleDeepenPopular(forceNewRun: boolean = true) {
     setDeepenPopularRunning(true)
     setDeepenPopularResult(null)
@@ -495,7 +588,9 @@ export default function PipelinePage() {
     }
   }
 
-  // ── Run All: every job in scheduled order, continuing past a failed step ──
+  //----------------------------------------------------------------------------------------------
+  //  handleRunAll — Run All: every job in scheduled order, continuing past a failed step
+  //----------------------------------------------------------------------------------------------
   async function handleRunAll() {
     setRunAllRunning(true)
     setRuns([])
@@ -991,6 +1086,12 @@ export default function PipelinePage() {
 
 //----------------------------------------------------------------------------------
 //  StatusBadge — small Completed/Incomplete pill; renders nothing while status is unknown (null)
+//
+//  Params:
+//    complete — true shows a Completed badge, false an Incomplete badge, null no badge
+//
+//  Returns:
+//    a Completed / Incomplete badge, or nothing when complete is null
 //----------------------------------------------------------------------------------
 function StatusBadge({ complete }: { complete: boolean | null }) {
   if (complete === null) return null
@@ -1005,6 +1106,12 @@ function StatusBadge({ complete }: { complete: boolean | null }) {
 
 //----------------------------------------------------------------------------------
 //  n — formats a count for display, or an em dash if not yet loaded
+//
+//  Params:
+//    val — the number to format (may be undefined)
+//
+//  Returns:
+//    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
   return val === undefined ? '—' : val.toLocaleString()
@@ -1012,6 +1119,13 @@ function n(val: number | undefined): string {
 
 //----------------------------------------------------------------------------------
 //  eta — rough remaining-time estimate from a backlog count and a measured ms/item rate
+//
+//  Params:
+//    remaining — items still to process (may be undefined)
+//    msPerItem — average milliseconds per item, or null when unknown
+//
+//  Returns:
+//    the estimate as '~Ns', '~Nm' or '~Nh Nm', or '' when remaining or msPerItem is unknown
 //----------------------------------------------------------------------------------
 function eta(remaining: number | undefined, msPerItem: number | null): string {
   if (!remaining || !msPerItem) return ''

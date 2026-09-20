@@ -64,6 +64,12 @@ export async function getPositionCount_shared(): Promise<number> {
 
 //----------------------------------------------------------------------------------
 //  saveEvaluation_shared — upsert a Stockfish evaluation for a position or move
+//
+//  Params:
+//    data.posId — the tpos_positions id
+//    data.cp — the evaluation in centipawns, or null
+//    data.bestMove — the best move found, or null
+//    data.depth — the search depth
 //----------------------------------------------------------------------------------
 export async function saveEvaluation_shared(data: {
   posId: number
@@ -87,6 +93,12 @@ export async function saveEvaluation_shared(data: {
 
 //----------------------------------------------------------------------------------
 //  getEvaluationForPosition_shared — the Stockfish evaluation for a position
+//
+//  Params:
+//    posId — the tpos_positions id
+//
+//  Returns:
+//    the position's evaluation row, or null
 //----------------------------------------------------------------------------------
 export async function getEvaluationForPosition_shared(posId: number): Promise<EvaluationRow | null> {
   const result = await table_fetch({
@@ -115,6 +127,12 @@ export async function getEvaluationForPosition_shared(posId: number): Promise<Ev
 //  positions outside the normal position-tree build range (MIN_ANALYSIS_MOVE_Player..
 //  MAX_ANALYSIS_MOVE_Player) — those rows are exempted from purgeStaleReachOnePositions by
 //  pos_move_num, since they were never part of the reach-tracked habit system.
+//
+//  Params:
+//    truncatedFen — the truncated FEN to look up or insert
+//
+//  Returns:
+//    the tpos_positions id
 //----------------------------------------------------------------------------------
 async function getOrCreatePosition(truncatedFen: string): Promise<number> {
   const existing = await table_query({
@@ -202,6 +220,18 @@ async function getOrCreatePosition(truncatedFen: string): Promise<number> {
 //  Recomputes gam_cp_change for the affected tgam_game_positions rows deliberately via
 //  a direct query, not bulkUpdateCpLoss(), since that logs a pipeline step and would
 //  make every interactive analyze click look like a new pipeline run on Owner > Pipeline.
+//
+//  Params:
+//    data.fen — the position's FEN
+//    data.cp — the evaluation in centipawns
+//    data.bestMove — the best move found, or null
+//    data.depth — the search depth
+//    data.createIfMissing — create the tpos_positions row when missing (optional)
+//    data.force — bypass the depth-guard so an equal-depth value still overwrites (optional)
+//    data.gameContext — the exact (gdid, ply, san) this position corresponds to, when known (optional)
+//
+//  Returns:
+//    true when the evaluation was written, false when skipped (e.g. opening theory or not deeper than what's stored)
 //----------------------------------------------------------------------------------
 export async function upgradePositionEvaluation_shared(data: {
   fen: string
@@ -357,6 +387,12 @@ export async function upgradePositionEvaluation_shared(data: {
 //  of FENs, keyed by truncated FEN (matching every other position lookup in this
 //  file). Used by runAnalysis() to skip re-running Stockfish on positions already
 //  cached deep enough, instead of one lookup per position.
+//
+//  Params:
+//    fens — the FENs to look up (truncated internally)
+//
+//  Returns:
+//    a record of truncated FEN → { cp, bestMove, depth }
 //----------------------------------------------------------------------------------
 export async function getPositionEvaluationsBulk_shared(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const truncated = fens.map(truncateFen)
@@ -395,6 +431,12 @@ export async function getPositionEvaluationsBulk_shared(fens: string[]): Promise
 //  getFenEvalsFromGev_shared — bulk tgev_game_evals lookup for a list of FENs, keyed by
 //  truncated gev_fen_after. The same FEN can appear in more than one analyzed game (each
 //  with its own depth), so DISTINCT ON picks the deepest row per FEN.
+//
+//  Params:
+//    fens — the FENs to look up (truncated internally)
+//
+//  Returns:
+//    a record of truncated FEN → { cp, bestMove, depth }
 //----------------------------------------------------------------------------------
 export async function getFenEvalsFromGev_shared(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const truncated = fens.map(truncateFen)
@@ -430,6 +472,12 @@ export async function getFenEvalsFromGev_shared(fens: string[]): Promise<Record<
 //----------------------------------------------------------------------------------
 //  getFenEvalsFromMgev_shared — the same lookup as getFenEvalsFromGev_shared, against
 //  tmgev_game_evals (secondary database) by mgev_fen_after, for master games.
+//
+//  Params:
+//    fens — the FENs to look up (truncated internally)
+//
+//  Returns:
+//    a record of truncated FEN → { cp, bestMove, depth }
 //----------------------------------------------------------------------------------
 export async function getFenEvalsFromMgev_shared(fens: string[]): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const truncated = fens.map(truncateFen)
@@ -469,6 +517,13 @@ export async function getFenEvalsFromMgev_shared(fens: string[]): Promise<Record
 //  feeding habit detection, not being an evaluation store in its own right) is only consulted
 //  for whatever FEN isn't found there. Read-only — never creates a tpos_positions row, so this
 //  can't interact with purgeStaleReachOnePositions.
+//
+//  Params:
+//    fens — the FENs to look up (truncated internally)
+//    context — 'player' or 'master' — which per-game table to check first
+//
+//  Returns:
+//    a record of truncated FEN → { cp, bestMove, depth }
 //----------------------------------------------------------------------------------
 export async function getFenEvalsWithFallback_shared(fens: string[], context: 'player' | 'master'): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const ownEvals = context === 'player'
@@ -494,6 +549,13 @@ export async function getFenEvalsWithFallback_shared(fens: string[], context: 'p
 //  (which always prefers the own-table value for display, even if tpose happens to be deeper) —
 //  here we only care whether a sufficiently deep result exists ANYWHERE, not which source is
 //  more "authoritative" to show.
+//
+//  Params:
+//    fens — the FENs to look up (truncated internally)
+//    context — 'player' or 'master' — which per-game table to check alongside tpose_positions_eval
+//
+//  Returns:
+//    a record of truncated FEN → { cp, bestMove, depth }, keeping the deeper value per FEN
 //----------------------------------------------------------------------------------
 export async function getFenEvalsForSkipCheck_shared(fens: string[], context: 'player' | 'master'): Promise<Record<string, { cp: number; bestMove: string | null; depth: number }>> {
   const [poseEvals, ownEvals] = await Promise.all([

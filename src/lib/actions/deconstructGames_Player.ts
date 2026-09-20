@@ -148,6 +148,10 @@ export async function deconstructGames_Player(
 
 //----------------------------------------------------------------------------------
 //  upsertEcoReference — insert an ECO code → opening name mapping if not present
+//
+//  Params:
+//    ecoCode — the ECO code
+//    openingName — the opening name for that ECO code
 //----------------------------------------------------------------------------------
 export async function upsertEcoReference(ecoCode: string, openingName: string): Promise<void> {
   const existing = await table_fetch({
@@ -189,6 +193,13 @@ export async function upsertEcoReference(ecoCode: string, openingName: string): 
 
 //----------------------------------------------------------------------------------
 //  getUndeconstructedCount — count raw games not yet deconstructed for a player
+//
+//  Params:
+//    player — the tracked player's username
+//    timeClasses — time classes to count (default INCLUDED_TIME_CLASSES_Player)
+//
+//  Returns:
+//    the number of raw games with no matching deconstructed row
 //----------------------------------------------------------------------------------
 export async function getUndeconstructedCount(
   player: string,
@@ -215,6 +226,12 @@ export async function getUndeconstructedCount(
 
 //----------------------------------------------------------------------------------
 //  getDeconstructedCount — count deconstructed games for a player
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the number of deconstructed games for that player
 //----------------------------------------------------------------------------------
 export async function getDeconstructedCount(player: string): Promise<number> {
   const result = await table_count({

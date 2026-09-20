@@ -14,39 +14,6 @@ const FIDE_PLAYERS_TABLE = 'tfpl_fide_players'
 type FideCandidate = { fideid: number; firstName: string; lastName: string; rating: number }
 
 //----------------------------------------------------------------------------------
-//  findUnlinkedRowByName — case-insensitive surname match among tmst_master_players
-//  rows with no mst_fideid yet, disambiguated by first name on a surname collision.
-//  Returns null (treated as "no existing row, insert new") if still ambiguous.
-//----------------------------------------------------------------------------------
-async function findUnlinkedRowByName(lastName: string, firstName: string): Promise<number | null> {
-  const result = await table_fetch({
-    caller: 'findUnlinkedRowByName',
-    table: MASTER_PLAYERS_TABLE,
-    whereColumnValuePairs: [
-      { column: 'LOWER(mst_last_name)', value: lastName.toLowerCase(), operator: '=' },
-      { column: 'mst_fideid', operator: 'IS NULL', value: null }
-    ],
-    columns: ['mst_mstid', 'mst_first_name']
-  })
-  if (!result.ok) {
-    write_logging({
-      lg_functionname: 'findUnlinkedRowByName',
-      lg_caller: 'findUnlinkedRowByName',
-      lg_msg: 'Failed to look up unlinked master player by surname ' + lastName + ': ' + result.error,
-      lg_severity: 'E'
-    })
-    return null
-  }
-  const bySurname = result.data
-  if (bySurname.length === 1) return Number(bySurname[0].mst_mstid)
-  if (bySurname.length > 1) {
-    const byFirstNameToo = bySurname.filter((r: any) => ((r.mst_first_name as string) ?? '').toLowerCase() === firstName.toLowerCase())
-    if (byFirstNameToo.length === 1) return Number(byFirstNameToo[0].mst_mstid)
-  }
-  return null
-}
-
-//----------------------------------------------------------------------------------
 //  populateFideTopPlayers — pipeline stage 4 (step 4). Reads the already-parsed FIDE
 //  snapshot (tfpl_fide_players, populated by parseFideXml) rather than re-downloading
 //  or re-parsing anything — this stage is pure DB-to-DB, so re-running it after fixing
@@ -58,6 +25,15 @@ async function findUnlinkedRowByName(lastName: string, firstName: string): Promi
 //  mst_fideid; else attaches mst_fideid to an existing unlinked row matched by surname;
 //  else inserts a brand-new row. Names are only ever written on insert — never touched
 //  on update, so a manual name correction in pgAdmin is permanent.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    processed — FIDE players considered
+//    inserted — tmst_master_players rows inserted
+//    updated — tmst_master_players rows updated
 //----------------------------------------------------------------------------------
 export async function populateFideTopPlayers(level: number = 1, forceNewRun?: boolean): Promise<{ processed: number; inserted: number; updated: number }> {
   await logStart('populateFideTopPlayers', 'fidePipelineRoute', 'matching FIDE top players into tmst_master_players', level)
@@ -162,6 +138,13 @@ export async function populateFideTopPlayers(level: number = 1, forceNewRun?: bo
 //  snapshot (tfpl_fide_players) rather than re-downloading/re-parsing. For every
 //  tmst_master_players row already linked to a FIDE id, looks up its current rating
 //  by fideid (not name) and updates mst_grade only; names are never touched.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    updated — players whose FIDE rating was refreshed
 //----------------------------------------------------------------------------------
 export async function refreshFideRatings(level: number = 1, forceNewRun?: boolean): Promise<{ updated: number }> {
   await logStart('refreshFideRatings', 'fidePipelineRoute', 'refreshing known FIDE ratings', level)
@@ -243,4 +226,44 @@ export async function refreshFideRatings(level: number = 1, forceNewRun?: boolea
   })
   await logEnd('refreshFideRatings', 'fidePipelineRoute', `${updated} ratings refreshed`, level)
   return { updated }
+}
+
+//----------------------------------------------------------------------------------
+//  findUnlinkedRowByName — case-insensitive surname match among tmst_master_players
+//  rows with no mst_fideid yet, disambiguated by first name on a surname collision.
+//  Returns null (treated as "no existing row, insert new") if still ambiguous.
+//
+//  Params:
+//    lastName — the FIDE player's last name
+//    firstName — the FIDE player's first name
+//
+//  Returns:
+//    the matching tmst_master_players id, or null when there is none
+//----------------------------------------------------------------------------------
+async function findUnlinkedRowByName(lastName: string, firstName: string): Promise<number | null> {
+  const result = await table_fetch({
+    caller: 'findUnlinkedRowByName',
+    table: MASTER_PLAYERS_TABLE,
+    whereColumnValuePairs: [
+      { column: 'LOWER(mst_last_name)', value: lastName.toLowerCase(), operator: '=' },
+      { column: 'mst_fideid', operator: 'IS NULL', value: null }
+    ],
+    columns: ['mst_mstid', 'mst_first_name']
+  })
+  if (!result.ok) {
+    write_logging({
+      lg_functionname: 'findUnlinkedRowByName',
+      lg_caller: 'findUnlinkedRowByName',
+      lg_msg: 'Failed to look up unlinked master player by surname ' + lastName + ': ' + result.error,
+      lg_severity: 'E'
+    })
+    return null
+  }
+  const bySurname = result.data
+  if (bySurname.length === 1) return Number(bySurname[0].mst_mstid)
+  if (bySurname.length > 1) {
+    const byFirstNameToo = bySurname.filter((r: any) => ((r.mst_first_name as string) ?? '').toLowerCase() === firstName.toLowerCase())
+    if (byFirstNameToo.length === 1) return Number(byFirstNameToo[0].mst_mstid)
+  }
+  return null
 }

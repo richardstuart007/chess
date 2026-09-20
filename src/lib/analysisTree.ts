@@ -32,10 +32,17 @@ export interface MultiPvResult {
   lineUci: string[]
 }
 
-// --------------------------------------------------------------------------
-//  Build tree from a parsed game
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  buildTree — Build tree from a parsed game
+//
+//  Params:
+//    history — the game's moves: san, from, to
+//    fens — the FEN after each move
+//    plyEvals — the per-ply evaluations, attached to the matching nodes
+//
+//  Returns:
+//    the AnalysisTree (root + flat main-line cache)
+//----------------------------------------------------------------------------------
 export function buildTree(
   history: { san: string; from: string; to: string }[],
   fens: string[],
@@ -84,6 +91,19 @@ export function buildTree(
 
 let branchCounter = 0
 
+//----------------------------------------------------------------------------------
+//  addBranch — adds a variation move under a parent node, or returns the existing child when that exact move is already there
+//
+//  Params:
+//    parent — the node the move is played from
+//    san — the move, in SAN
+//    from — the move's origin square
+//    to — the move's destination square
+//    fen — the resulting FEN
+//
+//  Returns:
+//    the (new or existing) child node
+//----------------------------------------------------------------------------------
 export function addBranch(
   parent: MoveNode,
   san: string,
@@ -110,10 +130,16 @@ export function addBranch(
   return node
 }
 
-// --------------------------------------------------------------------------
-//  Add a full PV line as a chain of branch nodes
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  addPvBranch — Add a full PV line as a chain of branch nodes
+//
+//  Params:
+//    parent — the node the line starts from
+//    lineSans — the line's moves, in SAN
+//
+//  Returns:
+//    the resulting node, or null when there is no line to add
+//----------------------------------------------------------------------------------
 export function addPvBranch(
   parent: MoveNode,
   lineSans: string[]
@@ -147,10 +173,15 @@ export function addPvBranch(
   }
 }
 
-// --------------------------------------------------------------------------
-//  Get path from root to a node (inclusive of node, exclusive of root)
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  getPath — Get path from root to a node (inclusive of node, exclusive of root)
+//
+//  Params:
+//    node — the node to walk back from
+//
+//  Returns:
+//    the nodes on the path, in play order (the sentinel root excluded)
+//----------------------------------------------------------------------------------
 export function getPath(node: MoveNode): MoveNode[] {
   const path: MoveNode[] = []
   let current: MoveNode | null = node
@@ -161,10 +192,16 @@ export function getPath(node: MoveNode): MoveNode[] {
   return path
 }
 
-// --------------------------------------------------------------------------
-//  Replay a path to get a Chess instance at that position
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  replayToNode — Replay a path to get a Chess instance at that position
+//
+//  Params:
+//    node — the node to replay to
+//    startFen — the position to start from instead of the standard start (optional)
+//
+//  Returns:
+//    the Chess instance positioned after the node's move
+//----------------------------------------------------------------------------------
 export function replayToNode(node: MoveNode, startFen?: string): Chess {
   const path = getPath(node)
   const g = startFen ? new Chess(startFen) : new Chess()
@@ -174,10 +211,15 @@ export function replayToNode(node: MoveNode, startFen?: string): Chess {
   return g
 }
 
-// --------------------------------------------------------------------------
-//  Find the main-line ancestor (walk up until isMainLine)
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  findMainLineAncestor — Find the main-line ancestor (walk up until isMainLine)
+//
+//  Params:
+//    node — the node to start from
+//
+//  Returns:
+//    the closest main-line ancestor, or the node itself when none is found
+//----------------------------------------------------------------------------------
 export function findMainLineAncestor(node: MoveNode): MoveNode {
   let current: MoveNode | null = node
   while (current && !current.isMainLine) {
@@ -186,10 +228,15 @@ export function findMainLineAncestor(node: MoveNode): MoveNode {
   return current ?? node
 }
 
-// --------------------------------------------------------------------------
-//  Check if a node is on the main line
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  isOnMainLine — Check if a node is on the main line
+//
+//  Params:
+//    node — the node to check (null counts as on the main line)
+//
+//  Returns:
+//    true when the node is on the main line
+//----------------------------------------------------------------------------------
 export function isOnMainLine(node: MoveNode | null): boolean {
   if (!node) return true
   let current: MoveNode | null = node
@@ -200,22 +247,41 @@ export function isOnMainLine(node: MoveNode | null): boolean {
   return true
 }
 
-// --------------------------------------------------------------------------
-//  Get main-line index for a node (-1 if not on main line)
-// --------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------
+//  getMainLineIndex — Get main-line index for a node (-1 if not on main line)
+//
+//  Params:
+//    node — the node to look up
+//    tree — the analysis tree
+//
+//  Returns:
+//    the node's index in tree.mainLine, or -1
+//----------------------------------------------------------------------------------
 export function getMainLineIndex(node: MoveNode, tree: AnalysisTree): number {
   return tree.mainLine.indexOf(node)
 }
 
-// --------------------------------------------------------------------------
-//  Walk the whole tree (main line + every variation) and return every node
+//----------------------------------------------------------------------------------
+//  collectNodesFromMove — Walk the whole tree (main line + every variation) and return every node
 //  whose full-move number is >= minMove — shared by ChessBoardView_shared and
 //  MasterGameView_master's move-play-count badge lookups
-// --------------------------------------------------------------------------
-
+//
+//  Params:
+//    root — the tree's root node
+//    minMove — the lowest full-move number to include
+//
+//  Returns:
+//    the matching nodes
+//----------------------------------------------------------------------------------
 export function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[] {
   const result: MoveNode[] = []
+  //----------------------------------------------------------------------------------------------
+  //  walk — recursively visits a node and its children, collecting every node from minMove onward into result
+  //
+  //  Params:
+  //    node — the node to visit
+  //    ply — the node's 1-indexed ply (0 for the root)
+  //----------------------------------------------------------------------------------------------
   function walk(node: MoveNode, ply: number) {
     if (ply > 0) {
       const moveNum = Math.floor((ply - 1) / 2) + 1
@@ -229,25 +295,37 @@ export function collectNodesFromMove(root: MoveNode, minMove: number): MoveNode[
   return result
 }
 
-// --------------------------------------------------------------------------
-//  Full move number + side to move for a 1-indexed ply (ply 1 = White's first
+//----------------------------------------------------------------------------------
+//  getMoveNumberAndColor — Full move number + side to move for a 1-indexed ply (ply 1 = White's first
 //  move, ply 2 = Black's first move, ...) — shared by getCurrentMoveLabel below
 //  and runAnalysis's progress display (ChessBoardView_shared/MasterGameView_master).
-// --------------------------------------------------------------------------
-
+//
+//  Params:
+//    ply — the 1-indexed ply (1 = White's first move, 2 = Black's first move, ...)
+//
+//  Returns:
+//    moveNumber — the full-move number
+//    isWhite — true when the ply is White's move
+//----------------------------------------------------------------------------------
 export function getMoveNumberAndColor(ply: number): { moveNumber: number; isWhite: boolean } {
   const moveNumber = Math.floor((ply - 1) / 2) + 1
   const isWhite = (ply - 1) % 2 === 0
   return { moveNumber, isWhite }
 }
 
-// --------------------------------------------------------------------------
-//  "16.Ng6" / "16...Ng6" for whatever position is currently on the board
+//----------------------------------------------------------------------------------
+//  getCurrentMoveLabel — "16.Ng6" / "16...Ng6" for whatever position is currently on the board
 //  (matching MoveTree_shared.tsx's own move-number notation), "Starting
 //  position" at the root (no move played yet) — shared by ChessBoardView_shared
 //  and MasterGameView_master's "Position Analysis {label}" heading
-// --------------------------------------------------------------------------
-
+//
+//  Params:
+//    currentNode — the node on the board, or null at the start
+//    currentPly — the node's 1-indexed ply
+//
+//  Returns:
+//    e.g. '16.Ng6' / '16...Ng6', or 'Starting position' at the root
+//----------------------------------------------------------------------------------
 export function getCurrentMoveLabel(currentNode: MoveNode | null, currentPly: number): string {
   if (!currentNode) return 'Starting position'
   const { moveNumber, isWhite } = getMoveNumberAndColor(currentPly)

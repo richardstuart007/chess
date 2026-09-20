@@ -93,11 +93,17 @@ export default function AppNav({ playerCards }: AppNavProps) {
       .catch(() => setMasterCards([]))
   }, [])
 
-  //
-  //  Carries every global filter across tab navigation — without this, each SECTIONS href is
+  //----------------------------------------------------------------------------------------------
+  //  buildHref — Carries every global filter across tab navigation — without this, each SECTIONS href is
   //  a bare path with no query string, so clicking a tab drops them entirely and silently
   //  resets the selection.
   //
+  //  Params:
+  //    base — the tab's bare path
+  //
+  //  Returns:
+  //    base plus the current global-filter query string
+  //----------------------------------------------------------------------------------------------
   function buildHref(base: string): string {
     const params = new URLSearchParams()
     for (const key of GLOBAL_FILTER_KEYS) {
@@ -126,13 +132,16 @@ export default function AppNav({ playerCards }: AppNavProps) {
     : pathname === '/' || pathname === '/analyze' ? 'games'
     : null
 
-  //
-  //  Navigate to the Master Games list pre-filtered to this master. Carries the MASTER_CARRY_KEYS
+  //----------------------------------------------------------------------------------------------
+  //  handleMasterClick — Navigate to the Master Games list pre-filtered to this master. Carries the MASTER_CARRY_KEYS
   //  filters from the current URL (colour/time/date/opening/eco — e.g. after an Openings bar click
   //  on the Games tab) so the master's games arrive in the same context. No backNav push — this is
   //  a list tab with no "← Back" button; browser Back handles it via history. No-ops when the
   //  master has no chess.com handle (can't filter mgd_player without one).
   //
+  //  Params:
+  //    handle — the master's chess.com handle (lowercased); nothing happens when empty
+  //----------------------------------------------------------------------------------------------
   function handleMasterClick(handle: string) {
     if (!handle) return
     const params = new URLSearchParams()
@@ -186,6 +195,16 @@ export default function AppNav({ playerCards }: AppNavProps) {
 //  both optional and independent — currently both groups use topContent only, no label. Both
 //  groups render identically: bg-amber-50 normally, bg-pink-100 when this group owns the current
 //  route (isGroupActive) — the pink background is the sole active-group indicator.
+//
+//  Params:
+//    label — the group's heading (optional)
+//    topContent — content shown above the tabs (optional)
+//    sections — the tabs: key, label and href
+//    activeKey — the key of the active tab, or null
+//    buildHref — builds each tab's href from its base path
+//
+//  Returns:
+//    the tab group
 //----------------------------------------------------------------------------------------------
 function TabGroup({
   label,

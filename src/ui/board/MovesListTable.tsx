@@ -80,6 +80,13 @@ export default function MovesListTable({ rows, selectedMove, onSelectMove }: Mov
 
 //----------------------------------------------------------------------------------
 //  pct — percentage of `count` out of `total`, 0 if total is 0
+//
+//  Params:
+//    count — the part
+//    total — the whole
+//
+//  Returns:
+//    count as a whole-number percentage of total
 //----------------------------------------------------------------------------------
 function pct(count: number, total: number): number {
   return total > 0 ? Math.round((count / total) * 100) : 0

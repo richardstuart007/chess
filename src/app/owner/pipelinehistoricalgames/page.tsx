@@ -76,10 +76,22 @@ export default function PipelineHistoricalGamesPage() {
   const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshUpload — re-queries the upload step's status (staged / deconstructed counts), with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshUpload() { setSUploadLoading(true); setSUpload(await refreshHistoricalStatus()); setSUploadLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshTree — re-queries the build-position-tree step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshTree() { setSTreeLoading(true); setSTree(await refreshMasterTreeStatus()); setSTreeLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshTpos — re-queries the position-tree sync step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshTpos() { setSTposLoading(true); setSTpos(await refreshMasterTposStatus()); setSTposLoading(false) }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRuns — reloads the recent run ids and the latest run's pipeline-log rows
+  //----------------------------------------------------------------------------------------------
   async function doRefreshRuns() {
     setRunsLoading(true)
     const ids = await getRecentRunIds(PIPELINE_TYPE_HISTORICALGAMES)
@@ -90,6 +102,12 @@ export default function PipelineHistoricalGamesPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectRunId — shows the selected run's pipeline-log rows
+  //
+  //  Params:
+  //    runId — the pipeline run to show
+  //----------------------------------------------------------------------------------------------
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
@@ -97,6 +115,9 @@ export default function PipelineHistoricalGamesPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshAllStatus — refreshes every step's status, then the run log
+  //----------------------------------------------------------------------------------------------
   async function doRefreshAllStatus() {
     await Promise.all([doRefreshUpload(), doRefreshTree(), doRefreshTpos()])
     doRefreshRuns()
@@ -112,6 +133,12 @@ export default function PipelineHistoricalGamesPage() {
   const [uploadResult,  setUploadResult]  = useState<{ staged: number } | null>(null)
   const [uploadError,   setUploadError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleUpload — runs the upload step for the chosen collection and PGN files, and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleUpload(forceNewRun: boolean = true) {
     if (!collection.trim() || !files || files.length === 0) return
     setUploadRunning(true)
@@ -142,6 +169,12 @@ export default function PipelineHistoricalGamesPage() {
   const [deconResult,  setDeconResult]  = useState<{ processed: number; skipped: number; errors: number } | null>(null)
   const [deconError,   setDeconError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleDeconstruct — runs the deconstruct step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default false)
+  //----------------------------------------------------------------------------------------------
   async function handleDeconstruct(forceNewRun: boolean = false) {
     setDeconRunning(true)
     setDeconResult(null)
@@ -168,6 +201,12 @@ export default function PipelineHistoricalGamesPage() {
   const [treeResult,  setTreeResult]  = useState<{ gamesProcessed: number; positions: number; gamePositions: number } | null>(null)
   const [treeError,   setTreeError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleBuildTree — runs the build-position-tree step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default false)
+  //----------------------------------------------------------------------------------------------
   async function handleBuildTree(forceNewRun: boolean = false) {
     setTreeRunning(true)
     setTreeResult(null)
@@ -192,6 +231,12 @@ export default function PipelineHistoricalGamesPage() {
   const [tposResult,  setTposResult]  = useState<{ positionsSynced: number } | null>(null)
   const [tposError,   setTposError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSyncTpos — runs the position-tree sync step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default false)
+  //----------------------------------------------------------------------------------------------
   async function handleSyncTpos(forceNewRun: boolean = false) {
     setTposRunning(true)
     setTposResult(null)
@@ -213,6 +258,9 @@ export default function PipelineHistoricalGamesPage() {
 
   // ── Run All ─────────────────────────────────────────────────────────────────
   const [runAllRunning, setRunAllRunning] = useState(false)
+  //----------------------------------------------------------------------------------------------
+  //  handleRunAll — runs every step in order as one pipeline run, starting with the upload
+  //----------------------------------------------------------------------------------------------
   async function handleRunAll() {
     if (!collection.trim() || !files || files.length === 0) return
     setRunAllRunning(true)
@@ -471,6 +519,12 @@ export default function PipelineHistoricalGamesPage() {
 
 //----------------------------------------------------------------------------------
 //  n — formats a count for display, or an em dash if not yet loaded
+//
+//  Params:
+//    val — the number to format (may be undefined)
+//
+//  Returns:
+//    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
   return val === undefined ? '—' : val.toLocaleString()

@@ -61,6 +61,12 @@ export default function Page() {
 
 //----------------------------------------------------------------------------------
 //  ToolsPanel — renders a list of tool launcher cards (icon, label, description) as links
+//
+//  Params:
+//    tools — the launcher cards to show: href, label, description, step
+//
+//  Returns:
+//    the list of link cards
 //----------------------------------------------------------------------------------
 function ToolsPanel({ tools }: { tools: { href: string; label: string; description: string; step: string }[] }) {
   return (

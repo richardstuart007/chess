@@ -47,6 +47,9 @@ export default function HomeDashboard({ players }: HomeDashboardProps) {
   )
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  fetchMin — fetches the earliest game date across the tracked players and stores it as minDate
+    //----------------------------------------------------------------------------------------------
     async function fetchMin() {
       const min = await getEarliestGameDate(players.map(p => p.player))
       if (min) setMinDate(min)
@@ -54,6 +57,13 @@ export default function HomeDashboard({ players }: HomeDashboardProps) {
     fetchMin()
   }, [playerList])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectGame — opens the selected game in /analyze (only when it has a gdid), pushing the current URL as the back target
+  //
+  //  Params:
+  //    game — the selected game
+  //    player — the tracked player whose game it is
+  //----------------------------------------------------------------------------------------------
   function handleSelectGame(game: ChessComGame, player: string) {
     const gdid = (game as any)._gdid
     if (gdid) {

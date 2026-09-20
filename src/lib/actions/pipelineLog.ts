@@ -10,6 +10,21 @@ type PipelineType = typeof PIPELINE_TYPE_GAMES | typeof PIPELINE_TYPE_MASTERS | 
 //  logPipelineStep — single INSERT once a step (or one table-write within a
 //  multi-table step) has finished; every column is already known by then, so there's
 //  no need for the old two-phase start/complete design.
+//
+//  Params:
+//    params.step — step number within the pipeline
+//    params.subStep — sub-step label within the step
+//    params.stepName — display name of the step
+//    params.pipelineType — which pipeline the step belongs to
+//    params.inputTable — table the step read from
+//    params.inputRecs — number of records read
+//    params.outputTable — table the step wrote to
+//    params.outputRecs — number of records written
+//    params.durationMs — how long the step took, in ms
+//    params.forceNewRun — true to allocate a new run id instead of joining the current run (optional)
+//
+//  Returns:
+//    the new tpip_pipelinelog row id, or 0 if the insert failed
 //----------------------------------------------------------------------------------
 export async function logPipelineStep(params: {
   step:         number
@@ -60,6 +75,13 @@ export async function logPipelineStep(params: {
 //  independent, uncoordinated invocations) together. Every download-step function
 //  (the first step of its own pipeline) is responsible for passing forceNewRun: true
 //  itself, unconditionally — this function has no step-number knowledge of its own.
+//
+//  Params:
+//    pipelineType — which pipeline's run ids to look at
+//    forceNew — true to allocate a new run id (default false — join the current run)
+//
+//  Returns:
+//    the run id to log under
 //----------------------------------------------------------------------------------
 async function resolvePipRunId(pipelineType: PipelineType, forceNew: boolean = false): Promise<number> {
   const result = await table_query({
@@ -162,6 +184,13 @@ export async function getPipelineRates(): Promise<{
 //  reflect one single run's data, accepting that a standalone single-step click
 //  (which allocates its own new run_id) will make every other step show "—" until
 //  the next coordinated run repopulates them all together.
+//
+//  Params:
+//    pipelineType — which pipeline's log to read
+//    runId — a specific run id to show instead of the highest (optional)
+//
+//  Returns:
+//    the log rows for that single run, one per sub-step
 //----------------------------------------------------------------------------------
 export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: number): Promise<{
   pip_step:        number
@@ -206,6 +235,13 @@ export async function getLatestPipelineRuns(pipelineType: PipelineType, runId?: 
 //----------------------------------------------------------------------------------
 //  getRecentRunIds — the last N pip_run_id values, descending (most recent first),
 //  each with its earliest pip_created, for the Pipeline page's Run # selector.
+//
+//  Params:
+//    pipelineType — which pipeline's log to read
+//    limit — how many run ids to return (default 5)
+//
+//  Returns:
+//    runId + created (earliest pip_created for that run), most recent first
 //----------------------------------------------------------------------------------
 export async function getRecentRunIds(pipelineType: PipelineType, limit: number = 5): Promise<{ runId: number; created: string }[]> {
   const result = await table_query({

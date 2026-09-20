@@ -26,6 +26,9 @@ function EndingsContent() {
   const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  loadPlayers — loads the tracked players list into state
+    //----------------------------------------------------------------------------------------------
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)

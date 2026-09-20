@@ -66,6 +66,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 //  getBackNavConfig — per-route Home/Back nav config, one entry per route that shows a Home/Back
 //  row at all; every other pathname gets none (matching what each page rendered on its own before
 //  this moved into AppShell)
+//
+//  Params:
+//    pathname — the current pathname
+//
+//  Returns:
+//    the route's Home/Back config, or null when the route shows no such row
 //----------------------------------------------------------------------------------------------
 function getBackNavConfig(pathname: string | null): BackNavConfig | null {
   if (pathname === '/analyze') return { fallback: '/' }
@@ -76,6 +82,12 @@ function getBackNavConfig(pathname: string | null): BackNavConfig | null {
 
 //----------------------------------------------------------------------------------------------
 //  BackNavRow — Home/Back row, boxed the same way every page used to box it locally
+//
+//  Params:
+//    config — the route's Home/Back config
+//
+//  Returns:
+//    the Home/Back row
 //----------------------------------------------------------------------------------------------
 function BackNavRow({ config }: { config: BackNavConfig }) {
   return (
@@ -106,6 +118,9 @@ function PlayerHeader() {
   const playerFilter = searchParams.get('player') ?? BOTH
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  loadAll — loads the tracked players plus each one's player row and ratings into state
+    //----------------------------------------------------------------------------------------------
     async function loadAll() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -128,6 +143,12 @@ function PlayerHeader() {
     loadAll()
   }, [])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleClick — clicking a player card selects that player, or clears the selection (BOTH) when it is already selected
+  //
+  //  Params:
+  //    player — the clicked player's username
+  //----------------------------------------------------------------------------------------------
   function handleClick(player: string) {
     const next = playerFilter === player ? BOTH : player
     const params = new URLSearchParams(searchParams.toString())
@@ -136,10 +157,14 @@ function PlayerHeader() {
     router.push(qs ? `${pathname}?${qs}` : pathname)
   }
 
-  //
-  //  Filters on both player and time class at once — not the toggle-off-on-second-click
+  //----------------------------------------------------------------------------------------------
+  //  handleRatingClick — Filters on both player and time class at once — not the toggle-off-on-second-click
   //  behavior handleClick has, always sets both values.
   //
+  //  Params:
+  //    player — the player's username
+  //    control — the time class
+  //----------------------------------------------------------------------------------------------
   function handleRatingClick(player: string, control: string) {
     const params = new URLSearchParams(searchParams.toString())
     params.set('player', player)

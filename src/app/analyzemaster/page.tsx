@@ -41,6 +41,9 @@ function AnalyzeMasterContent() {
       return
     }
 
+    //----------------------------------------------------------------------------------------------
+    //  loadGame — loads the master game row for the ?game= mgdid param and stores it in state (sets 'Game not found' when no row exists)
+    //----------------------------------------------------------------------------------------------
     async function loadGame() {
       setLoading(true)
       try {

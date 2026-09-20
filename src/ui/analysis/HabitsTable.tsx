@@ -382,6 +382,12 @@ export default function HabitsTable({
 
 //----------------------------------------------------------------------------------
 //  formatLastOccurred — epoch seconds to dd/mm/yy
+//
+//  Params:
+//    epochSeconds — the time of the habit's last occurrence, in unix seconds
+//
+//  Returns:
+//    the date as dd/mm/yy
 //----------------------------------------------------------------------------------
 function formatLastOccurred(epochSeconds: number): string {
   const date = new Date(epochSeconds * 1000)
@@ -394,6 +400,12 @@ function formatLastOccurred(epochSeconds: number): string {
 //----------------------------------------------------------------------------------
 //  cpClass — text color class for a centipawn value (gray if unknown, red if negative,
 //  green otherwise)
+//
+//  Params:
+//    cp — the evaluation in centipawns, or null when unknown
+//
+//  Returns:
+//    the text colour class: gray when unknown, red when negative, green otherwise
 //----------------------------------------------------------------------------------
 function cpClass(cp: number | null): string {
   if (cp === null) return 'text-gray-400'

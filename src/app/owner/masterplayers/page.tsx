@@ -31,6 +31,9 @@ export default function MasterPlayersPage() {
     loadPlayers()
   }, [filter_name, sortGradeDesc, onlyMissingHandle])
 
+  //----------------------------------------------------------------------------------------------
+  //  loadPlayers — loads the master players for the current name filter, sort and missing-handle filter, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function loadPlayers() {
     setLoadingPlayers(true)
     const rows = await getMasterPlayers(filter_name, sortGradeDesc, onlyMissingHandle)
@@ -41,12 +44,12 @@ export default function MasterPlayersPage() {
   const [findingHandle, setFindingHandle] = useState(false)
   const [handleResult, setHandleResult] = useState('')
 
-  //
-  //  One player per click, highest grade first — a long sequential batch across all
+  //----------------------------------------------------------------------------------------------
+  //  findNextHandle — One player per click, highest grade first — a long sequential batch across all
   //  156 triggered intermittent failures on well-known players (reproducible only at
   //  that scale), most likely chess.com's own anti-bot throttling. User decision:
   //  process one at a time instead, paced by clicking the button.
-  //
+  //----------------------------------------------------------------------------------------------
   async function findNextHandle() {
     setFindingHandle(true)
     setHandleResult('')
@@ -60,9 +63,12 @@ export default function MasterPlayersPage() {
     await loadPlayers()
   }
 
-  //
+  //----------------------------------------------------------------------------------------------
   //  togglePriority — flips one row's priority flag, optimistically, then persists it
   //
+  //  Params:
+  //    row — the master player row to flip
+  //----------------------------------------------------------------------------------------------
   async function togglePriority(row: MasterPlayerRow) {
     const nextPriority = !row.priority
     setPlayers(prev => prev.map(p => p.mstid === row.mstid ? { ...p, priority: nextPriority } : p))

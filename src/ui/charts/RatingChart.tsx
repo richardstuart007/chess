@@ -109,11 +109,17 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     setLoading(true)
     onLoadingChange?.(true)
 
+    //----------------------------------------------------------------------------------------------
+    //  finish — clears the loading flag and tells the parent (onLoadingChange) loading is done
+    //----------------------------------------------------------------------------------------------
     function finish() {
       setLoading(false)
       onLoadingChange?.(false)
     }
 
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the games for the selected players and filters and stores them in state (nothing to fetch when no players are selected)
+    //----------------------------------------------------------------------------------------------
     async function load() {
       if (playersToFetch.length === 0) {
         if (!cancelled) { setGames([]); finish() }
@@ -215,22 +221,6 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     return { chartData: data, xTicks, fromMs, toMs, chartSpanDays }
   }, [series])
 
-  const tickFormatter = (ts: number) => {
-    const d = new Date(ts)
-    if (chartSpanDays <= 1) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    if (chartSpanDays <= 92) return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`
-    if (chartSpanDays <= 400) return d.toLocaleString('default', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(2)
-    return d.getMonth() === 0 ? String(d.getFullYear()) : ''
-  }
-
-  const labelFormatter = (ts: unknown) => {
-    if (typeof ts !== 'number') return ''
-    const d = new Date(ts)
-    return chartSpanDays <= 92
-      ? d.toLocaleString('default', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : d.toLocaleString('default', { month: 'long', year: 'numeric' })
-  }
-
   return (
     <MyBox title='Rating Over Time'>
       <div className='mb-1 flex flex-wrap items-center gap-3'>
@@ -289,10 +279,50 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
       )}
     </MyBox>
   )
+
+  //----------------------------------------------------------------------------------------------
+  //  tickFormatter — formats an x-axis tick timestamp, with coarser labels as the chart span widens
+  //
+  //  Params:
+  //    ts — tick timestamp, in ms
+  //
+  //  Returns:
+  //    the tick label (time of day, day + month, month + year, or a bare year on January ticks)
+  //----------------------------------------------------------------------------------------------
+  function tickFormatter(ts: number): string {
+    const d = new Date(ts)
+    if (chartSpanDays <= 1) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    if (chartSpanDays <= 92) return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`
+    if (chartSpanDays <= 400) return d.toLocaleString('default', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(2)
+    return d.getMonth() === 0 ? String(d.getFullYear()) : ''
+  }
+
+  //----------------------------------------------------------------------------------------------
+  //  labelFormatter — formats the tooltip heading for a hovered timestamp
+  //
+  //  Params:
+  //    ts — hovered timestamp, in ms (any non-number yields an empty label)
+  //
+  //  Returns:
+  //    the full date (with time when the chart spans 92 days or fewer), or month + year otherwise
+  //----------------------------------------------------------------------------------------------
+  function labelFormatter(ts: unknown): string {
+    if (typeof ts !== 'number') return ''
+    const d = new Date(ts)
+    return chartSpanDays <= 92
+      ? d.toLocaleString('default', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleString('default', { month: 'long', year: 'numeric' })
+  }
 }
 
 //----------------------------------------------------------------------------------------------
 //  availableGrans — granularity options that make sense for a date span this wide
+//
+//  Params:
+//    spanDays — the chart's date span, in days
+//
+//  Returns:
+//    the granularities that make sense for that span
 //----------------------------------------------------------------------------------------------
 function availableGrans(spanDays: number): RatingGranularity[] {
   if (spanDays < 2)   return ['game']
@@ -304,6 +334,12 @@ function availableGrans(spanDays: number): RatingGranularity[] {
 //----------------------------------------------------------------------------------------------
 //  defaultGran — the granularity auto-selected for a date span this wide, absent a manual
 //  override
+//
+//  Params:
+//    spanDays — the chart's date span, in days
+//
+//  Returns:
+//    the granularity auto-selected for that span
 //----------------------------------------------------------------------------------------------
 function defaultGran(spanDays: number): RatingGranularity {
   if (spanDays < 2)   return 'game'
@@ -316,6 +352,13 @@ function defaultGran(spanDays: number): RatingGranularity {
 //----------------------------------------------------------------------------------------------
 //  aggregateForPlayer — one player's rows reduced to one point per game, or averaged into
 //  day/week/month buckets
+//
+//  Params:
+//    rows — one player's game rows
+//    granularity — 'game', or the day/week/month bucket size to average into
+//
+//  Returns:
+//    date and avgRating for each point
 //----------------------------------------------------------------------------------------------
 function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date: string; avgRating: number }[] {
   if (rows.length === 0) return []
@@ -358,6 +401,12 @@ function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date
 
 //----------------------------------------------------------------------------------------------
 //  parseDate — 'YYYY-MM-DD' or a full ISO string to a local Date
+//
+//  Params:
+//    d — a date string
+//
+//  Returns:
+//    the parsed Date
 //----------------------------------------------------------------------------------------------
 function parseDate(d: string): Date {
   if (d.length > 10) return new Date(d)
@@ -367,6 +416,14 @@ function parseDate(d: string): Date {
 
 //----------------------------------------------------------------------------------------------
 //  generateDateTicks — count evenly-spaced timestamps between fromMs and toMs, for the x-axis
+//
+//  Params:
+//    fromMs — the start of the range, in ms
+//    toMs — the end of the range, in ms
+//    count — roughly how many ticks to produce
+//
+//  Returns:
+//    the tick timestamps, in ms
 //----------------------------------------------------------------------------------------------
 function generateDateTicks(fromMs: number, toMs: number, count: number): number[] {
   if (count <= 1) return [fromMs]

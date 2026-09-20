@@ -154,6 +154,17 @@ export async function syncMasterGames(
 //----------------------------------------------------------------------------------
 //  insertMasterRawGame — insert one raw master game row; returns true if inserted,
 //  false if already existed (ON CONFLICT DO NOTHING)
+//
+//  Params:
+//    data.player — the master's chess.com handle
+//    data.chesscom_uuid — the game's chess.com UUID
+//    data.raw_data — the raw chess.com game JSON
+//    data.pgn — the game's PGN (optional)
+//    data.end_time — the game's end time
+//    data.time_class — the game's time class
+//
+//  Returns:
+//    true if inserted, false if it already existed
 //----------------------------------------------------------------------------------
 async function insertMasterRawGame(data: {
   player: string

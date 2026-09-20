@@ -104,6 +104,9 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     if (!hydrated || players.length === 0) return
     let cancelled = false
     setLoading(true)
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the termination stats for the applied filters and stores them in state
+    //----------------------------------------------------------------------------------------------
     async function load() {
       const rows = await getTerminationStats(
         appliedQueryPlayers,
@@ -124,10 +127,10 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     } catch {}
   }, [color, hydrated])
 
-  //
-  //  Refresh — commit every live/draft filter into the applied snapshot (and the date back to
-  //  the global URL), then bump the nonce to force the load effect to run.
-  //
+  //----------------------------------------------------------------------------------------------
+  //  handleRefresh — commit every live/draft filter into the applied snapshot (and the date back to
+  //  the global URL), then bump the nonce to force the load effect to run
+  //----------------------------------------------------------------------------------------------
   function handleRefresh() {
     setDateFromFilter(draftDateFrom)
     setAppliedPlayer(playerFilter)
@@ -216,6 +219,13 @@ export default function TerminationChart({ players }: TerminationChartProps) {
 
 //----------------------------------------------------------------------------------
 //  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }

@@ -14,6 +14,12 @@ const cache = new Map<string, { cp: number; depth: number }>()
 //----------------------------------------------------------------------------------
 //  getCachedEval — the cached evaluation for a FEN, or undefined if never computed this
 //  session
+//
+//  Params:
+//    fen — the position (truncated internally)
+//
+//  Returns:
+//    the cached { cp, depth }, or undefined
 //----------------------------------------------------------------------------------
 export function getCachedEval(fen: string): { cp: number; depth: number } | undefined {
   return cache.get(truncateFen(fen))
@@ -22,6 +28,10 @@ export function getCachedEval(fen: string): { cp: number; depth: number } | unde
 //----------------------------------------------------------------------------------
 //  setCachedEval — stores a freshly-computed evaluation for a FEN, for the rest of this
 //  browser tab's session
+//
+//  Params:
+//    fen — the position (truncated internally)
+//    value — the evaluation to cache: cp and depth
 //----------------------------------------------------------------------------------
 export function setCachedEval(fen: string, value: { cp: number; depth: number }): void {
   cache.set(truncateFen(fen), value)

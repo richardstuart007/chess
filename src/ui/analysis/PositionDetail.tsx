@@ -188,7 +188,18 @@ export default function PositionDetail({
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {moves.map(m => {
-                    const pct = (count: number) => m.mov_times > 0 ? Math.round((count / m.mov_times) * 100) : 0
+                    //----------------------------------------------------------------------------------------------
+                    //  pct — a count as a whole-number percentage of this move's total plays
+                    //
+                    //  Params:
+                    //    count — the part (e.g. games won)
+                    //
+                    //  Returns:
+                    //    the percentage of m.mov_times, or 0 when the move has no plays
+                    //----------------------------------------------------------------------------------------------
+                    function pct(count: number): number {
+                      return m.mov_times > 0 ? Math.round((count / m.mov_times) * 100) : 0
+                    }
                     const isSelected = selectedMove === m.move_played
                     return (
                       <tr

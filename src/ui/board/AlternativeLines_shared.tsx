@@ -88,6 +88,13 @@ export default function AlternativeLines_shared({
 
 //----------------------------------------------------------------------------------
 //  formatLine — formats a continuation's SAN moves with move numbers, starting from ply
+//
+//  Params:
+//    lineSans — the line's moves, in SAN
+//    ply — the 1-indexed ply the line starts at
+//
+//  Returns:
+//    the line as text, with move numbers (e.g. '5. Nf3 Nc6 6. Bb5'; '5... Nc6' when it starts on Black's move)
 //----------------------------------------------------------------------------------
 function formatLine(lineSans: string[], ply: number): string {
   const parts: string[] = []

@@ -20,6 +20,12 @@ const MASTER_DECON_TABLE = 'tmgd_gamesdecon'
 //----------------------------------------------------------------------------------
 //  getMasterGameById — reads from tmgd_gamesdecon, matched by its own
 //  permanent mgd_mgdid. Mirrors games.ts's getGameById.
+//
+//  Params:
+//    mgdid — the master game's tmgd_gamesdecon id
+//
+//  Returns:
+//    the master game row, or null when not found
 //----------------------------------------------------------------------------------
 export async function getMasterGameById(mgdid: number) {
   const result = await table_fetch({
@@ -62,6 +68,12 @@ export type MasterGameFilters = {
 
 //----------------------------------------------------------------------------------
 //  buildMasterGameFilters — mirrors games.ts's buildFilters
+//
+//  Params:
+//    filters — the master games-list filters
+//
+//  Returns:
+//    the filter array shared by the page fetch and the page count
 //----------------------------------------------------------------------------------
 function buildMasterGameFilters(filters: MasterGameFilters): Filter[] {
   const result: Filter[] = []
@@ -119,6 +131,14 @@ function buildMasterGameFilters(filters: MasterGameFilters): Filter[] {
 //----------------------------------------------------------------------------------
 //  fetchFilteredMasterGames — mirrors games.ts's fetchFilteredGames, against
 //  tmgd_gamesdecon (secondary database)
+//
+//  Params:
+//    filters — the master games-list filters
+//    page — 1-based page number
+//    itemsPerPage — rows per page (default GAME_LIST_ROWS_DEFAULT_Master)
+//
+//  Returns:
+//    the games on that page
 //----------------------------------------------------------------------------------
 export async function fetchFilteredMasterGames(
   filters: MasterGameFilters,
@@ -155,6 +175,13 @@ export async function fetchFilteredMasterGames(
 
 //----------------------------------------------------------------------------------
 //  getMasterGamesPageCount — mirrors games.ts's getGamesPageCount
+//
+//  Params:
+//    filters — the master games-list filters
+//    itemsPerPage — rows per page (default GAME_LIST_ROWS_DEFAULT_Master)
+//
+//  Returns:
+//    the total number of pages
 //----------------------------------------------------------------------------------
 export async function getMasterGamesPageCount(
   filters: MasterGameFilters,
@@ -208,6 +235,12 @@ export type MasterFenGameHit = {
 //  getMasterPositionByFen — looks up tmpos_positions' mpos_id/mpos_reached for an exact FEN.
 //  Shared by getMasterGamesForFen, fetchMasterGamesForFenPage, and getMasterGamesForFenCount so
 //  this lookup isn't duplicated three times.
+//
+//  Params:
+//    fen — the position (truncated internally)
+//
+//  Returns:
+//    posId and reached for the tmpos_positions row, or null when the position isn't tracked
 //----------------------------------------------------------------------------------
 async function getMasterPositionByFen(fen: string): Promise<{ posId: number; reached: number } | null> {
   const posResult = await table_query({
@@ -240,6 +273,15 @@ async function getMasterPositionByFen(fen: string): Promise<{ posId: number; rea
 //  MasterGamesDbPanel's pagination footer — independent of getMasterGamesForFen's capped
 //  moves-breakdown fetch below, which stays unpaginated (paging a per-move aggregate makes no
 //  sense).
+//
+//  Params:
+//    fen — the position to look up
+//    page — 1-based page number
+//    itemsPerPage — rows per page
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the master games on that page
 //----------------------------------------------------------------------------------
 export async function fetchMasterGamesForFenPage(fen: string, page: number, itemsPerPage: number, move?: string): Promise<MasterFenGameHit[]> {
   const position = await getMasterPositionByFen(fen)
@@ -297,6 +339,13 @@ export async function fetchMasterGamesForFenPage(fen: string, page: number, item
 //  move filter. With no move filter, mpos_reached is already the exact count reaching this
 //  position (see getMasterPositionByFen), so no query is needed; a move filter needs its own
 //  COUNT(*) since mpos_reached covers every move, not just the filtered one.
+//
+//  Params:
+//    fen — the position to look up
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the total number of matching master games
 //----------------------------------------------------------------------------------
 export async function getMasterGamesForFenCount(fen: string, move?: string): Promise<number> {
   const position = await getMasterPositionByFen(fen)
@@ -330,6 +379,13 @@ export async function getMasterGamesForFenCount(fen: string, move?: string): Pro
 //  so callers can render either a summary table or a full game list from one fetch. Each
 //  move's cp/depth come from getFenEvalsWithFallback_shared against that move's resulting
 //  FEN (tmgev_game_evals first, tpose_positions_eval fallback) — null if neither has it.
+//
+//  Params:
+//    fen — the position to look up
+//    limit — maximum games to return (default MASTER_GAMES_FOR_FEN_LIMIT)
+//
+//  Returns:
+//    the matching master games
 //----------------------------------------------------------------------------------
 export async function getMasterGamesForFen(fen: string, limit: number = MASTER_GAMES_FOR_FEN_LIMIT): Promise<{
   reached: number
@@ -502,6 +558,11 @@ export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
 //  already reached, but never creates a new tpos_positions row of its own — matching
 //  what the old whole-array function did per row, just scoped to the one row now
 //  actually being written instead of re-running it over the entire game every call.
+//
+//  Params:
+//    mgdid — the master game's tmgd_gamesdecon id
+//    ply — the ply (half-move) the eval is for
+//    e — the ply's evaluation row
 //----------------------------------------------------------------------------------
 export async function upsertGameEval_master(mgdid: number, ply: number, e: GameEvalRow): Promise<void> {
   await table_query({
@@ -539,6 +600,12 @@ export async function upsertGameEval_master(mgdid: number, ply: number, e: GameE
 //  getGameEvals_player exactly, against this master game's own PGN/tmgev_game_evals
 //  (secondary database) — the getPositionEvaluationsBulk_shared call reaches the
 //  primary database separately, never in a single cross-database join.
+//
+//  Params:
+//    mgdid — the master game's tmgd_gamesdecon id
+//
+//  Returns:
+//    one entry per ply; a ply with no known eval comes back undefined
 //----------------------------------------------------------------------------------
 export async function getMasterGameEvals_master(mgdid: number): Promise<(GameEvalRow | undefined)[]> {
   const gameResult = await table_fetch({

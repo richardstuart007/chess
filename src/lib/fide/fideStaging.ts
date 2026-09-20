@@ -15,18 +15,6 @@ import { FIDE_STANDARD_RATING_LIST_URL, FIDE_XML_CHUNK_SIZE, FIDE_XML_READ_BATCH
 const FIDE_SOURCE_LABEL = 'FIDE standard rating list'
 
 //----------------------------------------------------------------------------------
-//  splitFideName — FIDE's standard format is "Last, First"; a handful of entries
-//  (mostly Indian federation registrations, e.g. "Gukesh D") have no comma at all, in
-//  which case the whole string becomes lastName and firstName is left blank — the
-//  user corrects these by hand in pgAdmin as they're identified.
-//----------------------------------------------------------------------------------
-function splitFideName(name: string): { firstName: string; lastName: string } {
-  const commaIndex = name.indexOf(',')
-  if (commaIndex === -1) return { firstName: '', lastName: name.trim() }
-  return { firstName: name.slice(commaIndex + 1).trim(), lastName: name.slice(0, commaIndex).trim() }
-}
-
-//----------------------------------------------------------------------------------
 //  downloadFideZip — pipeline stage 1 (step 1). Downloads FIDE's monthly zipped
 //  standard rating list into wk_fzp_fide_zip (single row, truncated and refilled every
 //  run) — a separate, independently re-runnable stage so a failure further down the
@@ -34,6 +22,13 @@ function splitFideName(name: string): { firstName: string; lastName: string } {
 //  rather than bytea — nextjs-shared's table_write/table_query typed helpers don't
 //  support Buffer values (worth amending there later); base64 text sidesteps the gap
 //  with the existing typed API.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    bytes — size of the downloaded zip
 //----------------------------------------------------------------------------------
 export async function downloadFideZip(level: number = 1, forceNewRun?: boolean): Promise<{ bytes: number }> {
   await logStart('downloadFideZip', 'fideStagingRoute', 'downloading FIDE standard rating list zip', level)
@@ -73,6 +68,14 @@ export async function downloadFideZip(level: number = 1, forceNewRun?: boolean):
 //  character split across two incoming data events never gets corrupted. Chunked
 //  storage (rather than one ~158MB row) keeps both this stage's writes and
 //  parseFideXml's reads bounded to roughly one chunk in memory at a time.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    chunks — number of XML chunks written
+//    chars — total characters written
 //----------------------------------------------------------------------------------
 export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Promise<{ chunks: number; chars: number }> {
   await logStart('unzipFideZip', 'fideStagingRoute', 'decompressing FIDE zip', level)
@@ -93,6 +96,12 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
   let totalChars = 0
   let pending = ''
 
+  //----------------------------------------------------------------------------------------------
+  //  writeChunk — writes one piece of the decompressed XML to wk_fxm_fide_xml as the next sequenced row
+  //
+  //  Params:
+  //    piece — the XML text to store
+  //----------------------------------------------------------------------------------------------
   async function writeChunk(piece: string): Promise<void> {
     await table_write({
       caller: 'unzipFideZip',
@@ -106,6 +115,9 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
     totalChars += piece.length
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  flushFullChunks — writes out every full FIDE_XML_CHUNK_SIZE piece of the pending XML text, keeping the remainder buffered
+  //----------------------------------------------------------------------------------------------
   async function flushFullChunks(): Promise<void> {
     while (pending.length >= FIDE_XML_CHUNK_SIZE) {
       const piece = pending.slice(0, FIDE_XML_CHUNK_SIZE)
@@ -170,6 +182,13 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
 //  decision: tfpl_fide_players only ever holds the players actually wanted, not a
 //  full ~562K-player snapshot, accepting that a player who later drops below the
 //  cutoff simply stops being refreshable by step 14.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    parsed — FIDE player rows parsed
 //----------------------------------------------------------------------------------
 export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Promise<{ parsed: number }> {
   await logStart('parseFideXml', 'fideStagingRoute', 'parsing FIDE XML into structured rows', level)
@@ -189,6 +208,9 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
   let pendingRows: ParsedPlayer[] = []
   let parsedCount = 0
 
+  //----------------------------------------------------------------------------------------------
+  //  flushPendingRows — bulk-inserts the buffered parsed FIDE player rows, in POSITION_INSERT_CHUNK_SIZE_Player batches
+  //----------------------------------------------------------------------------------------------
   async function flushPendingRows(): Promise<void> {
     if (pendingRows.length === 0) return
     for (let i = 0; i < pendingRows.length; i += POSITION_INSERT_CHUNK_SIZE_Player) {
@@ -272,4 +294,22 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
   })
   await logEnd('parseFideXml', 'fideStagingRoute', `${parsedCount} players`, level)
   return { parsed: parsedCount }
+}
+
+//----------------------------------------------------------------------------------
+//  splitFideName — FIDE's standard format is "Last, First"; a handful of entries
+//  (mostly Indian federation registrations, e.g. "Gukesh D") have no comma at all, in
+//  which case the whole string becomes lastName and firstName is left blank — the
+//  user corrects these by hand in pgAdmin as they're identified.
+//
+//  Params:
+//    name — a FIDE name, normally 'Last, First'
+//
+//  Returns:
+//    firstName and lastName (the whole name is the last name when there is no comma)
+//----------------------------------------------------------------------------------
+function splitFideName(name: string): { firstName: string; lastName: string } {
+  const commaIndex = name.indexOf(',')
+  if (commaIndex === -1) return { firstName: '', lastName: name.trim() }
+  return { firstName: name.slice(commaIndex + 1).trim(), lastName: name.slice(0, commaIndex).trim() }
 }

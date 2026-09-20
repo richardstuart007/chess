@@ -22,41 +22,7 @@ const HANDLE_STYLE = { opacity: 0, width: 1, height: 1 }
 
 type DiagramNodeData = { label: string; variant: 'table' | 'process' }
 
-//----------------------------------------------------------------------------------------------
-//  DiagramNode — a single pipeline-diagram box, styled blue (table) or amber (process) to match
-//  the same color convention used throughout this project's docs
-//----------------------------------------------------------------------------------------------
-function DiagramNode({ data }: NodeProps & { data: DiagramNodeData }) {
-  const boxClass = data.variant === 'table'
-    ? 'border-blue-400 bg-blue-100 text-blue-900'
-    : 'border-amber-400 bg-amber-200 text-amber-900'
-
-  return (
-    <div className={`w-44 rounded-md border px-4 py-2 text-center text-sm font-medium shadow-sm ${boxClass}`}>
-      <Handle type='target' position={Position.Top}    id='top-tgt'    style={HANDLE_STYLE} />
-      <Handle type='source' position={Position.Top}    id='top-src'    style={HANDLE_STYLE} />
-      <Handle type='target' position={Position.Bottom} id='bottom-tgt' style={HANDLE_STYLE} />
-      <Handle type='source' position={Position.Bottom} id='bottom-src' style={HANDLE_STYLE} />
-      <Handle type='target' position={Position.Left}   id='left-tgt'   style={HANDLE_STYLE} />
-      <Handle type='source' position={Position.Left}   id='left-src'   style={HANDLE_STYLE} />
-      <Handle type='target' position={Position.Right}  id='right-tgt'  style={HANDLE_STYLE} />
-      <Handle type='source' position={Position.Right}  id='right-src'  style={HANDLE_STYLE} />
-      {data.label}
-    </div>
-  )
-}
-
 const NODE_TYPES = { diagram: DiagramNode }
-
-//
-//  (row, col) grid layout converted to pixel positions — col 1 is the main top-to-bottom
-//  pipeline chain; col 0 (Purge) and col 4 (bulkUpdateCpLoss / Evaluate Game Endings / Deepen
-//  Popular Positions) are the loop-back/multi-input side processes, each aligned with the row of
-//  whichever main-chain table they feed
-//
-function pos(row: number, col: number) {
-  return { x: col * COL_WIDTH, y: (row - 1) * ROW_HEIGHT }
-}
 
 const NODES: Node<DiagramNodeData>[] = [
   { id: 'chesscom',      type: 'diagram', position: pos(1, 1),  data: { label: 'chess.com API',              variant: 'process' } },
@@ -78,20 +44,6 @@ const NODES: Node<DiagramNodeData>[] = [
   { id: 'buildhabits',   type: 'diagram', position: pos(12, 2), data: { label: 'Build Habits',               variant: 'process' } },
   { id: 'thab',          type: 'diagram', position: pos(13, 2), data: { label: 'thab_habits',                 variant: 'table' } },
 ]
-
-//
-//  Every edge exits/enters via whichever side actually faces the other node —
-//  bottom/top for anything above/below (straight or elbow-routed by the `step`
-//  edge type automatically), left/right for a cross-column connection.
-//
-function edge(id: string, source: string, sourceHandle: string, target: string, targetHandle: string): Edge {
-  return {
-    id, source, target, sourceHandle, targetHandle,
-    type: 'step',
-    style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
-  }
-}
 
 const EDGES: Edge[] = [
   edge('e1',  'tpl',           'bottom-src', 'gamesync',      'top-tgt'),
@@ -132,4 +84,75 @@ export default function PipelineDiagram() {
       />
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------------------
+//  DiagramNode — a single pipeline-diagram box, styled blue (table) or amber (process) to match
+//  the same color convention used throughout this project's docs
+//
+//  Params:
+//    data — the node's data: label (text shown in the box) and variant ('table' | 'process')
+//
+//  Returns:
+//    the box element, with an invisible source + target handle on all four sides
+//----------------------------------------------------------------------------------------------
+function DiagramNode({ data }: NodeProps & { data: DiagramNodeData }) {
+  const boxClass = data.variant === 'table'
+    ? 'border-blue-400 bg-blue-100 text-blue-900'
+    : 'border-amber-400 bg-amber-200 text-amber-900'
+
+  return (
+    <div className={`w-44 rounded-md border px-4 py-2 text-center text-sm font-medium shadow-sm ${boxClass}`}>
+      <Handle type='target' position={Position.Top}    id='top-tgt'    style={HANDLE_STYLE} />
+      <Handle type='source' position={Position.Top}    id='top-src'    style={HANDLE_STYLE} />
+      <Handle type='target' position={Position.Bottom} id='bottom-tgt' style={HANDLE_STYLE} />
+      <Handle type='source' position={Position.Bottom} id='bottom-src' style={HANDLE_STYLE} />
+      <Handle type='target' position={Position.Left}   id='left-tgt'   style={HANDLE_STYLE} />
+      <Handle type='source' position={Position.Left}   id='left-src'   style={HANDLE_STYLE} />
+      <Handle type='target' position={Position.Right}  id='right-tgt'  style={HANDLE_STYLE} />
+      <Handle type='source' position={Position.Right}  id='right-src'  style={HANDLE_STYLE} />
+      {data.label}
+    </div>
+  )
+}
+
+//----------------------------------------------------------------------------------------------
+//  pos — (row, col) grid layout converted to pixel positions. Col 1 is the main top-to-bottom
+//  pipeline chain; col 0 (Purge) and col 4 (bulkUpdateCpLoss / Evaluate Game Endings / Deepen
+//  Popular Positions) are the loop-back/multi-input side processes, each aligned with the row of
+//  whichever main-chain table they feed
+//
+//  Params:
+//    row — 1-based grid row (scaled by ROW_HEIGHT into y)
+//    col — grid column (scaled by COL_WIDTH into x)
+//
+//  Returns:
+//    the node's pixel position: { x, y }
+//----------------------------------------------------------------------------------------------
+function pos(row: number, col: number) {
+  return { x: col * COL_WIDTH, y: (row - 1) * ROW_HEIGHT }
+}
+
+//----------------------------------------------------------------------------------------------
+//  edge — builds one diagram edge. Every edge exits/enters via whichever side actually faces the
+//  other node — bottom/top for anything above/below (straight or elbow-routed by the `step` edge
+//  type automatically), left/right for a cross-column connection
+//
+//  Params:
+//    id           — unique edge id
+//    source       — id of the node the edge starts at
+//    sourceHandle — handle on the source node the edge leaves from (e.g. 'bottom-src')
+//    target       — id of the node the edge ends at
+//    targetHandle — handle on the target node the edge enters (e.g. 'top-tgt')
+//
+//  Returns:
+//    the React Flow edge, styled as a `step` edge with an arrow marker
+//----------------------------------------------------------------------------------------------
+function edge(id: string, source: string, sourceHandle: string, target: string, targetHandle: string): Edge {
+  return {
+    id, source, target, sourceHandle, targetHandle,
+    type: 'step',
+    style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
+  }
 }

@@ -140,6 +140,15 @@ export default function MoveTree_shared({ tree, currentNode, onSelectNode, moveC
 //----------------------------------------------------------------------------------------------
 //  MoveBadge — one move's clickable SAN badge, colored by classification (or plain gray/blue for
 //  main-line/variation), with a ??/?/?! annotation and optional occurrence count
+//
+//  Params:
+//    node — the move node to show
+//    isActive — true when this is the move currently on the board
+//    onClick — called when the badge is clicked
+//    count — how many times the move has been played, shown as a badge (optional)
+//
+//  Returns:
+//    the clickable move badge
 //----------------------------------------------------------------------------------------------
 function MoveBadge({
   node,
@@ -180,6 +189,12 @@ function MoveBadge({
 
 //----------------------------------------------------------------------------------------------
 //  annotationSymbol — ??/?/?! for blunder/mistake/inaccuracy, or '' otherwise
+//
+//  Params:
+//    ev — the move's evaluation (optional)
+//
+//  Returns:
+//    '??' for a blunder, '?' for a mistake, '?!' for an inaccuracy, otherwise ''
 //----------------------------------------------------------------------------------------------
 function annotationSymbol(ev?: PlyEvaluation): string {
   if (!ev) return ''
@@ -191,6 +206,12 @@ function annotationSymbol(ev?: PlyEvaluation): string {
 
 //----------------------------------------------------------------------------------------------
 //  EvalCell — one table cell showing a node's Stockfish eval + depth, or blank if unevaluated
+//
+//  Params:
+//    node — the move node whose evaluation to show (optional)
+//
+//  Returns:
+//    a table cell with the node's eval and depth, blank when unevaluated
 //----------------------------------------------------------------------------------------------
 function EvalCell({ node }: { node?: MoveNode }) {
   if (!node?.evaluation) return <td className='py-px w-24'></td>
@@ -208,6 +229,12 @@ function EvalCell({ node }: { node?: MoveNode }) {
 //  evalColor — text color for a centipawn value (red if negative, gray otherwise). NOTE: called
 //  from both EvalCell and InlineVariation — no single caller to anchor its position to, placed
 //  after its first caller (EvalCell) as a judgment call, not a strict first-use derivation.
+//
+//  Params:
+//    cp — the evaluation in centipawns
+//
+//  Returns:
+//    the CSS class used to colour that evaluation
 //----------------------------------------------------------------------------------------------
 function evalColor(cp: number): string {
   if (cp < 0) return 'text-red-600'
@@ -217,6 +244,16 @@ function evalColor(cp: number): string {
 //----------------------------------------------------------------------------------------------
 //  InlineVariation — one branch off the main line, rendered as its own indented mini-line of
 //  MoveBadges, following first-children only (a variation's own sub-variations aren't shown)
+//
+//  Params:
+//    startNode — the first node of the variation
+//    startPly — the 1-indexed ply of startNode
+//    currentNode — the node currently on the board, or null
+//    onSelectNode — called with a node when its move is clicked
+//    moveCounts — times each move has been played, keyed by node id (optional)
+//
+//  Returns:
+//    the variation's moves rendered inline
 //----------------------------------------------------------------------------------------------
 function InlineVariation({
   startNode,

@@ -54,6 +54,9 @@ function AnalyzeContent() {
       return
     }
 
+    //----------------------------------------------------------------------------------------------
+    //  loadGame — loads the game row for the ?game= gdid param, rebuilds it into a ChessComGame-shaped object, and stores it in state (sets an error when the game isn't found or the load fails)
+    //----------------------------------------------------------------------------------------------
     async function loadGame() {
       setLoading(true)
       try {
@@ -63,11 +66,23 @@ function AnalyzeContent() {
           return
         }
 
-        // Build a ChessComGame-shaped object from tgd_gamesdecon's flat columns —
-        // gd_player_result only carries the tracked player's own result, so the
-        // opposite side is derived (getPlayerResult only ever checks for 'win').
-        const oppositeResult = (result: string) =>
-          result === 'win' ? 'loss' : result === 'loss' ? 'win' : 'draw'
+        //----------------------------------------------------------------------------------------------
+        //  oppositeResult — gd_player_result only carries the tracked player's own result, so the
+        //  opposite side's result is derived (getPlayerResult only ever checks for 'win')
+        //
+        //  Params:
+        //    result — the tracked player's result ('win', 'loss' or a draw result)
+        //
+        //  Returns:
+        //    'loss' for a win, 'win' for a loss, otherwise 'draw'
+        //----------------------------------------------------------------------------------------------
+        function oppositeResult(result: string): string {
+          return result === 'win' ? 'loss' : result === 'loss' ? 'win' : 'draw'
+        }
+
+        //
+        //  Build a ChessComGame-shaped object from tgd_gamesdecon's flat columns
+        //
         const isPlayerWhite = row.gd_player_color === 'white'
 
         const raw: ChessComGame = {

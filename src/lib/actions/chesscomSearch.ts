@@ -129,6 +129,12 @@ export async function searchChessComGames(fen: string | undefined, filters: Ches
 
 //----------------------------------------------------------------------------------
 //  parseRating — "(1775)" -> 1775, or null if chess.com shows no rating for that player
+//
+//  Params:
+//    text — the rating text as chess.com shows it, e.g. '(1775)'
+//
+//  Returns:
+//    the rating number, or null when there is none
 //----------------------------------------------------------------------------------
 function parseRating(text: string): number | null {
   const match = text.match(/\d+/)

@@ -185,6 +185,9 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     setBoardKey(k => k + 1)
 
     let cancelled = false
+    //----------------------------------------------------------------------------------------------
+    //  hydrateCachedEvals — loads the game's already-stored per-ply evaluations (getMasterGameEvals_master) and attaches them to the tree's main line, unless the effect has been cancelled
+    //----------------------------------------------------------------------------------------------
     async function hydrateCachedEvals() {
       const cached = await getMasterGameEvals_master(row.mgd_mgdid)
       if (cancelled) return
@@ -243,6 +246,9 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     if (!fen) { setMastersData(null); setMastersFenEvals({}); return }
     let cancelled = false
 
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the Lichess masters explorer data for the current position and stores it in mastersData (clearing mastersFenEvals)
+    //----------------------------------------------------------------------------------------------
     async function load() {
       try {
         const data = await getMastersExplorer(fen!)
@@ -284,6 +290,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
   // Keyboard navigation
   // -----------------------------------------------------------------------
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  handleKey — keyboard navigation: ArrowLeft / ArrowRight step back and forward through the moves
+    //
+    //  Params:
+    //    e — the keydown event
+    //----------------------------------------------------------------------------------------------
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
@@ -515,6 +527,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
       }
     } catch { /* if FEN is invalid, skip validation */ }
 
+    //----------------------------------------------------------------------------------------------
+    //  processUpdate — handles one streaming update from the infinite analysis: drops lines whose best move is illegal in this position, and de-duplicates by best move
+    //
+    //  Params:
+    //    update — the engine's latest analysis update
+    //----------------------------------------------------------------------------------------------
     function processUpdate(update: InfiniteAnalysisUpdate) {
       const legal = legalUcis.size > 0
         ? update.lines.filter(r => !r.bestMoveUci || legalUcis.has(r.bestMoveUci))
@@ -566,6 +584,9 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     )
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  stopDeepAnalysis — stops the engine's infinite analysis and clears the deepAnalyzing flag
+  //----------------------------------------------------------------------------------------------
   function stopDeepAnalysis() {
     engineRef.current?.stopAnalysis()
     setDeepAnalyzing(false)
@@ -581,6 +602,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
   // would write into the wrong game's table. Instead, for the "own position" write-back,
   // this updates local plyEvals[ply] and persists just that one row via
   // upsertGameEval_master.
+  //
+  //  Params:
+  //    fen — the position that was analysed
+  //    ply — that position's 1-indexed ply
+  //    lines — the engine lines to persist
+  //    depth — the search depth reached
   // -----------------------------------------------------------------------
   async function persistAnalysisLines_master(fen: string, ply: number, lines: MultiPvResult[], depth: number) {
     if (lines.length === 0) return
@@ -659,6 +686,9 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
   // -----------------------------------------------------------------------
   // Handle selecting an alternative PV line
+  //
+  //  Params:
+  //    line — the engine line the user selected
   // -----------------------------------------------------------------------
   function handleSelectPvLine(line: MultiPvResult) {
     if (!tree) return
@@ -672,6 +702,13 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
   // -----------------------------------------------------------------------
   // Interactive board: handle piece drop — build-your-own-variation support
+  //
+  //  Params:
+  //    sourceSquare — the square the piece was dragged from
+  //    targetSquare — the square it was dropped on
+  //
+  //  Returns:
+  //    true when the drop was accepted as a move, false otherwise
   // -----------------------------------------------------------------------
   function handlePieceDrop(sourceSquare: string, targetSquare: string): boolean {
     if (!tree) return false
@@ -1070,6 +1107,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
 //----------------------------------------------------------------------------------------------
 //  formatGameDate — epoch seconds to dd/mm/yy
+//
+//  Params:
+//    endTime — the game's end time, in unix seconds
+//
+//  Returns:
+//    the date as display text
 //----------------------------------------------------------------------------------------------
 function formatGameDate(endTime: number): string {
   const date = new Date(endTime * 1000)

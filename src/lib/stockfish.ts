@@ -56,6 +56,15 @@ export const STOCKFISH_DEFAULTS = {
   deepAnalysisMultiPv: STOCKFISH_DEEP_ANALYSIS_MULTIPV
 }
 
+//----------------------------------------------------------------------------------
+//  classifyMove — classifies a move by its centipawn loss against the STOCKFISH_DEFAULTS blunder, mistake and inaccuracy thresholds
+//
+//  Params:
+//    cpLoss — the centipawn loss of the move
+//
+//  Returns:
+//    'blunder', 'mistake', 'inaccuracy' or 'good'
+//----------------------------------------------------------------------------------
 export function classifyMove(cpLoss: number): PlyEvaluation['classification'] {
   if (cpLoss > STOCKFISH_DEFAULTS.blunderCp) return 'blunder'
   if (cpLoss > STOCKFISH_DEFAULTS.mistakeCp) return 'mistake'
@@ -74,6 +83,16 @@ export const CLASSIFICATION_SQUARE_COLORS: Record<string, string> = {
   inaccuracy: 'rgba(234, 179, 8, 0.5)'
 }
 
+//----------------------------------------------------------------------------------
+//  uciToSan — converts one UCI move to SAN from a given position
+//
+//  Params:
+//    fen — the position the move is played from
+//    uciMove — the move in UCI notation
+//
+//  Returns:
+//    the move in SAN
+//----------------------------------------------------------------------------------
 function uciToSan(fen: string, uciMove: string): string {
   try {
     const g = new Chess(fen)
@@ -87,6 +106,16 @@ function uciToSan(fen: string, uciMove: string): string {
   }
 }
 
+//----------------------------------------------------------------------------------
+//  uciLineToSans — converts a UCI move line to SAN, playing it out from a given position
+//
+//  Params:
+//    fen — the position the line starts from
+//    uciMoves — the line's moves in UCI notation
+//
+//  Returns:
+//    the line's moves in SAN
+//----------------------------------------------------------------------------------
 function uciLineToSans(fen: string, uciMoves: string[]): string[] {
   const sans: string[] = []
   try {

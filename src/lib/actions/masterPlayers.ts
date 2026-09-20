@@ -22,14 +22,6 @@ export type MasterPlayerRow = {
 }
 
 //----------------------------------------------------------------------------------
-//  combineName — reconstructs the "First Last" display/search string chess.com's own
-//  search expects, from the two stored columns.
-//----------------------------------------------------------------------------------
-function combineName(firstName: string | null, lastName: string): string {
-  return firstName ? `${firstName} ${lastName}` : lastName
-}
-
-//----------------------------------------------------------------------------------
 //  getMasterHandleNameMap — mgd_player-style identifier (lowercased) → display name, for every
 //  master player. Used to attach a real name onto master-games rows (tmgd_gamesdecon, secondary
 //  database) in app code, since that table only stores the identifier and the two tables can
@@ -52,6 +44,14 @@ export async function getMasterHandleNameMap(): Promise<Record<string, string>> 
 //  page's priority-flagging list, optionally narrowed by a name filter (substring,
 //  case-insensitive), by missing-Chess.com-handle only, and sorted by grade descending
 //  instead of the default alphabetical-by-name order.
+//
+//  Params:
+//    filterName — case-insensitive name substring to match; '' for no name filter (default '')
+//    sortByGradeDesc — sort by grade descending instead of by name (default false)
+//    onlyMissingHandle — only players with no chess.com handle (default false)
+//
+//  Returns:
+//    the matching master player rows
 //----------------------------------------------------------------------------------
 export async function getMasterPlayers(filterName: string = '', sortByGradeDesc: boolean = false, onlyMissingHandle: boolean = false): Promise<MasterPlayerRow[]> {
   const whereColumnValuePairs: ColumnValuePair[] = []
@@ -171,6 +171,10 @@ export async function findNextMasterPlayerHandle(): Promise<{ mstid: number; nam
 //----------------------------------------------------------------------------------
 //  setMasterPlayerPriority — flags/unflags one player as priority. Scopes
 //  findNextMasterPlayerHandle to priority-flagged rows only.
+//
+//  Params:
+//    mstid — the master player's tmst_master_players id
+//    priority — true to flag as priority, false to unflag
 //----------------------------------------------------------------------------------
 export async function setMasterPlayerPriority(mstid: number, priority: boolean): Promise<void> {
   await table_update({
@@ -191,6 +195,12 @@ export async function setMasterPlayerPriority(mstid: number, priority: boolean):
 //  Deliberately reads tmgd_gamesdecon (permanent), not wk_mgr_gamesraw (the transient
 //  raw workfile, truncated before every sync run) — the workfile only ever reflects the
 //  most recently run player(s), not true sync history.
+//
+//  Params:
+//    year — the calendar year to check
+//
+//  Returns:
+//    the set of lowercased handles with games in that year
 //----------------------------------------------------------------------------------
 export async function getMasterSyncYearStatus(year: number): Promise<Set<string>> {
   const yearStart = Math.floor(Date.UTC(year, 0, 1) / 1000)
@@ -213,4 +223,19 @@ export async function getMasterSyncYearStatus(year: number): Promise<Set<string>
     return new Set()
   }
   return new Set(result.data.map((r: any) => r.mgd_player as string))
+}
+
+//----------------------------------------------------------------------------------
+//  combineName — reconstructs the "First Last" display/search string chess.com's own
+//  search expects, from the two stored columns.
+//
+//  Params:
+//    firstName — the stored first name, or null
+//    lastName — the stored last name
+//
+//  Returns:
+//    "First Last", or just the last name when there is no first name
+//----------------------------------------------------------------------------------
+function combineName(firstName: string | null, lastName: string): string {
+  return firstName ? `${firstName} ${lastName}` : lastName
 }

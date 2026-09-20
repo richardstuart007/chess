@@ -40,6 +40,9 @@ export default function MasterPlayerMultiSelect({ selected, onChange, year, labe
   const [search, setSearch] = useState('')
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  load — loads the master players that have a chess.com handle, plus the handles already downloaded for the selected year, and builds the options
+    //----------------------------------------------------------------------------------------------
     async function load() {
       const [players, downloaded] = await Promise.all([
         getMasterPlayers('', true),

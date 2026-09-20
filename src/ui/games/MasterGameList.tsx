@@ -125,6 +125,13 @@ export default function MasterGameList() {
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
 
+  //----------------------------------------------------------------------------------------------
+  //  updateFilter — sets one draft filter, or clears it when the value is empty; numeric keys (opponent rating, mgdid) are parsed as integers
+  //
+  //  Params:
+  //    key — the filter to change
+  //    value — the new value ('' clears it)
+  //----------------------------------------------------------------------------------------------
   function updateFilter(key: keyof MasterGameFilters, value: string) {
     setDraftFilters(prev => {
       const next = { ...prev }
@@ -139,6 +146,12 @@ export default function MasterGameList() {
     })
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  updateTerminationFilter — sets the draft termination filter, or clears it when nothing is selected
+  //
+  //  Params:
+  //    terms — the selected termination types
+  //----------------------------------------------------------------------------------------------
   function updateTerminationFilter(terms: string[]) {
     setDraftFilters(prev => {
       const next = { ...prev }
@@ -147,15 +160,21 @@ export default function MasterGameList() {
     })
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleApplyFilters — applies the draft filters
+  //----------------------------------------------------------------------------------------------
   function handleApplyFilters() {
     setFilters(draftFilters)
   }
 
-  //
-  //  Open a game in /analyzemaster. Pushes the current /mastergames URL as the back target so
+  //----------------------------------------------------------------------------------------------
+  //  openMasterGame — Open a game in /analyzemaster. Pushes the current /mastergames URL as the back target so
   //  the page's "← Back" returns to this exact filtered list. Carries ?master= (the master's
   //  chess.com handle) so AppNav keeps that master's card outlined while the game is viewed.
   //
+  //  Params:
+  //    row — the clicked master games-list row
+  //----------------------------------------------------------------------------------------------
   function openMasterGame(row: any) {
     const qs = searchParams.toString()
     pushBackTarget(qs ? `/mastergames?${qs}` : '/mastergames')
@@ -181,6 +200,9 @@ export default function MasterGameList() {
   useEffect(() => {
     if (!hydrated) return
     let cancelled = false
+    //----------------------------------------------------------------------------------------------
+    //  fetchCount — fetches the total number of matching master games and stores it as totalCount
+    //----------------------------------------------------------------------------------------------
     async function fetchCount() {
       const count = await getMasterGamesPageCount(filters, 1)
       if (!cancelled) { setTotalCount(count) }
@@ -196,6 +218,9 @@ export default function MasterGameList() {
     let cancelled = false
     setLoading(true)
 
+    //----------------------------------------------------------------------------------------------
+    //  fetchPage — fetches the current page of master games for the applied filters and stores it in state
+    //----------------------------------------------------------------------------------------------
     async function fetchPage() {
       const rows = await fetchFilteredMasterGames(filters, currentPage, rowsPerPage)
       if (!cancelled) {
@@ -430,6 +455,13 @@ export default function MasterGameList() {
 
 //----------------------------------------------------------------------------------------------
 //  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }

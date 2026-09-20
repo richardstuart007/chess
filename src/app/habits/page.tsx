@@ -136,6 +136,9 @@ function HabitsContent() {
   }, [rowsPerPage, hydrated])
 
   useEffect(() => {
+    //----------------------------------------------------------------------------------------------
+    //  loadPlayers — loads the tracked players list into state
+    //----------------------------------------------------------------------------------------------
     async function loadPlayers() {
       const ps = await getPlayers()
       setPlayers(ps)
@@ -161,6 +164,9 @@ function HabitsContent() {
 
   useEffect(() => {
     if (!hydrated) return
+    //----------------------------------------------------------------------------------------------
+    //  loadCount — counts the habits matching the current filters and stores it in totalCount (0 when there are no players to fetch)
+    //----------------------------------------------------------------------------------------------
     async function loadCount() {
       if (playersToFetch.length === 0) { setTotalCount(0); return }
       const count = await getHabitsCount_player({
@@ -286,6 +292,13 @@ function HabitsContent() {
 
 //----------------------------------------------------------------------------------
 //  ss — read+parse a sessionStorage value, falling back if unset/corrupt/unavailable (SSR)
+//
+//  Params:
+//    key — the sessionStorage key to read
+//    fallback — value returned when the key is unset, corrupt, or sessionStorage is unavailable
+//
+//  Returns:
+//    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
   try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }

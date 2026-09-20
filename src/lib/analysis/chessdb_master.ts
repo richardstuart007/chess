@@ -45,6 +45,13 @@ export interface MasterMoveRow {
 //  lookups the same way before matching keys. Mirrors
 //  getMovePlayCounts_player exactly, against the secondary database's tm*
 //  tables.
+//
+//  Params:
+//    fens — the positions to look up (truncated internally)
+//    masterPlayer — the master's mgd_player identifier
+//
+//  Returns:
+//    a record of truncated FEN → (move → times played)
 //----------------------------------------------------------------------------------
 export async function getMovePlayCounts_master(fens: string[], masterPlayer: string): Promise<Record<string, Record<string, number>>> {
   const uniqueFens = [...new Set(fens.map(truncateFen))]
@@ -104,6 +111,13 @@ export async function getMovePlayCounts_master(fens: string[], masterPlayer: str
 //  mgd_player_color/mgd_player_result, inverted when the tracked master was Black) —
 //  never the tracked master's own personal win/loss, since that would mix two
 //  different perspectives depending on which color they happened to play.
+//
+//  Params:
+//    fen — the position to summarise
+//    masterPlayer — the master's mgd_player identifier
+//
+//  Returns:
+//    one MasterMoveRow per move played from the position
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition_master(fen: string, masterPlayer: string): Promise<MasterMoveRow[]> {
   const result = await table_query({
@@ -192,6 +206,18 @@ const MASTER_POSITION_GAMES_JOINS: JoinParams[] = [
   { table: 'tmgd_gamesdecon', on: 'mgd_mgdid = mgam_mgdid' }
 ]
 
+//----------------------------------------------------------------------------------
+//  buildMasterPositionGamesFilters — builds the filter list shared by fetchGamesForPosition_master's page fetch and
+//  getGamesForPositionCount_master's count, so both always use the same set
+//
+//  Params:
+//    fen — the position (truncated internally)
+//    masterPlayer — the master's mgd_player identifier (lowercased)
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the filter array
+//----------------------------------------------------------------------------------
 function buildMasterPositionGamesFilters(fen: string, masterPlayer: string, move?: string): Filter[] {
   const filters: Filter[] = [
     { column: 'mpos_fen', operator: '=', value: truncateFen(fen) },
@@ -202,6 +228,15 @@ function buildMasterPositionGamesFilters(fen: string, masterPlayer: string, move
   return filters
 }
 
+//----------------------------------------------------------------------------------
+//  mapMasterPositionGameRow — maps one raw joined row to a MasterPositionGameHit
+//
+//  Params:
+//    r — the raw row from the position-games query
+//
+//  Returns:
+//    the row as a MasterPositionGameHit
+//----------------------------------------------------------------------------------
 function mapMasterPositionGameRow(r: any): MasterPositionGameHit {
   return {
     player:         r.mgd_player,
@@ -226,6 +261,16 @@ function mapMasterPositionGameRow(r: any): MasterPositionGameHit {
 //  move was played next. Mirrors fetchGamesForPosition_player exactly, against the
 //  secondary database's tm* tables. No finalEval/resultMismatch fields — master has
 //  no equivalent of gd_final_eval (see PLAN_master-game-view-parity for why).
+//
+//  Params:
+//    fen — the position to look up
+//    masterPlayer — the master's mgd_player identifier
+//    page — 1-based page number
+//    itemsPerPage — rows per page
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the games on that page
 //----------------------------------------------------------------------------------
 export async function fetchGamesForPosition_master(
   fen: string,
@@ -259,6 +304,14 @@ export async function fetchGamesForPosition_master(
 //----------------------------------------------------------------------------------
 //  getGamesForPositionCount_master — total row count for
 //  fetchGamesForPosition_master's same filter set
+//
+//  Params:
+//    fen — the position to look up
+//    masterPlayer — the master's mgd_player identifier
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the total number of matching games
 //----------------------------------------------------------------------------------
 export async function getGamesForPositionCount_master(fen: string, masterPlayer: string, move?: string): Promise<number> {
   const result = await fetchTotalRows({

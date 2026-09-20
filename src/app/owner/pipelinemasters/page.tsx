@@ -65,12 +65,30 @@ export default function PipelineMastersPage() {
   const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshZip — re-queries the FIDE zip download step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshZip()     { setSZipLoading(true);     setSZip(await refreshFideZipStatus());       setSZipLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshXml — re-queries the unzip step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshXml()     { setSXmlLoading(true);     setSXml(await refreshFideXmlStatus());       setSXmlLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshParsed — re-queries the parse step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshParsed()  { setSParsedLoading(true);  setSParsed(await refreshFideParsedStatus()); setSParsedLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshTop — re-queries the count of FIDE-tagged masters for the populate-top-players step, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshTop()     { setSTopLoading(true);     setSTop(await refreshFideTaggedCount());     setSTopLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRefresh — re-queries the count of FIDE-tagged masters for the refresh-ratings step, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshRefresh() { setSRefreshLoading(true); setSRefresh(await refreshFideTaggedCount()); setSRefreshLoading(false) }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRuns — reloads the recent run ids and the latest run's pipeline-log rows
+  //----------------------------------------------------------------------------------------------
   async function doRefreshRuns() {
     setRunsLoading(true)
     const ids = await getRecentRunIds(PIPELINE_TYPE_MASTERS)
@@ -81,6 +99,12 @@ export default function PipelineMastersPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectRunId — shows the selected run's pipeline-log rows
+  //
+  //  Params:
+  //    runId — the pipeline run to show
+  //----------------------------------------------------------------------------------------------
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
@@ -88,6 +112,9 @@ export default function PipelineMastersPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshAllStatus — refreshes every step's status, then the run log
+  //----------------------------------------------------------------------------------------------
   async function doRefreshAllStatus() {
     await Promise.all([doRefreshZip(), doRefreshXml(), doRefreshParsed(), doRefreshTop(), doRefreshRefresh()])
     doRefreshRuns()
@@ -103,6 +130,12 @@ export default function PipelineMastersPage() {
   const [downloadResult,  setDownloadResult]  = useState<{ bytes: number } | null>(null)
   const [downloadError,   setDownloadError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleDownload — runs the FIDE zip download step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleDownload(forceNewRun: boolean = true) {
     setDownloadRunning(true)
     setDownloadResult(null)
@@ -127,6 +160,12 @@ export default function PipelineMastersPage() {
   const [unzipResult,  setUnzipResult]  = useState<{ chunks: number; chars: number } | null>(null)
   const [unzipError,   setUnzipError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleUnzip — runs the unzip step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleUnzip(forceNewRun: boolean = true) {
     setUnzipRunning(true)
     setUnzipResult(null)
@@ -151,6 +190,12 @@ export default function PipelineMastersPage() {
   const [parseResult,  setParseResult]  = useState<{ parsed: number } | null>(null)
   const [parseError,   setParseError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleParse — runs the parse step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleParse(forceNewRun: boolean = true) {
     setParseRunning(true)
     setParseResult(null)
@@ -175,6 +220,12 @@ export default function PipelineMastersPage() {
   const [topResult,  setTopResult]  = useState<{ processed: number; inserted: number; updated: number } | null>(null)
   const [topError,   setTopError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handlePopulateTopPlayers — runs the populate-top-players step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handlePopulateTopPlayers(forceNewRun: boolean = true) {
     setTopRunning(true)
     setTopResult(null)
@@ -200,6 +251,12 @@ export default function PipelineMastersPage() {
   const [refreshResult,  setRefreshResult]  = useState<{ updated: number } | null>(null)
   const [refreshError,   setRefreshError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleRefreshRatings — runs the refresh-ratings step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleRefreshRatings(forceNewRun: boolean = true) {
     setRefreshRunning(true)
     setRefreshResult(null)
@@ -221,6 +278,9 @@ export default function PipelineMastersPage() {
 
   // ── Run All: every stage in order, sharing one run_id ──────────────────────
   const [runAllRunning, setRunAllRunning] = useState(false)
+  //----------------------------------------------------------------------------------------------
+  //  handleRunAll — runs every step in order as one pipeline run
+  //----------------------------------------------------------------------------------------------
   async function handleRunAll() {
     setRunAllRunning(true)
     setRuns([])
@@ -457,6 +517,12 @@ export default function PipelineMastersPage() {
 
 //----------------------------------------------------------------------------------
 //  n — formats a count for display, or an em dash if not yet loaded
+//
+//  Params:
+//    val — the number to format (may be undefined)
+//
+//  Returns:
+//    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
   return val === undefined ? '—' : val.toLocaleString()

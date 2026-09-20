@@ -22,6 +22,16 @@ export interface ChessComGame {
   finalEval?: number | null
 }
 
+//----------------------------------------------------------------------------------
+//  fetchRecentGames — fetches a player's most recent chess.com games, walking their monthly archives
+//
+//  Params:
+//    player — the chess.com username
+//    count — how many recent games to return (default 10)
+//
+//  Returns:
+//    the recent games
+//----------------------------------------------------------------------------------
 export async function fetchRecentGames(
   player: string,
   count: number = 10
@@ -49,6 +59,18 @@ export async function fetchRecentGames(
   return games.slice(-count)
 }
 
+//----------------------------------------------------------------------------------
+//  getPlayerResult — a player's colour, result and opponent rating in a chess.com game
+//
+//  Params:
+//    game — the chess.com game
+//    player — the player's username
+//
+//  Returns:
+//    color — the side the player had
+//    result — the player's result
+//    opponentRating — the opponent's rating
+//----------------------------------------------------------------------------------
 export function getPlayerResult(
   game: ChessComGame,
   player: string
@@ -69,6 +91,16 @@ export function getPlayerResult(
   }
 }
 
+//----------------------------------------------------------------------------------
+//  extractOpeningFromPgn — reads the ECO code and opening name from a PGN's headers
+//
+//  Params:
+//    pgn — the game's PGN
+//
+//  Returns:
+//    name — the opening name ('Unknown' when absent)
+//    eco — the ECO code ('' when absent)
+//----------------------------------------------------------------------------------
 export function extractOpeningFromPgn(pgn: string): { name: string; eco: string } {
   const ecoMatch = pgn.match(/\[ECO\s+"([^"]+)"\]/)
   const nameMatch = pgn.match(/\[Opening\s+"([^"]+)"\]/)

@@ -11,6 +11,18 @@ import { DEFAULT_PLAYER, INCLUDED_TIME_CLASSES_Player } from '../constants'
 const TABLE        = 'tpl_players'
 const RATINGS_TABLE = 'tplr_player_ratings'
 
+//----------------------------------------------------------------------------------
+//  getPlayer — fetches one tracked player's tpl_players row
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//    skipCache — bypass the read cache (default false)
+//    level — logging level passed to the shared table_ layer (default 1)
+//    severity — logging severity passed to the shared table_ layer (default 'I')
+//
+//  Returns:
+//    the player's row, or null when not found or the fetch failed
+//----------------------------------------------------------------------------------
 export async function getPlayer(player: string, skipCache = false, level = 1, severity = 'I') {
   const result = await table_fetch({
     caller: 'getPlayer',
@@ -34,6 +46,14 @@ export async function getPlayer(player: string, skipCache = false, level = 1, se
 
 //----------------------------------------------------------------------------------
 //  upsertPlayerRating — store the latest rating for a given time class
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the write)
+//    timeClass — the time class the rating is for
+//    rating — the rating to store
+//    skipCache — bypass the read cache (default false)
+//    level — logging level passed to the shared table_ layer (default 1)
+//    severity — logging severity passed to the shared table_ layer (default 'I')
 //----------------------------------------------------------------------------------
 export async function upsertPlayerRating(
   player: string,
@@ -60,6 +80,12 @@ export async function upsertPlayerRating(
 
 //----------------------------------------------------------------------------------
 //  getPlayerRatings — returns all stored ratings for a player keyed by time class
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    a record of time class → rating (empty when the fetch failed)
 //----------------------------------------------------------------------------------
 export async function getPlayerRatings(player: string): Promise<Record<string, number>> {
   const fetchResult = await table_fetch({
@@ -85,6 +111,9 @@ export async function getPlayerRatings(player: string): Promise<Record<string, n
 
 //----------------------------------------------------------------------------------
 //  updatePlayerRating — called from cron; saves latest game rating per time class
+//
+//  Params:
+//    player — the tracked player's username
 //----------------------------------------------------------------------------------
 export async function updatePlayerRating(player: string): Promise<void> {
   await logStart('updatePlayerRating', 'gameSyncPipeline', `updating ${RATINGS_TABLE} for ${player}`, 2)
@@ -122,6 +151,12 @@ export async function updatePlayerRating(player: string): Promise<void> {
 //  getPlayerLastSyncedEndTime — last successful sync cutoff for a player, used to
 //  resume chess.com downloads independent of wk_gr_gamesraw's own contents (so that
 //  table can be archived/truncated without breaking incremental sync)
+//
+//  Params:
+//    player — the tracked player's username (lowercased before the lookup)
+//
+//  Returns:
+//    the last synced end_time, or null when there is none
 //----------------------------------------------------------------------------------
 export async function getPlayerLastSyncedEndTime(player: string): Promise<number | null> {
   const result = await table_fetch({
@@ -148,6 +183,10 @@ export async function getPlayerLastSyncedEndTime(player: string): Promise<number
 //----------------------------------------------------------------------------------
 //  markPlayerSynced — stamp the current time as this player's sync cutoff, called
 //  after a successful sync run completes
+//
+//  Params:
+//    player — the tracked player's username
+//    endTime — the end_time to store as the player's sync cutoff
 //----------------------------------------------------------------------------------
 export async function markPlayerSynced(player: string, endTime: number): Promise<void> {
   await logStart('markPlayerSynced', 'gameSyncPipeline', `stamping sync cutoff for ${player}`, 2)
@@ -168,6 +207,18 @@ export async function markPlayerSynced(player: string, endTime: number): Promise
   await logEnd('markPlayerSynced', 'gameSyncPipeline', `pl_last_synced_end_time set to ${endTime}`, 2)
 }
 
+//----------------------------------------------------------------------------------
+//  getPlayers — lists every tracked player (username + display name), with the default player
+//  sorted first
+//
+//  Params:
+//    skipCache — bypass the read cache (default false)
+//    level — logging level passed to the shared table_ layer (default 1)
+//    severity — logging severity passed to the shared table_ layer (default 'I')
+//
+//  Returns:
+//    player + display_name for each tracked player (empty when the fetch failed)
+//----------------------------------------------------------------------------------
 export async function getPlayers(skipCache = false, level = 1, severity = 'I'): Promise<{ player: string; display_name: string | null }[]> {
   const result = await table_fetch({
     caller: 'getPlayers',

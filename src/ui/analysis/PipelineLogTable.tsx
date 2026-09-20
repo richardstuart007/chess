@@ -62,6 +62,9 @@ export default function PipelineLogTable() {
     return () => clearTimeout(handler)
   }, [pipelineType, step, stepName, run, currentPage, rowsPerPage])
 
+  //----------------------------------------------------------------------------------------------
+  //  fetchdata — fetches the pipeline-log rows for the selected pipeline type, step, step name and run
+  //----------------------------------------------------------------------------------------------
   async function fetchdata() {
     const filtersToUpdate: Filter[] = [
       { column: 'pip_pipeline_type', value: pipelineType, operator: '=' },
@@ -226,6 +229,12 @@ export default function PipelineLogTable() {
 
 //----------------------------------------------------------------------------------------------
 //  stepLabel — "3a"-style combined step + sub-step label
+//
+//  Params:
+//    row — a pipeline-log row
+//
+//  Returns:
+//    the step number followed by its sub-step, e.g. '3a'
 //----------------------------------------------------------------------------------------------
 function stepLabel(row: PipelineLogRow): string {
   return `${row.pip_step}${row.pip_sub_step}`
@@ -233,6 +242,12 @@ function stepLabel(row: PipelineLogRow): string {
 
 //----------------------------------------------------------------------------------------------
 //  formatCreated — local-time timestamp, 24-hour clock
+//
+//  Params:
+//    pipCreated — the row's pip_created timestamp
+//
+//  Returns:
+//    the timestamp in local time, 24-hour clock
 //----------------------------------------------------------------------------------------------
 function formatCreated(pipCreated: string): string {
   return new Date(pipCreated).toLocaleString(undefined, { hour12: false })
@@ -240,6 +255,12 @@ function formatCreated(pipCreated: string): string {
 
 //----------------------------------------------------------------------------------------------
 //  PipelineLogDetail — full-row detail panel for a selected tpip_pipelinelog row
+//
+//  Params:
+//    row — the pipeline-log row to show
+//
+//  Returns:
+//    the row's detail view
 //----------------------------------------------------------------------------------------------
 function PipelineLogDetail({ row }: { row: PipelineLogRow }) {
   return (

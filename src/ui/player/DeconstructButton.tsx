@@ -28,6 +28,9 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
   const [result, setResult] = useState<{ processed: number; skipped: number; errors: number } | null>(null)
   const [counts, setCounts] = useState<{ remaining: number; done: number } | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  handleCheckCounts — refreshes the player's remaining / done deconstruct counts
+  //----------------------------------------------------------------------------------------------
   async function handleCheckCounts() {
     const [remaining, done] = await Promise.all([
       getUndeconstructedCount(player, getPlayerTimeClasses(player)),
@@ -36,6 +39,9 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
     setCounts({ remaining, done })
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handlePopulate — deconstructs the player's raw games (up to the chosen limit, 'All' for no limit) and shows the result
+  //----------------------------------------------------------------------------------------------
   async function handlePopulate() {
     setProcessing(true)
     setResult(null)

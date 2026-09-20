@@ -108,6 +108,9 @@ export default function ChessComSearchPanel_shared() {
     if (!activeFilters) return
     let cancelled = false
 
+    //----------------------------------------------------------------------------------------------
+    //  loadPage — loads one page of chess.com search results for the active filters, using the cached page when the same search was already loaded
+    //----------------------------------------------------------------------------------------------
     async function loadPage() {
       setChesscomLoading(true)
       try {

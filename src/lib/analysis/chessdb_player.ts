@@ -51,6 +51,13 @@ export interface MoveRow {
 //  gd_player_result, inverted when the tracked player was Black) — never the tracked
 //  player's own personal win/loss, since that would mix two different perspectives
 //  depending on which color they happened to play in each game.
+//
+//  Params:
+//    posId — the tpos_positions id of the position
+//    player — restrict to this tracked player's games (optional)
+//
+//  Returns:
+//    one MoveRow per distinct move, most frequent first
 //----------------------------------------------------------------------------------
 export async function getMovesForPosition_player(posId: number, player?: string): Promise<MoveRow[]> {
   const params: (number | string)[] = [posId]
@@ -108,6 +115,13 @@ export async function getMovesForPosition_player(posId: number, player?: string)
 //  positions, one round trip. Keyed by the same truncated FEN tpos_positions.pos_fen
 //  stores, so callers must truncate their own FEN lookups the same way before
 //  matching keys.
+//
+//  Params:
+//    fens — the positions to look up (truncated internally)
+//    player — the tracked player's username
+//
+//  Returns:
+//    a record of truncated FEN → (move → times played)
 //----------------------------------------------------------------------------------
 export async function getMovePlayCounts_player(fens: string[], player: string): Promise<Record<string, Record<string, number>>> {
   const uniqueFens = [...new Set(fens.map(truncateFen))]
@@ -163,6 +177,13 @@ export async function getMovePlayCounts_player(fens: string[], player: string): 
 //  position's Stockfish eval (deterministic per position+move), not an average —
 //  see getMovesForPosition_player's comment, including its note on mov_times/
 //  white/draws/black semantics (distinct-game dedup, objective color outcome).
+//
+//  Params:
+//    fen — the position to summarise
+//    player — the tracked player's username
+//
+//  Returns:
+//    one MoveRow per move played from the position
 //----------------------------------------------------------------------------------
 export async function getMoveSummaryForPosition_player(fen: string, player: string): Promise<MoveRow[]> {
   const result = await table_query({
@@ -240,6 +261,18 @@ const POSITION_GAMES_JOINS: JoinParams[] = [
   { table: 'tgd_gamesdecon', on: 'gd_gdid = gam_gdid' }
 ]
 
+//----------------------------------------------------------------------------------
+//  buildPositionGamesFilters — builds the filter list shared by fetchGamesForPosition_player's page fetch and
+//  getGamesForPositionCount_player's count, so both always use the same set
+//
+//  Params:
+//    fen — the position (truncated internally)
+//    player — the tracked player's username (lowercased)
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the filter array
+//----------------------------------------------------------------------------------
 function buildPositionGamesFilters(fen: string, player: string, move?: string): Filter[] {
   const filters: Filter[] = [
     { column: 'pos_fen', operator: '=', value: truncateFen(fen) },
@@ -250,6 +283,16 @@ function buildPositionGamesFilters(fen: string, player: string, move?: string): 
   return filters
 }
 
+//----------------------------------------------------------------------------------
+//  mapPositionGameRow — maps one raw joined row to a PositionGameHit, deriving the player-perspective eval
+//  and the result-mismatch flag from gd_final_eval
+//
+//  Params:
+//    r — the raw row from the position-games query
+//
+//  Returns:
+//    the row as a PositionGameHit
+//----------------------------------------------------------------------------------
 function mapPositionGameRow(r: any): PositionGameHit {
   const playerResult = r.gd_player_result ?? null
   const finalEval = r.gd_final_eval != null ? Number(r.gd_final_eval) : null
@@ -286,6 +329,16 @@ function mapPositionGameRow(r: any): PositionGameHit {
 //  move was played next. Used by the Analyze page's "Games Played" panel, which can
 //  show any position currently on the board — not just ones with a known pos_id.
 //  Ordered by end time descending (latest first).
+//
+//  Params:
+//    fen — the position to look up
+//    player — the tracked player's username
+//    page — 1-based page number
+//    itemsPerPage — rows per page
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the games on that page, latest first
 //----------------------------------------------------------------------------------
 export async function fetchGamesForPosition_player(
   fen: string,
@@ -319,6 +372,14 @@ export async function fetchGamesForPosition_player(
 //----------------------------------------------------------------------------------
 //  getGamesForPositionCount_player — total row count for
 //  fetchGamesForPosition_player's same filter set
+//
+//  Params:
+//    fen — the position to look up
+//    player — the tracked player's username
+//    move — only games where this move was played next (optional)
+//
+//  Returns:
+//    the total number of matching games
 //----------------------------------------------------------------------------------
 export async function getGamesForPositionCount_player(fen: string, player: string, move?: string): Promise<number> {
   const result = await fetchTotalRows({
@@ -348,6 +409,13 @@ export async function getGamesForPositionCount_player(fen: string, player: strin
 //  recorded. Queries tgam_game_positions by gdid, so player-only by construction
 //  even though it takes no explicit player param — master games have no rows in
 //  this table at all (see tmgam_game_positions in the secondary database instead).
+//
+//  Params:
+//    gdid — the game's tgd_gamesdecon id
+//    posId — the tpos_positions id
+//
+//  Returns:
+//    true if a tgam_game_positions row exists for that game and position
 //----------------------------------------------------------------------------------
 export async function gamePositionExists_player(gdid: number, posId: number): Promise<boolean> {
   const result = await table_check([{
@@ -390,6 +458,25 @@ export async function gamePositionExists_player(gdid: number, posId: number): Pr
 //  player's own recurring patterns.
 //----------------------------------------------------------------------------------
 
+//----------------------------------------------------------------------------------
+//  buildHabitsFilter — builds the shared WHERE-clause pieces and parameter list used by getHabitsData_player and
+//  getHabitsCount_player, so both always filter identically
+//
+//  Params:
+//    opts.players — tracked player usernames to include (optional)
+//    opts.color — 'w' | 'b' to restrict to one colour (optional)
+//    opts.minReached — minimum times the position was reached (optional)
+//    opts.dismissed — show dismissed (true) or non-dismissed (false) habits (optional)
+//    opts.quality — 'bad' | 'good' habits only (optional)
+//    opts.opening — opening name filter (optional)
+//    opts.eco — ECO code filter (optional)
+//    opts.sinceDate — only games on/after this date (optional)
+//
+//  Returns:
+//    params — the query parameter values
+//    playerFilter, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter — SQL fragments
+//    dismissedPlaceholder, minReachedPlaceholder — the parameter placeholders for those two values
+//----------------------------------------------------------------------------------
 function buildHabitsFilter(opts: {
   players?: string[]
   color?: 'w' | 'b'
@@ -437,6 +524,26 @@ function buildHabitsFilter(opts: {
   return { params, playerFilter, dismissedPlaceholder, minReachedPlaceholder, colorFilter, qualityFilter, openingFilter, ecoFilter, sinceFilter }
 }
 
+//----------------------------------------------------------------------------------
+//  getHabitsData_player — one page of habit rows (position + move + the player's record with it) matching the
+//  filters, ordered by sortBy
+//
+//  Params:
+//    opts.players — tracked player usernames to include (optional)
+//    opts.color — 'w' | 'b' to restrict to one colour (optional)
+//    opts.sortBy — 'cpLoss' or 'reached' (optional)
+//    opts.limit — maximum rows to return (optional)
+//    opts.offset — rows to skip (optional)
+//    opts.minReached — minimum times the position was reached (optional)
+//    opts.dismissed — show dismissed (true) or non-dismissed (false) habits (optional)
+//    opts.quality — 'bad' | 'good' habits only (optional)
+//    opts.opening — opening name filter (optional)
+//    opts.eco — ECO code filter (optional)
+//    opts.sinceDate — only games on/after this date (optional)
+//
+//  Returns:
+//    the habit rows (position id/FEN, player, move, times played, wins, ...)
+//----------------------------------------------------------------------------------
 export async function getHabitsData_player(opts: {
   players?: string[]
   color?: 'w' | 'b'
@@ -542,6 +649,19 @@ export async function getHabitsData_player(opts: {
 //----------------------------------------------------------------------------------
 //  getHabitsCount_player — total row count for getHabitsData_player's same filter
 //  set, for MyPagination's total-pages calculation
+//
+//  Params:
+//    opts.players — tracked player usernames to include (optional)
+//    opts.color — 'w' | 'b' to restrict to one colour (optional)
+//    opts.minReached — minimum times the position was reached (optional)
+//    opts.dismissed — show dismissed (true) or non-dismissed (false) habits (optional)
+//    opts.quality — 'bad' | 'good' habits only (optional)
+//    opts.opening — opening name filter (optional)
+//    opts.eco — ECO code filter (optional)
+//    opts.sinceDate — only games on/after this date (optional)
+//
+//  Returns:
+//    the total number of matching habits
 //----------------------------------------------------------------------------------
 export async function getHabitsCount_player(opts: {
   players?: string[]
@@ -589,6 +709,11 @@ export async function getHabitsCount_player(opts: {
 //  dismissHabit_player — marks one (player, position, move) habit as dismissed so
 //  it stops appearing in the default (non-dismissed) Habits view. Reversible via
 //  undismissHabit_player.
+//
+//  Params:
+//    player — the tracked player's username
+//    posId — the tpos_positions id of the habit's position
+//    moveSan — the habit's move, in SAN
 //----------------------------------------------------------------------------------
 export async function dismissHabit_player(player: string, posId: number, moveSan: string): Promise<void> {
   await table_update({
@@ -608,6 +733,11 @@ export async function dismissHabit_player(player: string, posId: number, moveSan
 //----------------------------------------------------------------------------------
 //  undismissHabit_player — restores a previously-dismissed habit back into the
 //  default view.
+//
+//  Params:
+//    player — the tracked player's username
+//    posId — the tpos_positions id of the habit's position
+//    moveSan — the habit's move, in SAN
 //----------------------------------------------------------------------------------
 export async function undismissHabit_player(player: string, posId: number, moveSan: string): Promise<void> {
   await table_update({
@@ -634,6 +764,13 @@ export async function undismissHabit_player(player: string, posId: number, moveS
 //  player's own games only (and ordered by game number descending, latest first)
 //  — otherwise falls back to every tracked player, for backward compatibility
 //  with links that omit it.
+//
+//  Params:
+//    posId — the tpos_positions id of the position
+//    player — scope gameCount and games to this tracked player (optional)
+//
+//  Returns:
+//    position, moves, posEval, gameCount and games for the position
 //----------------------------------------------------------------------------------
 export async function getPositionDetail_player(posId: number, player?: string): Promise<{
   position: PositionRow | null

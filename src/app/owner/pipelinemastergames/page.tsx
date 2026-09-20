@@ -82,10 +82,22 @@ export default function PipelineMasterGamesPage() {
   const [recentRunIds, setRecentRunIds] = useState<{ runId: number; created: string }[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshSync — re-queries the master sync step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshSync() { setSSyncLoading(true); setSSync(await refreshMasterSyncStatus()); setSSyncLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshTree — re-queries the build-position-tree step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshTree() { setSTreeLoading(true); setSTree(await refreshMasterTreeStatus()); setSTreeLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshTpos — re-queries the position-tree sync step's status, with a loading flag
+  //----------------------------------------------------------------------------------------------
   async function doRefreshTpos() { setSTposLoading(true); setSTpos(await refreshMasterTposStatus()); setSTposLoading(false) }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRuns — reloads the recent run ids and the latest run's pipeline-log rows
+  //----------------------------------------------------------------------------------------------
   async function doRefreshRuns() {
     setRunsLoading(true)
     const ids = await getRecentRunIds(PIPELINE_TYPE_MASTERGAMES)
@@ -96,6 +108,12 @@ export default function PipelineMasterGamesPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectRunId — shows the selected run's pipeline-log rows
+  //
+  //  Params:
+  //    runId — the pipeline run to show
+  //----------------------------------------------------------------------------------------------
   async function handleSelectRunId(runId: number) {
     setSelectedRunId(runId)
     setRunsLoading(true)
@@ -103,6 +121,9 @@ export default function PipelineMasterGamesPage() {
     setRunsLoading(false)
   }
 
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshAllStatus — refreshes every step's status, then the run log
+  //----------------------------------------------------------------------------------------------
   async function doRefreshAllStatus() {
     await Promise.all([doRefreshSync(), doRefreshTree(), doRefreshTpos()])
     doRefreshRuns()
@@ -119,6 +140,14 @@ export default function PipelineMasterGamesPage() {
   const [syncResult,  setSyncResult]  = useState<{ inserted: number; skipped: number; total: number; deconstructed: number; player?: string } | null>(null)
   const [syncError,   setSyncError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSync — runs the master sync step for the given handles and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //    handles — the chess.com handles to sync (default selectedHandles)
+  //    truncateFirst — true to truncate the raw workfile before syncing (default true)
+  //----------------------------------------------------------------------------------------------
   async function handleSync(forceNewRun: boolean = true, handles: string[] = selectedHandles, truncateFirst: boolean = true) {
     if (handles.length === 0) return
     setSyncRunning(true)
@@ -160,6 +189,13 @@ export default function PipelineMasterGamesPage() {
   const [treeResult,  setTreeResult]  = useState<{ gamesProcessed: number; positions: number; gamePositions: number; player?: string } | null>(null)
   const [treeError,   setTreeError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleBuildTree — runs the build-position-tree step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //    player — restrict the step to one master (optional)
+  //----------------------------------------------------------------------------------------------
   async function handleBuildTree(forceNewRun: boolean = true, player?: string) {
     setTreeRunning(true)
     setTreeResult(null)
@@ -184,6 +220,13 @@ export default function PipelineMasterGamesPage() {
   const [tposResult,  setTposResult]  = useState<{ positionsSynced: number; player?: string } | null>(null)
   const [tposError,   setTposError]   = useState('')
 
+  //----------------------------------------------------------------------------------------------
+  //  handleSyncTpos — runs the position-tree sync step and shows its result
+  //
+  //  Params:
+  //    forceNewRun — true to start a new pipeline run instead of joining the current one (default true)
+  //    player — restrict the step to one master (optional)
+  //----------------------------------------------------------------------------------------------
   async function handleSyncTpos(forceNewRun: boolean = true, player?: string) {
     setTposRunning(true)
     setTposResult(null)
@@ -212,6 +255,9 @@ export default function PipelineMasterGamesPage() {
   // means each call only picks up that player's newly-available rows, since every
   // earlier player's rows are already processed.
   const [runAllRunning, setRunAllRunning] = useState(false)
+  //----------------------------------------------------------------------------------------------
+  //  handleRunAll — runs every step in order as one pipeline run, for each selected master
+  //----------------------------------------------------------------------------------------------
   async function handleRunAll() {
     if (selectedHandles.length === 0) return
     setRunAllRunning(true)
@@ -436,6 +482,12 @@ export default function PipelineMasterGamesPage() {
 
 //----------------------------------------------------------------------------------
 //  n — formats a count for display, or an em dash if not yet loaded
+//
+//  Params:
+//    val — the number to format (may be undefined)
+//
+//  Returns:
+//    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
   return val === undefined ? '—' : val.toLocaleString()

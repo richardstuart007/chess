@@ -7,6 +7,15 @@ const UL = 'list-disc list-outside pl-5 text-sm text-gray-700 mb-4 space-y-1'
 const OL = 'list-decimal list-outside pl-5 text-sm text-gray-700 mb-4 space-y-1'
 const CODE = 'font-mono text-[0.85em] bg-blue-50 text-blue-800 rounded px-1 py-0.5'
 
+//----------------------------------------------------------------------------------
+//  Code — renders inline code text in the docs' code style
+//
+//  Params:
+//    children — the text to show as code
+//
+//  Returns:
+//    the styled inline code element
+//----------------------------------------------------------------------------------
 function Code({ children }: { children: ReactNode }) {
   return <code className={CODE}>{children}</code>
 }

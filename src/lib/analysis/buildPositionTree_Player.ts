@@ -195,6 +195,14 @@ export async function buildPositionTree_Player(opts: {
 
 //----------------------------------------------------------------------------------
 //  getPositionsFromGame_Player — pure chess.js, no DB, returns all recordable positions
+//
+//  Params:
+//    game — the game record (its PGN is replayed)
+//    minHalfMove — first half-move to record
+//    maxHalfMove — last half-move to record
+//
+//  Returns:
+//    the recordable positions, in move order (empty when the game has no PGN)
 //----------------------------------------------------------------------------------
 function getPositionsFromGame_Player(
   game: GameRecord,
@@ -272,6 +280,10 @@ function getPositionsFromGame_Player(
 //  backfills them afterward. Plain INSERT, no ON CONFLICT — a revisited position within
 //  a game is legitimate and gets its own row (gam_gamid's own IDENTITY makes every row
 //  distinct regardless); nothing about (gdid, pos_fen) is unique anymore.
+//
+//  Params:
+//    records — the parsed position records to insert
+//    level — logging level
 //----------------------------------------------------------------------------------
 async function insertGamePositions_Player(records: PositionRecord[], level: number): Promise<void> {
   await logStart('insertGamePositions_Player', 'buildPositionTree_Player', `inserting ${records.length} game-position rows`, level)
@@ -312,6 +324,13 @@ async function insertGamePositions_Player(records: PositionRecord[], level: numb
 //  pos_reached only for the positions actually touched. Exported standalone so it can
 //  also be re-run on its own as a catch-up pass if it ever fails to complete for some
 //  batch.
+//
+//  Params:
+//    level — logging level (default 1)
+//    forceNewRun — true to allocate a new pipeline run id instead of joining the current run (optional)
+//
+//  Returns:
+//    positionsSynced — the number of positions synced
 //----------------------------------------------------------------------------------
 export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: boolean): Promise<{ positionsSynced: number }> {
   await logStart('syncTposFromTgam_Player', 'buildPositionTree_Player', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
@@ -433,6 +452,10 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
 //  counts. The one exception (a game's final ply, or the MAX_ANALYSIS_MOVE_Player truncation
 //  cutoff, where a resulting position is never anyone's "before") is treated as
 //  inconsequential — those positions simply read as low-reach.
+//
+//  Params:
+//    posIds — the tpos_positions ids to recount
+//    level — logging level
 //----------------------------------------------------------------------------------
 async function recomputePosReachedByIds_Player(posIds: number[], level: number): Promise<void> {
   if (posIds.length === 0) return
