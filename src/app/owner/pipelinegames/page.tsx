@@ -93,7 +93,7 @@ const SQL_STATUS_1 =
 `SELECT COUNT(*) AS pending FROM wk_gr_gamesraw r
 WHERE NOT EXISTS (
   SELECT 1 FROM tgd_gamesdecon d
-  WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
+  WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid
 );`
 
 const SQL_STATUS_3 =
@@ -274,6 +274,10 @@ export default function PipelinePage() {
   //  doRefreshDeepenPopular — re-queries the deepen-popular-positions status, with a loading flag
   //----------------------------------------------------------------------------------------------
   async function doRefreshDeepenPopular() { setSDeepenPopularLoading(true); setSDeepenPopular(await refreshDeepenPopularStatus()); setSDeepenPopularLoading(false) }
+  //----------------------------------------------------------------------------------------------
+  //  doRefreshRates — re-queries the per-step pipeline rates and stores them in state
+  //----------------------------------------------------------------------------------------------
+  async function doRefreshRates() { setRates(await getPipelineRates()) }
 
   const [refreshAllLoading, setRefreshAllLoading] = useState(false)
   //----------------------------------------------------------------------------------------------
@@ -332,7 +336,7 @@ export default function PipelinePage() {
       const data = await runGameSync()
       setSyncResult(data)
       doRefreshStep1()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Sync failed')
@@ -363,7 +367,7 @@ export default function PipelinePage() {
       setTreeResult({ ok: true, gamesProcessed: data.gamesProcessed, positions: data.positions, treeBuilt: data.treeBuilt, remaining: data.remaining, errors: data.errors })
       doRefreshStep3()
       doRefreshStep3b()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setTreeResult({ ok: false, error: String(err) })
@@ -393,7 +397,7 @@ export default function PipelinePage() {
       setTposResult({ ok: true, positionsSynced: data.positionsSynced })
       doRefreshStep3b()
       doRefreshStep4()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setTposResult({ ok: false, error: String(err) })
@@ -418,7 +422,9 @@ export default function PipelinePage() {
     setPosResult(null)
     setPosError('')
     try {
-      // No date range — always processes date-independently, ordered by pos_reached DESC
+      //
+      //  No date range — always processes date-independently, ordered by pos_reached DESC
+      //
       const params = new URLSearchParams({ depth: String(globalDepth), limit: String(globalBatchSize) })
       if (forceNewRun) params.set('newRun', 'true')
       const res  = await fetch(`/api/analysis/evaluate-positions?${params}`)
@@ -427,7 +433,7 @@ export default function PipelinePage() {
       setPosResult(data)
       doRefreshStep4()
       doRefreshCp()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setPosError(err instanceof Error ? err.message : 'Failed')
@@ -487,7 +493,7 @@ export default function PipelinePage() {
       doRefreshStep3()
       doRefreshStep3b()
       doRefreshStep4()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setPurgeResult({ ok: false, error: String(err) })
@@ -547,7 +553,7 @@ export default function PipelinePage() {
       if (!data.ok) throw new Error(data.error ?? 'Failed')
       setGameEndingsResult(data)
       doRefreshGameEndings()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setGameEndingsError(err instanceof Error ? err.message : 'Failed')
@@ -579,7 +585,7 @@ export default function PipelinePage() {
       if (!data.ok) throw new Error(data.error ?? 'Failed')
       setDeepenPopularResult(data)
       doRefreshDeepenPopular()
-      getPipelineRates().then(setRates)
+      doRefreshRates()
       doRefreshRuns()
     } catch (err) {
       setDeepenPopularError(err instanceof Error ? err.message : 'Failed')
@@ -1114,7 +1120,8 @@ function StatusBadge({ complete }: { complete: boolean | null }) {
 //    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
+  const result = val === undefined ? '—' : val.toLocaleString()
+  return result
 }
 
 //----------------------------------------------------------------------------------

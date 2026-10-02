@@ -241,7 +241,8 @@ export async function getPlayers(skipCache = false, level = 1, severity = 'I'): 
     player: r.pl_player,
     display_name: r.pl_display_name ?? null
   }))
-  return mapped.sort((a: { player: string }, b: { player: string }) =>
+  const players = mapped.sort((a: { player: string }, b: { player: string }) =>
     a.player === DEFAULT_PLAYER ? -1 : b.player === DEFAULT_PLAYER ? 1 : 0
   )
+  return players
 }

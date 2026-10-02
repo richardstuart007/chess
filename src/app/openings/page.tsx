@@ -26,10 +26,11 @@ export default function OpeningsPage() {
 //  OpeningsContent — loads players, then renders OpeningScoreChart once loaded
 //----------------------------------------------------------------------------------
 function OpeningsContent() {
+  const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
+
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [players, setPlayers] = useState<{ player: string; display_name: string | null }[]>([])
 
   useEffect(() => {
     //----------------------------------------------------------------------------------------------
@@ -63,9 +64,11 @@ function OpeningsContent() {
     router.push(`/?${params.toString()}`)
   }
 
+  const showChart = players.length > 0
+
   return (
     <div className='space-y-4'>
-      {players.length > 0 && (
+      {showChart && (
         <OpeningScoreChart
           players={players}
           onSelectOpening={handleSelectOpening}

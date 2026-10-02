@@ -17,7 +17,7 @@ import MyBox from 'nextjs-shared/MyBox'
 import { deconstructGames_Player, getUndeconstructedCount, getDeconstructedCount } from '@/src/lib/actions/deconstructGames_Player'
 import { getPlayerTimeClasses } from '@/src/lib/constants'
 
-interface DeconstructButtonProps {
+type DeconstructButtonProps = {
   player: string
   onComplete: () => void
 }
@@ -60,6 +60,10 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
     }
   }
 
+  const populateLabel = processing ? 'Processing...' : 'Populate'
+  const showSkipped = !!result && result.skipped > 0
+  const showErrors = !!result && result.errors > 0
+
   return (
     <MyBox title='Populate Games'>
       <div className='space-y-2'>
@@ -76,7 +80,7 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
             disabled={processing}
             overrideClass='text-xs'
           >
-            {processing ? 'Processing...' : 'Populate'}
+            {populateLabel}
           </MyButton>
           <MyButton
             onClick={handleCheckCounts}
@@ -95,8 +99,8 @@ export default function DeconstructButton({ player, onComplete }: DeconstructBut
         {result && (
           <p className='text-xs'>
             <span className='text-green-600 font-bold'>Processed: {result.processed}</span>
-            {result.skipped > 0 && <span className='ml-2 text-gray-500'>Skipped: {result.skipped}</span>}
-            {result.errors > 0 && <span className='ml-2 text-red-600'>Errors: {result.errors}</span>}
+            {showSkipped && <span className='ml-2 text-gray-500'>Skipped: {result.skipped}</span>}
+            {showErrors && <span className='ml-2 text-red-600'>Errors: {result.errors}</span>}
           </p>
         )}
       </div>

@@ -167,10 +167,11 @@ export async function fetchFilteredMasterGames(
   }
 
   const nameMap = await getMasterHandleNameMap()
-  return result.data.map((row: any) => ({
+  const masterGames = result.data.map((row: any) => ({
     ...row,
     mgd_player_name: nameMap[(row.mgd_player as string).toLowerCase()] ?? row.mgd_player
   }))
+  return masterGames
 }
 
 //----------------------------------------------------------------------------------
@@ -320,7 +321,7 @@ export async function fetchMasterGamesForFenPage(fen: string, page: number, item
     return []
   }
 
-  return gamesResult.data.map((r: any) => ({
+  const result = gamesResult.data.map((r: any) => ({
     mgd_mgdid:      r.mgd_mgdid,
     move_played:    r.mgam_move_played,
     white_username: r.mgd_white_username,
@@ -332,6 +333,7 @@ export async function fetchMasterGamesForFenPage(fen: string, page: number, item
     result:         objectiveGameResult(r.mgd_player_color, r.mgd_player_result),
     termination:    r.mgd_termination ?? null
   }))
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -368,7 +370,8 @@ export async function getMasterGamesForFenCount(fen: string, move?: string): Pro
     })
     return 0
   }
-  return countResult.data.length > 0 ? Number(countResult.data[0].total) : 0
+  const total = countResult.data.length > 0 ? Number(countResult.data[0].total) : 0
+  return total
 }
 
 //----------------------------------------------------------------------------------
@@ -400,15 +403,15 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     caller: 'getMasterGamesForFen_games',
     table: 'tmgam_game_positions',
     query: `
-      SELECT g.mgam_move_played, g.mgam_move_uci, g.mgam_resulting_fen,
-             d.mgd_mgdid, d.mgd_white_username, d.mgd_black_username,
-             d.mgd_white_rating, d.mgd_black_rating,
-             d.mgd_player, d.mgd_player_color, d.mgd_player_result,
-             d.mgd_opponent_rating, d.mgd_termination, d.mgd_end_time
-      FROM tmgam_game_positions g
-      JOIN tmgd_gamesdecon d ON d.mgd_mgdid = g.mgam_mgdid
-      WHERE g.mgam_pos_id = $1
-      ORDER BY d.mgd_end_time DESC
+      SELECT mgam_move_played, mgam_move_uci, mgam_resulting_fen,
+             mgd_mgdid, mgd_white_username, mgd_black_username,
+             mgd_white_rating, mgd_black_rating,
+             mgd_player, mgd_player_color, mgd_player_result,
+             mgd_opponent_rating, mgd_termination, mgd_end_time
+      FROM tmgam_game_positions
+      JOIN tmgd_gamesdecon ON mgd_mgdid = mgam_mgdid
+      WHERE mgam_pos_id = $1
+      ORDER BY mgd_end_time DESC
       LIMIT $2
     `,
     params: [posId, limit],
@@ -437,10 +440,12 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     termination:    r.mgd_termination ?? null
   }))
 
-  // Dedup by mgdid per move (a transposition can revisit the same position+move within
-  // one game) and tally the OBJECTIVE white/draw/black outcome — never the tracked
-  // master's own personal win/loss, which would mix perspectives across games where
-  // different masters (or the same master as different colors) reached this move.
+  //
+  //  Dedup by mgdid per move (a transposition can revisit the same position+move within
+  //  one game) and tally the OBJECTIVE white/draw/black outcome — never the tracked
+  //  master's own personal win/loss, which would mix perspectives across games where
+  //  different masters (or the same master as different colors) reached this move.
+  //
   const byMove = new Map<string, { move_uci: string | null; resultingFen: string | null; gdids: Set<number>; white: number; draws: number; black: number; ratingSum: number }>()
   for (const r of gamesResult.data) {
     const key = r.mgam_move_played as string
@@ -456,9 +461,11 @@ export async function getMasterGamesForFen(fen: string, limit: number = MASTER_G
     byMove.set(key, entry)
   }
 
-  // Eval is resolved per move's resulting FEN — the same position regardless of which game
-  // reached it, so a bulk fallback lookup (tmgev_game_evals first, tpose_positions_eval
-  // second) covers every move in one round trip.
+  //
+  //  Eval is resolved per move's resulting FEN — the same position regardless of which game
+  //  reached it, so a bulk fallback lookup (tmgev_game_evals first, tpose_positions_eval
+  //  second) covers every move in one round trip.
+  //
   const evalFens = [...byMove.values()].map(e => e.resultingFen).filter((f): f is string => f != null)
   const fenEvals = evalFens.length > 0 ? await getFenEvalsWithFallback_shared(evalFens, 'master') : {}
 
@@ -493,6 +500,9 @@ export type SyncedMasterPlayer = { handle: string; name: string; grade: number |
 //  Returned in whatever order the DISTINCT query yields — MasterPlayerSelect does its
 //  own alphabetical-by-name sort on the result, so sorting here too would be pointless.
 //
+//  Returns:
+//    one SyncedMasterPlayer per distinct synced mgd_player
+//
 //  Change history:
 //    2026-08-28 — row now carries `grade`; result sorted grade-descending instead of
 //                 alphabetical by handle (FilterMasterPlayerSelect shows "Name (grade)")
@@ -504,11 +514,13 @@ export async function getSyncedMasterPlayers(): Promise<SyncedMasterPlayer[]> {
   const result = await table_query({
     caller: 'getSyncedMasterPlayers',
     table: MASTER_DECON_TABLE,
-    // DISTINCT on LOWER(mgd_player), not the bare column — mgd_player is supposed to always be
-    // stored lowercase (see AppNav.tsx's handleMasterClick), but a case-variant value from a
-    // data-entry slip would otherwise pass DISTINCT as a second, separate row, then resolve to
-    // the exact same display name via infoMap's .toLowerCase() lookup below — showing as a
-    // duplicate in the filter dropdown even though it's the same master.
+    //
+    //  DISTINCT on LOWER(mgd_player), not the bare column — mgd_player is supposed to always be
+    //  stored lowercase (see AppNav.tsx's handleMasterClick), but a case-variant value from a
+    //  data-entry slip would otherwise pass DISTINCT as a second, separate row, then resolve to
+    //  the exact same display name via infoMap's .toLowerCase() lookup below — showing as a
+    //  duplicate in the filter dropdown even though it's the same master.
+    //
     query: `SELECT DISTINCT LOWER(mgd_player) AS mgd_player FROM ${MASTER_DECON_TABLE} ORDER BY LOWER(mgd_player)`,
     params: [],
     skipCache: true
@@ -666,9 +678,11 @@ export async function getMasterGameEvals_master(mgdid: number): Promise<(GameEva
   const poseEvals = await getPositionEvaluationsBulk_shared(fens)
 
   const result: (GameEvalRow | undefined)[] = []
-  // Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
-  // only meaningful relative to the immediately preceding ply, so a gap resets this
-  // rather than letting a stale cp leak across it.
+  //
+  //  Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
+  //  only meaningful relative to the immediately preceding ply, so a gap resets this
+  //  rather than letting a stale cp leak across it.
+  //
   let cpBefore = 0
   let havePrevCp = false
 

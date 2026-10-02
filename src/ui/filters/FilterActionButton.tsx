@@ -14,7 +14,7 @@
 
 import { MyButton } from 'nextjs-shared/MyButton'
 
-interface FilterActionButtonProps {
+type FilterActionButtonProps = {
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   children: React.ReactNode
   variant?: 'primary' | 'pending' | 'secondary'
@@ -28,11 +28,12 @@ const VARIANT_CLASS: Record<string, string> = {
 }
 
 export default function FilterActionButton({ onClick, children, variant = 'primary', disabled }: FilterActionButtonProps) {
+  const buttonClass = `text-xxs px-2 h-6 md:h-6 ${VARIANT_CLASS[variant]}`
   return (
     <MyButton
       onClick={onClick}
       disabled={disabled}
-      overrideClass={`text-xxs px-2 h-6 md:h-6 ${VARIANT_CLASS[variant]}`}
+      overrideClass={buttonClass}
     >
       {children}
     </MyButton>

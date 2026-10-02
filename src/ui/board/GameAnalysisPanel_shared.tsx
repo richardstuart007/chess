@@ -51,7 +51,7 @@ import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import { PlyEvaluation } from '@/src/lib/stockfish'
 import DepthInput_shared from './DepthInput_shared'
 
-export interface GameAnalysisPanelProps {
+export type GameAnalysisPanelProps = {
   variant: 'player' | 'master'
   plyEvals: (PlyEvaluation | undefined)[]
   analyzing: boolean
@@ -94,6 +94,19 @@ export default function GameAnalysisPanel_shared({
   const blunders = plyEvals.filter(e => e?.classification === 'blunder').length
   const mistakes = plyEvals.filter(e => e?.classification === 'mistake').length
   const inaccuracies = plyEvals.filter(e => e?.classification === 'inaccuracy').length
+  const hasPlyEvals = plyEvals.length > 0
+  const showNoAnalysis = !hasPlyEvals
+  const fromMoveValue = Number.isNaN(fromMove) ? '' : fromMove
+  const toMoveValue = Number.isNaN(toMove) ? '' : toMove
+  const showRun = !analyzing
+  const runLabel = hasPlyEvals ? 'Re-analyse' : 'Analyze Game'
+  const progressStyle = {
+    width: `${analysisProgress.total > 0 ? (analysisProgress.current / analysisProgress.total) * 100 : 0}%`
+  }
+  const progressMoveLabel = analysisProgress.moveNumber != null
+    ? `Move ${analysisProgress.moveNumber}${analysisProgress.isWhite ? 'w' : 'b'} — `
+    : ''
+  const progressSanLabel = analysisProgress.move ? ` — ${analysisProgress.move}` : ''
 
   return (
     <div data-variant={variant}>
@@ -101,13 +114,14 @@ export default function GameAnalysisPanel_shared({
         <div className='space-y-2'>
           {/* Summary */}
           <div className='flex items-center justify-between'>
-            {plyEvals.length > 0 ? (
+            {hasPlyEvals && (
               <div className='flex gap-2 text-xs'>
                 <span className='rounded bg-red-500 px-2 py-0.5 text-white'>{blunders} blunders</span>
                 <span className='rounded bg-orange-500 px-2 py-0.5 text-white'>{mistakes} mistakes</span>
                 <span className='rounded bg-yellow-400 px-2 py-0.5 text-black'>{inaccuracies} inaccuracies</span>
               </div>
-            ) : (
+            )}
+            {showNoAnalysis && (
               <span className='text-xs text-gray-400'>No analysis yet</span>
             )}
           </div>
@@ -119,7 +133,7 @@ export default function GameAnalysisPanel_shared({
               <span className='text-xxs text-gray-500'>Saved at depth: {existingDepthRange}</span>
             )}
           </div>
-          {plyEvals.length > 0 && (
+          {hasPlyEvals && (
             <div className='flex items-center gap-4'>
               <div className='flex items-center gap-2'>
                 <span className='font-bold text-xs whitespace-nowrap'>From move</span>
@@ -128,7 +142,7 @@ export default function GameAnalysisPanel_shared({
                   clampOnBlur
                   min={1}
                   max={totalFullMoves}
-                  value={Number.isNaN(fromMove) ? '' : fromMove}
+                  value={fromMoveValue}
                   onChange={v => {
                     const next = v === null ? NaN : v
                     fromMoveLatestRef.current = next
@@ -151,7 +165,7 @@ export default function GameAnalysisPanel_shared({
                   integerOnly
                   min={1}
                   max={totalFullMoves}
-                  value={Number.isNaN(toMove) ? '' : toMove}
+                  value={toMoveValue}
                   onChange={v => onToMoveChange(v === null ? NaN : v)}
                   onBlur={() => {
                     const raw = Number.isNaN(toMove) ? totalFullMoves : toMove
@@ -163,10 +177,10 @@ export default function GameAnalysisPanel_shared({
               </div>
             </div>
           )}
-          {!analyzing && (
+          {showRun && (
             <div className='space-y-1'>
               <MyButton onClick={onRunAnalysis} disabled={disableRun} overrideClass='w-full'>
-                {plyEvals.length > 0 ? 'Re-analyse' : 'Analyze Game'}
+                {runLabel}
               </MyButton>
               {disableRun && (
                 <p className='text-xxs text-gray-400'>Stockfish busy — finish or stop the current analysis first.</p>
@@ -184,16 +198,13 @@ export default function GameAnalysisPanel_shared({
                 <div className='h-2 w-full overflow-hidden rounded bg-gray-200'>
                   <div
                     className='h-full bg-blue-500 transition-all duration-200'
-                    style={{
-                      width: `${analysisProgress.total > 0 ? (analysisProgress.current / analysisProgress.total) * 100 : 0}%`
-                    }}
+                    style={progressStyle}
                   />
                 </div>
                 <p className='text-xs text-gray-600'>
-                  {analysisProgress.moveNumber != null &&
-                    `Move ${analysisProgress.moveNumber}${analysisProgress.isWhite ? 'w' : 'b'} — `}
+                  {progressMoveLabel}
                   Ply {analysisProgress.current} / {analysisProgress.total}
-                  {analysisProgress.move && ` — ${analysisProgress.move}`}
+                  {progressSanLabel}
                 </p>
                 <MyButton onClick={onStopAnalysis} overrideClass='w-full bg-red-500 hover:bg-red-600'>
                   Stop

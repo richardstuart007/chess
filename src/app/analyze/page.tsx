@@ -2,7 +2,7 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    AnalyzePage — /analyze. Loads a single tracked-player game (by ?game= gdid) via getGameById,
+//    AnalyzePage — /analyze. Loads a single tracked-player game (by ?gdid= gdid) via getGameById,
 //    reconstructs it into a ChessComGame-shaped object, attaches any already-stored Stockfish ply
 //    evaluations, and renders ChessBoardView_shared, behind a Suspense boundary.
 //
@@ -30,23 +30,24 @@ export default function AnalyzePage() {
 }
 
 //----------------------------------------------------------------------------------
-//  AnalyzeContent — loads the game by ?game= gdid, reconstructs it into a ChessComGame-shaped
+//  AnalyzeContent — loads the game by ?gdid= gdid, reconstructs it into a ChessComGame-shaped
 //  object with any stored ply evaluations attached, then renders ChessBoardView_shared
 //----------------------------------------------------------------------------------
 function AnalyzeContent() {
-  const searchParams = useSearchParams()
-
-  const gdidParam = searchParams.get('game')
-  const player = searchParams.get('player') ?? ''
-
   const [game, setGame] = useState<ChessComGame | null>(null)
   const [gdid, setGdid] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
   const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.reanalyzeDepth)
   const [deepAnalysisDepth, setDeepAnalysisDepth] = useState<number>(STOCKFISH_DEFAULTS.deepAnalysisDepth)
   const [deepAnalysisMultiPv, setDeepAnalysisMultiPv] = useState(STOCKFISH_DEFAULTS.deepAnalysisMultiPv)
+
+  const searchParams = useSearchParams()
+
+  const gdidParam = searchParams.get('gdid')
+  const player = searchParams.get('player') ?? ''
+
+
 
   useEffect(() => {
     if (!gdidParam) {
@@ -55,7 +56,7 @@ function AnalyzeContent() {
     }
 
     //----------------------------------------------------------------------------------------------
-    //  loadGame — loads the game row for the ?game= gdid param, rebuilds it into a ChessComGame-shaped object, and stores it in state (sets an error when the game isn't found or the load fails)
+    //  loadGame — loads the game row for the ?gdid= gdid param, rebuilds it into a ChessComGame-shaped object, and stores it in state (sets an error when the game isn't found or the load fails)
     //----------------------------------------------------------------------------------------------
     async function loadGame() {
       setLoading(true)
@@ -77,7 +78,8 @@ function AnalyzeContent() {
         //    'loss' for a win, 'win' for a loss, otherwise 'draw'
         //----------------------------------------------------------------------------------------------
         function oppositeResult(result: string): string {
-          return result === 'win' ? 'loss' : result === 'loss' ? 'win' : 'draw'
+          const opposite = result === 'win' ? 'loss' : result === 'loss' ? 'win' : 'draw'
+          return opposite
         }
 
         //

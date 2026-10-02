@@ -14,5 +14,6 @@
 export function winPct(wins: number, losses: number, times: number): number {
   if (times === 0) return 0
   const draws = times - wins - losses
-  return Math.round(((wins + draws * 0.5) / times) * 100)
+  const result = Math.round(((wins + draws * 0.5) / times) * 100)
+  return result
 }

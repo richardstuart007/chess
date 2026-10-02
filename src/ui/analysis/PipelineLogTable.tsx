@@ -32,18 +32,19 @@ type PipelineLogRow = {
 }
 
 export default function PipelineLogTable() {
-  const functionName = 'PipelineLogTable'
   const [pipelineType, setPipelineType] = useState('')
   const [step, setStep] = useState('')
   const [stepName, setStepName] = useState('')
   const [run, setRun] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(PIPELINE_LOG_ROWS_PER_PAGE)
-  const [tabledata, setTabledata] = useState<PipelineLogRow[]>([])
+  const [pipelinelog, setPipelinelog] = useState<PipelineLogRow[]>([])
   const [totalPages, setTotalPages] = useState<number>(0)
   const [totalRows, setTotalRows] = useState<number>(0)
   const [message, setMessage] = useState('')
   const [popup, setPopup] = useState<PipelineLogRow | null>(null)
+
+  const functionName = 'PipelineLogTable'
   const prevFilters = useRef({ pipelineType: '', step: '', stepName: '', run: '' })
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export default function PipelineLogTable() {
         skipCache: true
       })
       if (!dataResult.ok) throw new Error(dataResult.error ?? 'fetchFiltered failed')
-      setTabledata(dataResult.data)
+      setPipelinelog(dataResult.data)
       const totalPagesResult = await fetchTotalPages({
         caller: functionName,
         table,
@@ -108,6 +109,9 @@ export default function PipelineLogTable() {
       console.error('Error fetching pipeline log:', error)
     }
   }
+
+  const pipelineLogRows = pipelinelog ?? []
+  const showNoData = pipelineLogRows.length === 0
 
   return (
     <div className='bg-orange-50'>
@@ -176,27 +180,33 @@ export default function PipelineLogTable() {
               </tr>
             </thead>
             <tbody className='bg-sky-50 text-xxs'>
-              {tabledata && tabledata.length > 0 ? (
-                tabledata.map(row => (
+              {pipelineLogRows.map(row => {
+                const rowClass = `w-full border-b border-gray-100 cursor-pointer ${popup?.pip_pipid === row.pip_pipid ? 'bg-blue-100' : 'hover:bg-blue-50'}`
+                const rowStepLabel = stepLabel(row)
+                const createdLabel = formatCreated(row.pip_created)
+                const inputRecsLabel = row.pip_input_recs.toLocaleString()
+                const outputRecsLabel = row.pip_output_recs.toLocaleString()
+                return (
                   <tr
                     key={row.pip_pipid}
-                    className={`w-full border-b border-gray-100 cursor-pointer ${popup?.pip_pipid === row.pip_pipid ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                    className={rowClass}
                     onClick={() => setPopup(row)}
                   >
                     <td className='px-2 text-xxs'>{row.pip_pipid}</td>
                     <td className='px-2 text-center text-xxs'>{row.pip_run_id}</td>
                     <td className='px-2 text-xxs'>{row.pip_pipeline_type}</td>
-                    <td className='px-2 text-center text-xxs'>{stepLabel(row)}</td>
+                    <td className='px-2 text-center text-xxs'>{rowStepLabel}</td>
                     <td className='px-2 text-xxs'>{row.pip_step_name}</td>
-                    <td className='px-2 text-xxs'>{formatCreated(row.pip_created)}</td>
+                    <td className='px-2 text-xxs'>{createdLabel}</td>
                     <td className='px-2 text-xxs'>{row.pip_input_table}</td>
-                    <td className='px-2 text-right text-xxs'>{row.pip_input_recs.toLocaleString()}</td>
+                    <td className='px-2 text-right text-xxs'>{inputRecsLabel}</td>
                     <td className='px-2 text-xxs'>{row.pip_output_table}</td>
-                    <td className='px-2 text-right text-xxs'>{row.pip_output_recs.toLocaleString()}</td>
+                    <td className='px-2 text-right text-xxs'>{outputRecsLabel}</td>
                     <td className='px-2 text-center text-xxs'>{row.pip_duration_ms}</td>
                   </tr>
-                ))
-              ) : (
+                )
+              })}
+              {showNoData && (
                 <tr>
                   <td colSpan={11}>No data available</td>
                 </tr>
@@ -217,7 +227,7 @@ export default function PipelineLogTable() {
           </div>
         </div>
 
-        {popup !== null && (
+        {popup && (
           <div className='w-[28rem] pl-4 shrink-0'>
             <PipelineLogDetail row={popup} />
           </div>
@@ -250,7 +260,8 @@ function stepLabel(row: PipelineLogRow): string {
 //    the timestamp in local time, 24-hour clock
 //----------------------------------------------------------------------------------------------
 function formatCreated(pipCreated: string): string {
-  return new Date(pipCreated).toLocaleString(undefined, { hour12: false })
+  const result = new Date(pipCreated).toLocaleString(undefined, { hour12: false })
+  return result
 }
 
 //----------------------------------------------------------------------------------------------
@@ -263,6 +274,8 @@ function formatCreated(pipCreated: string): string {
 //    the row's detail view
 //----------------------------------------------------------------------------------------------
 function PipelineLogDetail({ row }: { row: PipelineLogRow }) {
+  const rowStepLabel = stepLabel(row)
+  const createdLabel = formatCreated(row.pip_created)
   return (
     <div>
       <h3 className='text-sm font-semibold text-gray-700 mb-3'>Pipeline Run Detail</h3>
@@ -278,7 +291,7 @@ function PipelineLogDetail({ row }: { row: PipelineLogRow }) {
         </div>
         <div>
           <span className='font-medium text-gray-500'>Step: </span>
-          {stepLabel(row)}
+          {rowStepLabel}
         </div>
         <div>
           <span className='font-medium text-gray-500'>Run: </span>
@@ -286,7 +299,7 @@ function PipelineLogDetail({ row }: { row: PipelineLogRow }) {
         </div>
         <div>
           <span className='font-medium text-gray-500'>Created: </span>
-          {formatCreated(row.pip_created)}
+          {createdLabel}
         </div>
         <div>
           <span className='font-medium text-gray-500'>Duration: </span>

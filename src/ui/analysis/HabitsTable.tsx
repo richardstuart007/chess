@@ -43,11 +43,11 @@ import { winPct } from '@/src/lib/winPct'
 import { formatCp } from '@/src/lib/formatCp'
 import { pushBackTarget } from '@/src/lib/backNav'
 
-interface HabitRow {
+type HabitRow = {
   pos_id:       number
   pos_fen:      string
   pos_color:    string | null
-  pos_cp:       number | null
+  pose_cp_before: number | null
   player:       string
   move_san:     string
   move_uci:     string | null
@@ -55,7 +55,7 @@ interface HabitRow {
   move_times:   number
   move_wins:    number
   move_losses:  number
-  move_cp:      number | null
+  pose_cp_after: number | null
   opening_name: string | null
   eco_code:     string | null
   last_occurred: number | null
@@ -65,7 +65,7 @@ type Color   = 'all' | 'w' | 'b'
 type SortBy  = 'cpLoss' | 'reached'
 type Quality = 'bad' | 'good'
 
-interface HabitsTableProps {
+type HabitsTableProps = {
   rows: HabitRow[]
   dismissedView: boolean
   onToggleDismiss: (posId: number, moveSan: string, player: string) => void
@@ -119,6 +119,23 @@ export default function HabitsTable({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+
+  const minMoveOptions = [{ value: String(MIN_ANALYSIS_MOVE_Player), label: `From ${MIN_ANALYSIS_MOVE_Player}` }]
+  const minMoveValue = String(minMove)
+  const minReachedValue = String(minReached)
+  const dismissedToggleTitle = dismissedView ? 'Showing dismissed' : 'Show dismissed'
+  const dismissedToggleClass = `text-xs leading-none h-6 md:h-6 px-1 py-0.5 rounded border ${dismissedView ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`
+  const dismissIcon = dismissedView ? '↺' : '✕'
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const showNoRows = rows.length === 0
+  const noRowsMessage = dismissedView
+    ? 'No dismissed habits.'
+    : `No ${quality} habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.`
+  const openingCellClass = `px-3 py-2 ${WIDTH_HABITS_OPENING} truncate`
+  const ecoCellClass = `px-3 py-2 ${WIDTH_ECO} text-gray-400`
+  const qualityBadgeClass = `px-1.5 py-0.5 rounded text-xs font-semibold ${quality === 'good' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`
+  const qualityLabel = quality === 'good' ? 'Good' : 'Bad'
+  const dismissTitle = dismissedView ? 'Restore — show this habit again' : "Dismiss — don't show this habit again"
 
   return (
     <div className="overflow-x-auto">
@@ -208,8 +225,8 @@ export default function HabitsTable({
             <th className="px-3 py-1.5">
               <div className="flex justify-end">
                 <FilterSelect
-                  options={[{ value: String(MIN_ANALYSIS_MOVE_Player), label: `From ${MIN_ANALYSIS_MOVE_Player}` }]}
-                  value={String(minMove)}
+                  options={minMoveOptions}
+                  value={minMoveValue}
                   onChange={v => onMinMoveChange(Number(v))}
                   width={WIDTH_MIN_MOVE}
                 />
@@ -224,7 +241,7 @@ export default function HabitsTable({
                     { value: '5', label: 'Min 5×' },
                     { value: '10', label: 'Min 10×' }
                   ]}
-                  value={String(minReached)}
+                  value={minReachedValue}
                   onChange={v => onMinReachedChange(Number(v))}
                   width={WIDTH_MIN_REACHED}
                 />
@@ -259,14 +276,14 @@ export default function HabitsTable({
                 <MyButton
                   type="button"
                   onClick={onShowDismissedToggle}
-                  title={dismissedView ? 'Showing dismissed' : 'Show dismissed'}
-                  overrideClass={`text-xs leading-none h-6 md:h-6 px-1 py-0.5 rounded border ${dismissedView ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  title={dismissedToggleTitle}
+                  overrideClass={dismissedToggleClass}
                 >
-                  {dismissedView ? '↺' : '✕'}
+                  {dismissIcon}
                 </MyButton>
                 <FilterActionButton
                   onClick={onApplyFilters}
-                  variant={filtersPending ? 'pending' : 'primary'}
+                  variant={refreshVariant}
                 >
                   Refresh
                 </FilterActionButton>
@@ -275,109 +292,136 @@ export default function HabitsTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {rows.length === 0 && (
+          {showNoRows && (
             <tr>
               <td colSpan={14} className="text-center py-12 text-gray-500 text-sm">
-                {dismissedView
-                  ? 'No dismissed habits.'
-                  : `No ${quality} habits found. Run the pipeline (Build Position Tree + Evaluate Positions) then check your filter settings.`}
+                {noRowsMessage}
               </td>
             </tr>
           )}
-          {rows.map((row, i) => (
-            <tr
-              key={`${row.pos_id}-${row.move_san}-${i}`}
-              className="hover:bg-gray-50 cursor-pointer"
-              onClick={() => {
-                const qs = searchParams.toString()
-                pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
-                router.push(`/position/${row.pos_id}?player=${row.player}`)
-              }}
-            >
-              {/* Player */}
-              <td className="px-3 py-2 text-gray-600">
-                {row.player}
-              </td>
+          {rows.map((row, i) => {
+            const rowKey = `${row.pos_id}-${row.move_san}-${i}`
+            const openingTitle = row.opening_name ?? ''
+            const openingLabel = row.opening_name ?? '—'
+            const ecoLabel = row.eco_code ?? '—'
+            const poseCpBeforeClass = `px-3 py-2 text-right tabular-nums font-mono text-xs ${cpClass(row.pose_cp_before)}`
+            const poseCpBeforeLabel = row.pose_cp_before != null ? formatCp(row.pose_cp_before) : '—'
+            const moveNumLabel = row.move_num ?? '—'
+            const moveWinPct = winPct(row.move_wins, row.move_losses, row.move_times)
+            const poseCpAfterClass = `px-3 py-2 text-right tabular-nums font-mono ${cpClass(row.pose_cp_after)}`
+            const poseCpAfterLabel = row.pose_cp_after != null ? formatCp(row.pose_cp_after) : '—'
+            const lastOccurredLabel = row.last_occurred != null ? formatLastOccurred(row.last_occurred) : '—'
+            return (
+              <tr
+                key={rowKey}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => {
+                  const qs = searchParams.toString()
+                  pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
+                  router.push(`/position/${row.pos_id}?player=${row.player}`)
+                }}
+              >
+                {/* Player */}
+                <td className="px-3 py-2 text-gray-600">
+                  {row.player}
+                </td>
 
-              {/* Mini board */}
-              <td className="px-3 py-2">
-                <MiniBoard fen={row.pos_fen} color={row.pos_color} />
-              </td>
+                {/* Mini board */}
+                <td className="px-3 py-2">
+                  <MiniBoard fen={row.pos_fen} color={row.pos_color} />
+                </td>
 
-              {/* Colour badge */}
-              <td className="px-3 py-2">
-                <ColorSwatch color={row.pos_color} />
-              </td>
+                {/* Colour badge */}
+                <td className="px-3 py-2">
+                  <ColorSwatch color={row.pos_color} />
+                </td>
 
-              {/* Opening — from the latest game that reached this position */}
-              <td className={`px-3 py-2 ${WIDTH_HABITS_OPENING} truncate`} title={row.opening_name ?? ''}>
-                {row.opening_name ?? '—'}
-              </td>
+                {/* Opening — from the latest game that reached this position */}
+                <td className={openingCellClass} title={openingTitle}>
+                  {openingLabel}
+                </td>
 
-              {/* ECO */}
-              <td className={`px-3 py-2 ${WIDTH_ECO} text-gray-400`}>
-                {row.eco_code ?? '—'}
-              </td>
+                {/* ECO */}
+                <td className={ecoCellClass}>
+                  {ecoLabel}
+                </td>
 
-              {/* Quality — matches the page-level Bad/Good filter, since every row shares it */}
-              <td className="px-3 py-2">
-                <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${quality === 'good' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {quality === 'good' ? 'Good' : 'Bad'}
-                </span>
-              </td>
+                {/* Quality — matches the page-level Bad/Good filter, since every row shares it */}
+                <td className="px-3 py-2">
+                  <span className={qualityBadgeClass}>
+                    {qualityLabel}
+                  </span>
+                </td>
 
-              {/* Position CP — score before the move */}
-              <td className={`px-3 py-2 text-right tabular-nums font-mono text-xs ${cpClass(row.pos_cp)}`}>
-                {row.pos_cp != null ? formatCp(row.pos_cp) : '—'}
-              </td>
+                {/* Position CP — score before the move */}
+                <td className={poseCpBeforeClass}>
+                  {poseCpBeforeLabel}
+                </td>
 
-              {/* Move */}
-              <td className="px-3 py-2 font-mono font-semibold text-gray-800">
-                {row.move_san}
-              </td>
+                {/* Move */}
+                <td className="px-3 py-2 font-mono font-semibold text-gray-800">
+                  {row.move_san}
+                </td>
 
-              {/* Move # */}
-              <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                {row.move_num ?? '—'}
-              </td>
+                {/* Move # */}
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {moveNumLabel}
+                </td>
 
-              {/* Times */}
-              <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                {row.move_times}
-              </td>
+                {/* Times */}
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {row.move_times}
+                </td>
 
-              {/* Win% */}
-              <td className="px-3 py-2 text-right tabular-nums text-green-700">
-                {winPct(row.move_wins, row.move_losses, row.move_times)}%
-              </td>
+                {/* Win% */}
+                <td className="px-3 py-2 text-right tabular-nums text-green-700">
+                  {moveWinPct}%
+                </td>
 
-              {/* CP */}
-              <td className={`px-3 py-2 text-right tabular-nums font-mono ${cpClass(row.move_cp)}`}>
-                {row.move_cp != null ? formatCp(row.move_cp) : '—'}
-              </td>
+                {/* CP */}
+                <td className={poseCpAfterClass}>
+                  {poseCpAfterLabel}
+                </td>
 
-              {/* Last occurred */}
-              <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                {row.last_occurred != null ? formatLastOccurred(row.last_occurred) : '—'}
-              </td>
+                {/* Last occurred */}
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                  {lastOccurredLabel}
+                </td>
 
-              {/* Dismiss / Restore */}
-              <td className="px-3 py-2">
-                <MyButton
-                  type="button"
-                  title={dismissedView ? 'Restore — show this habit again' : "Dismiss — don't show this habit again"}
-                  onClick={e => { e.stopPropagation(); onToggleDismiss(row.pos_id, row.move_san, row.player) }}
-                  overrideClass="text-gray-400 hover:text-red-600 text-xs leading-none px-1 bg-transparent hover:bg-transparent"
-                >
-                  {dismissedView ? '↺' : '✕'}
-                </MyButton>
-              </td>
-            </tr>
-          ))}
+                {/* Dismiss / Restore */}
+                <td className="px-3 py-2">
+                  <MyButton
+                    type="button"
+                    title={dismissTitle}
+                    onClick={e => { e.stopPropagation(); onToggleDismiss(row.pos_id, row.move_san, row.player) }}
+                    overrideClass="text-gray-400 hover:text-red-600 text-xs leading-none px-1 bg-transparent hover:bg-transparent"
+                  >
+                    {dismissIcon}
+                  </MyButton>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
   )
+}
+
+//----------------------------------------------------------------------------------
+//  cpClass — text color class for a centipawn value (gray if unknown, red if negative,
+//  green otherwise)
+//
+//  Params:
+//    cp — the evaluation in centipawns, or null when unknown
+//
+//  Returns:
+//    the text colour class: gray when unknown, red when negative, green otherwise
+//----------------------------------------------------------------------------------
+function cpClass(cp: number | null): string {
+  if (cp === null) return 'text-gray-400'
+  if (cp < 0) return 'text-red-600 font-semibold'
+  return 'text-green-700'
 }
 
 //----------------------------------------------------------------------------------
@@ -395,20 +439,4 @@ function formatLastOccurred(epochSeconds: number): string {
   const mm = String(date.getMonth() + 1).padStart(2, '0')
   const yy = String(date.getFullYear()).slice(2)
   return `${dd}/${mm}/${yy}`
-}
-
-//----------------------------------------------------------------------------------
-//  cpClass — text color class for a centipawn value (gray if unknown, red if negative,
-//  green otherwise)
-//
-//  Params:
-//    cp — the evaluation in centipawns, or null when unknown
-//
-//  Returns:
-//    the text colour class: gray when unknown, red when negative, green otherwise
-//----------------------------------------------------------------------------------
-function cpClass(cp: number | null): string {
-  if (cp === null) return 'text-gray-400'
-  if (cp < 0) return 'text-red-600 font-semibold'
-  return 'text-green-700'
 }

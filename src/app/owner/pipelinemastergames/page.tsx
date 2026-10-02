@@ -282,8 +282,8 @@ export default function PipelineMasterGamesPage() {
         <h2 className='text-sm font-bold text-gray-800'>Master Games Pipeline</h2>
       </div>
       <div className='flex items-center gap-3'>
-        <label htmlFor='master-sync-year' className='font-bold text-xs whitespace-nowrap'>Year</label>
         <MySelect
+          label='Year'
           id='master-sync-year'
           value={String(selectedYear)}
           onChange={e => setSelectedYear(parseInt(e.target.value, 10))}
@@ -490,5 +490,6 @@ export default function PipelineMasterGamesPage() {
 //    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
+  const result = val === undefined ? '—' : val.toLocaleString()
+  return result
 }

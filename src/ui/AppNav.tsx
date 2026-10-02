@@ -39,7 +39,7 @@ import PlayerProfile from '@/src/ui/player/PlayerProfile'
 import { getMasterPlayers, MasterPlayerRow } from '@/src/lib/actions/masterPlayers'
 import { AVATAR_DIR, MASTER_AVATARS } from '@/src/lib/constants'
 
-interface AppNavProps {
+type AppNavProps = {
   playerCards?: React.ReactNode
 }
 
@@ -78,19 +78,29 @@ const GLOBAL_FILTER_KEYS = ['player', 'timeClass', 'dateFrom', 'opening', 'eco']
 const MASTER_CARRY_KEYS = ['color', 'timeClass', 'dateFrom', 'opening', 'eco']
 
 export default function AppNav({ playerCards }: AppNavProps) {
+  const [masterCards, setMasterCards] = useState<MasterPlayerRow[]>([])
+
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [masterCards, setMasterCards] = useState<MasterPlayerRow[]>([])
 
   //
   //  Fetches the top 4 masters by grade once on mount, via the existing getMasterPlayers
   //  (sorted grade-descending), so the Master box shows real data instead of a hardcoded card.
   //
   useEffect(() => {
-    getMasterPlayers('', true)
-      .then(rows => setMasterCards(rows.slice(0, 4)))
-      .catch(() => setMasterCards([]))
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the master players and stores the top 4 in state (none on failure)
+    //----------------------------------------------------------------------------------------------
+    async function load() {
+      try {
+        const rows = await getMasterPlayers('', true)
+        setMasterCards(rows.slice(0, 4))
+      } catch {
+        setMasterCards([])
+      }
+    }
+    load()
   }, [])
 
   //----------------------------------------------------------------------------------------------
@@ -111,7 +121,8 @@ export default function AppNav({ playerCards }: AppNavProps) {
       if (value) params.set(key, value)
     }
     const qs = params.toString()
-    return qs ? `${base}?${qs}` : base
+    const result = qs ? `${base}?${qs}` : base
+    return result
   }
   //
   //  /position/[id] is a cross-cutting detail view reached from more than one section
@@ -166,15 +177,20 @@ export default function AppNav({ playerCards }: AppNavProps) {
       {masterCards.map(m => {
         const handle = m.chesscomHandle ?? ''
         const avatarFile = handle ? MASTER_AVATARS[handle] : undefined
+        const displayName = m.firstName ? `${m.firstName} ${m.lastName}` : m.lastName
+        const avatar = avatarFile ? AVATAR_DIR + avatarFile : MASTER_CARD_AVATAR
+        const ratings = m.grade != null ? { Grade: m.grade } : undefined
+        const handleCardClick = handle ? () => handleMasterClick(handle) : undefined
+        const selected = !!handle && activeMaster === handle.toLowerCase()
         return (
           <PlayerProfile
             key={m.mstid}
             player={handle}
-            displayName={m.firstName ? `${m.firstName} ${m.lastName}` : m.lastName}
-            avatar={avatarFile ? AVATAR_DIR + avatarFile : MASTER_CARD_AVATAR}
-            ratings={m.grade != null ? { Grade: m.grade } : undefined}
-            onClick={handle ? () => handleMasterClick(handle) : undefined}
-            selected={!!handle && activeMaster === handle.toLowerCase()}
+            displayName={displayName}
+            avatar={avatar}
+            ratings={ratings}
+            onClick={handleCardClick}
+            selected={selected}
           />
         )
       })}
@@ -220,24 +236,29 @@ function TabGroup({
   buildHref: (base: string) => string
 }) {
   const isGroupActive = sections.some(s => s.key === activeKey)
+  const groupClass = isGroupActive ? 'bg-pink-100' : 'bg-amber-50'
 
   return (
-    <MyBox title={label} className={isGroupActive ? 'bg-pink-100' : 'bg-amber-50'}>
+    <MyBox title={label} className={groupClass}>
       {topContent}
       <div className='flex items-end border-b border-gray-200'>
-        {sections.map(s => (
-          <Link
-            key={s.key}
-            href={buildHref(s.href)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeKey === s.key
-                ? 'border-blue-600 text-blue-600 bg-blue-100'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {s.label}
-          </Link>
-        ))}
+        {sections.map(s => {
+          const href = buildHref(s.href)
+          const tabClass = `px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            activeKey === s.key
+              ? 'border-blue-600 text-blue-600 bg-blue-100'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`
+          return (
+            <Link
+              key={s.key}
+              href={href}
+              className={tabClass}
+            >
+              {s.label}
+            </Link>
+          )
+        })}
       </div>
     </MyBox>
   )

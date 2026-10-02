@@ -16,7 +16,7 @@ import MyBox from 'nextjs-shared/MyBox'
 import { MultiPvResult } from '@/src/lib/analysisTree'
 import { formatCp } from '@/src/lib/formatCp'
 
-interface AlternativeLinesProps {
+type AlternativeLinesProps = {
   results: MultiPvResult[]
   loading: boolean
   positionPly: number
@@ -48,6 +48,15 @@ export default function AlternativeLines_shared({
         {results.map((line) => {
           const isActualMove = (line as any)._isActualMove === true
           const cpColor = line.cp < 0 ? 'text-red-600' : 'text-gray-900'
+          const lineClass = `flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer ${
+            isActualMove
+              ? 'bg-amber-50 border border-amber-300 hover:bg-amber-100'
+              : 'hover:bg-blue-50'
+          }`
+          const cpClass = `flex-shrink-0 w-10 font-mono font-bold ${cpColor}`
+          const cpLabel = formatCp(line.cp)
+          const showContinuation = line.lineSans.length > 1
+          const continuationLabel = formatLine(line.lineSans.slice(1), positionPly + 1)
 
           return (
             <div
@@ -56,24 +65,20 @@ export default function AlternativeLines_shared({
               tabIndex={0}
               onClick={() => onSelectLine(line)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onSelectLine(line) }}
-              className={`flex w-full items-start gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors cursor-pointer ${
-                isActualMove
-                  ? 'bg-amber-50 border border-amber-300 hover:bg-amber-100'
-                  : 'hover:bg-blue-50'
-              }`}
+              className={lineClass}
             >
               <span className='flex-shrink-0 w-4 text-gray-400 font-mono'>{line.rank}.</span>
-              <span className={`flex-shrink-0 w-10 font-mono font-bold ${cpColor}`}>
-                {formatCp(line.cp)}
+              <span className={cpClass}>
+                {cpLabel}
               </span>
               <span className='flex-1'>
                 <span className='font-bold'>
                   {line.bestMoveSan}
                   {isActualMove && <span className='ml-1 text-blue-500 font-normal text-xxs'>(played)</span>}
                 </span>
-                {line.lineSans.length > 1 && (
+                {showContinuation && (
                   <span className='ml-1 text-gray-500'>
-                    {formatLine(line.lineSans.slice(1), positionPly + 1)}
+                    {continuationLabel}
                   </span>
                 )}
               </span>
@@ -108,5 +113,6 @@ function formatLine(lineSans: string[], ply: number): string {
       else parts.push(lineSans[i])
     }
   }
-  return parts.join(' ')
+  const result = parts.join(' ')
+  return result
 }

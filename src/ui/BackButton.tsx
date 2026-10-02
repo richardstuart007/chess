@@ -16,7 +16,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { popBackTarget } from '@/src/lib/backNav'
 
-interface BackButtonProps {
+type BackButtonProps = {
   fallback: string
   label?: string
   className?: string

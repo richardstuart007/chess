@@ -54,7 +54,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Chess, Square } from 'chess.js'
-import { Chessboard } from 'react-chessboard'
+import { Chessboard, ChessboardOptions } from 'react-chessboard'
 import MyBox from 'nextjs-shared/MyBox'
 import { MyButton } from 'nextjs-shared/MyButton'
 import MySelect from 'nextjs-shared/MySelect'
@@ -88,11 +88,11 @@ import AlternativeLines_shared from './AlternativeLines_shared'
 import DepthInput_shared from './DepthInput_shared'
 import MasterMovesDbPanel from './MasterMovesDbPanel'
 import MasterGamesDbPanel from './MasterGamesDbPanel'
-import MovesListTable from './MovesListTable'
-import GamesListTable from './GamesListTable'
+import MovesListTable, { MovesListRow } from './MovesListTable'
+import GamesListTable, { GamesListRow } from './GamesListTable'
 import { useMissingEvalAnalysis, MissingEvalRow } from './useMissingEvalAnalysis'
 
-export interface MasterGameRow {
+export type MasterGameRow = {
   mgd_mgdid:            number
   mgd_white_username:   string
   mgd_black_username:   string
@@ -110,16 +110,12 @@ export interface MasterGameRow {
   mgd_pgn:                string
 }
 
-interface MasterGameViewProps {
+type MasterGameViewProps = {
   row: MasterGameRow
 }
 
 //
 export default function MasterGameView_master({ row }: MasterGameViewProps) {
-  const router = useRouter()
-  const playerColor = row.mgd_player_color
-  const result = row.mgd_player_result
-
   const [tree, setTree] = useState<AnalysisTree | null>(null)
   const [currentNode, setCurrentNode] = useState<MoveNode | null>(null)
   const [moveCounts, setMoveCounts] = useState<Record<string, number>>({})
@@ -127,31 +123,44 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
   const [mastersData, setMastersData] = useState<LichessExplorerResponse | null>(null)
   const [mastersFenEvals, setMastersFenEvals] = useState<Record<string, { cp: number; depth: number }>>({})
   const [selectedMastersMove, setSelectedMastersMove] = useState<string | null>(null)
-  const displayGame = useRef(new Chess())
 
-  // Stockfish analysis — hydrated from tmgev_game_evals/tpose_positions_eval on mount,
-  // persisted back to tmgev_game_evals after each run
+  //
+  //  Stockfish analysis — hydrated from tmgev_game_evals/tpose_positions_eval on mount,
+  //  persisted back to tmgev_game_evals after each run
+  //
   const [plyEvals, setPlyEvals] = useState<(PlyEvaluation | undefined)[]>([])
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; move?: string; moveNumber?: number; isWhite?: boolean }>({ current: 0, total: 0 })
   const [analysisError, setAnalysisError] = useState('')
   const [analysisResultMessage, setAnalysisResultMessage] = useState('')
   const [stockfishDepth, setStockfishDepth] = useState(STOCKFISH_DEFAULTS.reanalyzeDepth)
-  const engineRef = useRef<StockfishEngine | null>(null)
-  const stopRequestedRef = useRef(false)
 
-  // Re-analyze move range (full move numbers, White-anchored) — defaults to the whole game
+  //
+  //  Re-analyze move range (full move numbers, White-anchored) — defaults to the whole game
+  //
   const [fromMove, setFromMove] = useState(1)
   const [toMove, setToMove] = useState(1)
 
-  // Deep analysis state
+  //
+  //  Deep analysis state
+  //
   const [deepAnalysisDepth, setDeepAnalysisDepth] = useState(STOCKFISH_DEFAULTS.deepAnalysisDepth)
   const [deepAnalysisMultiPv, setDeepAnalysisMultiPv] = useState(STOCKFISH_DEFAULTS.deepAnalysisMultiPv)
   const [deepAnalyzing, setDeepAnalyzing] = useState(false)
   const [deepAnalysisData, setDeepAnalysisData] = useState<InfiniteAnalysisUpdate | null>(null)
-  const latestAnalysisLinesRef = useRef<{ lines: MultiPvResult[]; depth: number } | null>(null)
   const [saveAnalysisMessage, setSaveAnalysisMessage] = useState('')
   const [fenCopied, setFenCopied] = useState(false)
+
+  const router = useRouter()
+  const playerColor = row.mgd_player_color
+  const result = row.mgd_player_result
+
+  const displayGame = useRef(new Chess())
+
+  const engineRef = useRef<StockfishEngine | null>(null)
+  const stopRequestedRef = useRef(false)
+
+  const latestAnalysisLinesRef = useRef<{ lines: MultiPvResult[]; depth: number } | null>(null)
 
   // -----------------------------------------------------------------------
   // Parse PGN on mount → build a plain main-line tree, then hydrate any already-
@@ -221,15 +230,24 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
     if (fens.length === 0) { setMoveCounts({}); return }
 
-    getMovePlayCounts_master(fens, row.mgd_player).then(countsByFen => {
-      if (cancelled) return
-      const byNodeId: Record<string, number> = {}
-      for (const n of nodes) {
-        const c = countsByFen[truncateFen(n.fenBefore)]?.[n.san]
-        if (c) byNodeId[n.id] = c
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches this master's play counts for the tree's FENs and stores them in moveCounts keyed by node id (empty on failure)
+    //----------------------------------------------------------------------------------------------
+    async function load() {
+      try {
+        const countsByFen = await getMovePlayCounts_master(fens, row.mgd_player)
+        if (cancelled) return
+        const byNodeId: Record<string, number> = {}
+        for (const n of nodes) {
+          const c = countsByFen[truncateFen(n.fenBefore)]?.[n.san]
+          if (c) byNodeId[n.id] = c
+        }
+        setMoveCounts(byNodeId)
+      } catch {
+        if (!cancelled) setMoveCounts({})
       }
-      setMoveCounts(byNodeId)
-    }).catch(() => { if (!cancelled) setMoveCounts({}) })
+    }
+    load()
 
     return () => { cancelled = true }
   }, [tree, row.mgd_player])
@@ -273,9 +291,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     return () => { cancelled = true }
   }, [currentNode])
 
-  // -----------------------------------------------------------------------
-  // Navigate to a tree node
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  goToNode — Navigate to a tree node
+  //
+  //  Params:
+  //    node — the node to show, or null for the starting position
+  //----------------------------------------------------------------------------------------------
   const goToNode = useCallback((node: MoveNode | null) => {
     setCurrentNode(node)
     if (!node || node.san === '') {
@@ -342,14 +363,14 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     return () => { engineRef.current?.destroy() }
   }, [])
 
-  // -----------------------------------------------------------------------
-  // Run full-game Stockfish analysis. On re-analysis (plyEvals already exist), only
-  // the selected From/To move range is (re-)analyzed — existing plyEvals outside that
-  // range are preserved, both in state and in tmgev_game_evals. Mirrors
-  // ChessBoardView's player-side runAnalysis exactly, except every
-  // upgradePositionEvaluation call here keeps createIfMissing:false (never creates a
-  // new tpos_positions row) where the player side uses true.
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  runAnalysis — Run full-game Stockfish analysis. On re-analysis (plyEvals already exist), only
+  //  the selected From/To move range is (re-)analyzed — existing plyEvals outside that
+  //  range are preserved, both in state and in tmgev_game_evals. Mirrors
+  //  ChessBoardView's player-side runAnalysis exactly, except every
+  //  upgradePositionEvaluation call here keeps createIfMissing:false (never creates a
+  //  new tpos_positions row) where the player side uses true.
+  //----------------------------------------------------------------------------------------------
   async function runAnalysis() {
     if (!tree) return
     setAnalyzing(true)
@@ -377,22 +398,28 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
       const fens = [anchorFen, ...sliceNodes.map(n => n.fen)]
       const sans = sliceNodes.map(n => n.san)
 
-      // Deepest-of-tpose-or-tmgev per FEN — see getFenEvalsForSkipCheck_shared's header for why
-      // this differs from the display-oriented getFenEvalsWithFallback_shared.
+      //
+      //  Deepest-of-tpose-or-tmgev per FEN — see getFenEvalsForSkipCheck_shared's header for why
+      //  this differs from the display-oriented getFenEvalsWithFallback_shared.
+      //
       const skipCheckEvals = await getFenEvalsForSkipCheck_shared(fens, 'master')
 
-      // Skip overwriting any ply whose existing depth is already >= this run's depth —
-      // mirrors tpose_positions_eval's own guard, so re-analyzing at a shallower depth
-      // never downgrades a ply saved deeper previously.
+      //
+      //  Skip overwriting any ply whose existing depth is already >= this run's depth —
+      //  mirrors tpose_positions_eval's own guard, so re-analyzing at a shallower depth
+      //  never downgrades a ply saved deeper previously.
+      //
       const mergedPlyEvals = [...plyEvals]
       let updatedPlies = 0
       let skippedPlies = 0
 
       const { finalPosition, stopped } = await engine.analyzeGame(
         fens, sans,
-        // progress.current is 1-indexed within this slice once a move has been played
-        // (0 = still evaluating the anchor/starting position) — sliceStart + current gives
-        // the absolute 1-indexed ply, matching getMoveNumberAndColor's convention.
+        //
+        //  progress.current is 1-indexed within this slice once a move has been played
+        //  (0 = still evaluating the anchor/starting position) — sliceStart + current gives
+        //  the absolute 1-indexed ply, matching getMoveNumberAndColor's convention.
+        //
         progress => setAnalysisProgress(
           progress.current > 0
             ? { ...progress, ...getMoveNumberAndColor(sliceStart + progress.current) }
@@ -412,26 +439,34 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
           updatedPlies++
           setPlyEvals([...mergedPlyEvals])
           setTree({ ...tree })
-          // Fire-and-forget (not blocking the engine's own progress) — wrapped in an async
-          // IIFE with try/catch rather than .then()/.catch(), per this project's async
-          // convention.
+          //
+          //  Fire-and-forget (not blocking the engine's own progress) — wrapped in an async
+          //  IIFE with try/catch rather than .then()/.catch(), per this project's async
+          //  convention.
+          //
           void (async () => {
             try {
               await upgradePositionEvaluation_shared({ fen: plyEval.fenBefore, cp: plyEval.cpBefore, bestMove: plyEval.bestMove, depth: plyEval.depth, createIfMissing: false })
             } catch {
-              // Non-critical — a failed top-up doesn't block the rest
+              //
+              //  Non-critical — a failed top-up doesn't block the rest
+              //
             }
           })()
-          // Incrementally persists this exact ply into tmgev_game_evals as soon as it's
-          // computed, so a refresh/interruption partway through a long run only ever
-          // loses the one ply that was still in flight — not the whole run's progress
-          // (see upsertGameEval_master's header for why this replaced the old
-          // whole-array save at the end of this function).
+          //
+          //  Incrementally persists this exact ply into tmgev_game_evals as soon as it's
+          //  computed, so a refresh/interruption partway through a long run only ever
+          //  loses the one ply that was still in flight — not the whole run's progress
+          //  (see upsertGameEval_master's header for why this replaced the old
+          //  whole-array save at the end of this function).
+          //
           void (async () => {
             try {
               await upsertGameEval_master(row.mgd_mgdid, idx, plyEval)
             } catch {
-              // Non-critical — a failed persist doesn't block the rest
+              //
+              //  Non-critical — a failed persist doesn't block the rest
+              //
             }
           })()
         },
@@ -446,23 +481,29 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
             : `Updated ${updatedPlies} plies`
       )
 
-      // First-time full analysis just completed — default the next re-analyze range to
-      // start at move 5, since re-checking opening theory is rarely useful
+      //
+      //  First-time full analysis just completed — default the next re-analyze range to
+      //  start at move 5, since re-checking opening theory is rarely useful
+      //
       if (!isReanalyze && !stopped) {
         setFromMove(Math.min(5, totalFullMoves))
       }
 
-      // The range's final resulting position (or, if stopped early, the last ply that
-      // actually completed — analyzeGame's own finalPosition derivation already accounts
-      // for this) is never any ply's "before" position (nothing after it in this run),
-      // so it needs its own explicit upgrade call — everything else was already
-      // upgraded live, ply by ply, above.
+      //
+      //  The range's final resulting position (or, if stopped early, the last ply that
+      //  actually completed — analyzeGame's own finalPosition derivation already accounts
+      //  for this) is never any ply's "before" position (nothing after it in this run),
+      //  so it needs its own explicit upgrade call — everything else was already
+      //  upgraded live, ply by ply, above.
+      //
       const finalSkipCheckEval = skipCheckEvals[truncateFen(finalPosition.fen)]
       if (!finalSkipCheckEval || finalSkipCheckEval.depth < stockfishDepth) {
         try {
           await upgradePositionEvaluation_shared({ fen: finalPosition.fen, cp: finalPosition.cp, bestMove: finalPosition.bestMove, depth: stockfishDepth, createIfMissing: false })
         } catch {
-          // Non-critical
+          //
+          //  Non-critical
+          //
         }
       }
     } catch (err) {
@@ -483,18 +524,21 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     engineRef.current?.requestStop()
   }
 
-  // -----------------------------------------------------------------------
-  // The position currently shown on the board (after the selected move) —
-  // single source of truth so every analysis entry point agrees on it
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  getCurrentPositionFen — The position currently shown on the board (after the selected move) —
+  //  single source of truth so every analysis entry point agrees on it
+  //
+  //  Returns:
+  //    the current position's FEN, or undefined when there is none
+  //----------------------------------------------------------------------------------------------
   function getCurrentPositionFen(): string | undefined {
     return currentNode?.fen ?? tree?.root.fen
   }
 
-  // -----------------------------------------------------------------------
-  // Copy the current position's FEN to the clipboard (e.g. to paste into
-  // chess.com's own analysis board) — brief "Copied" feedback on the button.
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  copyFenToClipboard — Copy the current position's FEN to the clipboard (e.g. to paste into
+  //  chess.com's own analysis board) — brief "Copied" feedback on the button.
+  //----------------------------------------------------------------------------------------------
   async function copyFenToClipboard() {
     const fen = getCurrentPositionFen()
     if (!fen) return
@@ -503,12 +547,12 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     setTimeout(() => setFenCopied(false), 1500)
   }
 
-  // -----------------------------------------------------------------------
-  // Analyze current position (own Depth/Lines controls, always depth-capped).
-  // Always guarantees the actually-played move is included and highlighted,
-  // even if it's outside the engine's top N lines. Mirrors ChessBoardView_shared's
-  // startDeepAnalysis exactly.
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  startDeepAnalysis — Analyze current position (own Depth/Lines controls, always depth-capped).
+  //  Always guarantees the actually-played move is included and highlighted,
+  //  even if it's outside the engine's top N lines. Mirrors ChessBoardView_shared's
+  //  startDeepAnalysis exactly.
+  //----------------------------------------------------------------------------------------------
   async function startDeepAnalysis() {
     const fen = getCurrentPositionFen()
     if (!fen) return
@@ -592,23 +636,23 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     setDeepAnalyzing(false)
   }
 
-  // -----------------------------------------------------------------------
-  // Persist Analysis — runs automatically whenever a Position Analysis run completes.
-  // Pushes every displayed Engine Line's evaluation into tpose_positions_eval for its
-  // resulting position, plus the analyzed position's own evaluation (the rank-1 line's
-  // score). Mirrors ChessBoardView_shared's persistAnalysisLines, with one deliberate
-  // divergence: never passes gameContext to upgradePositionEvaluation_shared — that
-  // param is hardcoded to upsert tgev_game_evals (a player-only table); passing it here
-  // would write into the wrong game's table. Instead, for the "own position" write-back,
-  // this updates local plyEvals[ply] and persists just that one row via
-  // upsertGameEval_master.
+  //----------------------------------------------------------------------------------------------
+  //  persistAnalysisLines_master — Persist Analysis — runs automatically whenever a Position Analysis run completes.
+  //  Pushes every displayed Engine Line's evaluation into tpose_positions_eval for its
+  //  resulting position, plus the analyzed position's own evaluation (the rank-1 line's
+  //  score). Mirrors ChessBoardView_shared's persistAnalysisLines, with one deliberate
+  //  divergence: never passes gameContext to upgradePositionEvaluation_shared — that
+  //  param is hardcoded to upsert tgev_game_evals (a player-only table); passing it here
+  //  would write into the wrong game's table. Instead, for the "own position" write-back,
+  //  this updates local plyEvals[ply] and persists just that one row via
+  //  upsertGameEval_master.
   //
   //  Params:
   //    fen — the position that was analysed
   //    ply — that position's 1-indexed ply
   //    lines — the engine lines to persist
   //    depth — the search depth reached
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
   async function persistAnalysisLines_master(fen: string, ply: number, lines: MultiPvResult[], depth: number) {
     if (lines.length === 0) return
 
@@ -679,17 +723,19 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
       try {
         await upsertGameEval_master(row.mgd_mgdid, ply, updatedPlyEval)
       } catch {
-        // Non-critical — DB save failure doesn't block UI
+        //
+        //  Non-critical — DB save failure doesn't block UI
+        //
       }
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Handle selecting an alternative PV line
+  //----------------------------------------------------------------------------------------------
+  //  handleSelectPvLine — Handle selecting an alternative PV line
   //
   //  Params:
   //    line — the engine line the user selected
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
   function handleSelectPvLine(line: MultiPvResult) {
     if (!tree) return
     const parent = currentNode ?? tree.root
@@ -700,8 +746,8 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Interactive board: handle piece drop — build-your-own-variation support
+  //----------------------------------------------------------------------------------------------
+  //  handlePieceDrop — Interactive board: handle piece drop — build-your-own-variation support
   //
   //  Params:
   //    sourceSquare — the square the piece was dragged from
@@ -709,7 +755,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
   //
   //  Returns:
   //    true when the drop was accepted as a move, false otherwise
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
   function handlePieceDrop(sourceSquare: string, targetSquare: string): boolean {
     if (!tree) return false
     if (sourceSquare === targetSquare) return false
@@ -744,17 +790,25 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
   const onMainLine = !currentNode || isOnMainLine(currentNode)
 
-  // Full move numbers for the re-analyze range selector
+  //
+  //  Full move numbers for the re-analyze range selector
+  //
   const totalFullMoves = tree ? Math.max(1, Math.ceil(tree.mainLine.length / 2)) : 1
 
-  // Current ply for move numbering
+  //
+  //  Current ply for move numbering
+  //
   const currentPly = currentNode ? getPath(currentNode).length : 0
 
-  // Label for whatever position is currently on the board, shown on the Position
-  // Analysis box title
+  //
+  //  Label for whatever position is currently on the board, shown on the Position
+  //  Analysis box title
+  //
   const currentMoveLabel = getCurrentMoveLabel(currentNode, currentPly)
 
-  // Highlight squares
+  //
+  //  Highlight squares
+  //
   const customSquareStyles: Record<string, React.CSSProperties> = {}
   if (currentNode) {
     const ev = currentNode.evaluation
@@ -771,8 +825,10 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     }
   }
 
-  // Existing saved depth for the currently-selected From/To range — mirrors
-  // ChessBoardView's identical computation
+  //
+  //  Existing saved depth for the currently-selected From/To range — mirrors
+  //  ChessBoardView's identical computation
+  //
   const existingDepthRange = (() => {
     if (plyEvals.length === 0) return null
     const rangeSliceStart = (Math.min(fromMove, totalFullMoves) - 1) * 2
@@ -783,7 +839,8 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
     if (depths.length === 0) return null
     const minDepth = Math.min(...depths)
     const maxDepth = Math.max(...depths)
-    return minDepth === maxDepth ? String(minDepth) : `${minDepth}–${maxDepth}`
+    const depthRange = minDepth === maxDepth ? String(minDepth) : `${minDepth}–${maxDepth}`
+    return depthRange
   })()
 
   //
@@ -805,12 +862,104 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
 
   if (!tree) return null
 
+  //
+  //  Board column — header, player bars, board options, game info and Prev/Next
+  //
+  const openingLabel = row.mgd_opening_name || 'Unknown'
+  const showEcoCode = !!row.mgd_eco_code
+  const topUsername = playerColor === 'white' ? row.mgd_black_username : row.mgd_white_username
+  const topRating = playerColor === 'white' ? row.mgd_black_rating : row.mgd_white_rating
+  const topScore = result === 'win' ? '0' : result === 'loss' ? '1' : '1/2'
+  const boardOptions: ChessboardOptions = {
+    position: displayGame.current.fen(),
+    boardStyle: { width: '480px', height: '480px' },
+    allowDragging: true,
+    onPieceDrop: ({ sourceSquare, targetSquare }) =>
+      targetSquare ? handlePieceDrop(sourceSquare, targetSquare) : false,
+    boardOrientation: playerColor === 'black' ? 'black' : 'white',
+    squareStyles: customSquareStyles
+  }
+  const bottomRating = playerColor === 'white' ? row.mgd_white_rating : row.mgd_black_rating
+  const bottomScore = result === 'win' ? '1' : result === 'loss' ? '0' : '1/2'
+  const endTimeLabel = formatGameDate(row.mgd_end_time)
+  const showTermination = !!row.mgd_termination
+  const showVariation = !onMainLine
+  const prevDisabled = !currentNode
+  const nextDisabled = currentNode != null && currentNode.children.length === 0
+
+  //
+  //  Position Analysis heading and the Stockfish panel
+  //
+  const currentPositionFen = getCurrentPositionFen()
+  const copyFenLabel = fenCopied ? 'Copied' : 'Copy FEN'
+  const deepAnalysisMultiPvValue = String(deepAnalysisMultiPv)
+  const showStartDeepAnalysis = !deepAnalyzing
+  const startDeepAnalysisLabel = analyzing ? 'Game analysis running...' : 'Analyze Position'
+  const deepNodesLabel = deepAnalysisData ? (deepAnalysisData.nodes / 1000000).toFixed(1) : ''
+  const deepNpsLabel = deepAnalysisData ? (deepAnalysisData.nps / 1000).toFixed(0) : ''
+  const deepTimeLabel = deepAnalysisData ? (deepAnalysisData.timeMs / 1000).toFixed(1) : ''
+  const deepAnalysisLines = deepAnalysisData?.lines ?? []
+  const deepAnalysisLoading = deepAnalyzing && !deepAnalysisData
+
+  //
+  //  Lichess panels — Moves, then Games (narrowed to the selected Moves row)
+  //
+  const showNoMastersMoves = !mastersData || mastersData.moves.length === 0
+  const showMastersMoves = !showNoMastersMoves
+  const mastersTotal = mastersData ? mastersData.white + mastersData.draws + mastersData.black : 0
+  const mastersTotalLabel = mastersTotal.toLocaleString()
+  const mastersWhitePct = mastersData && mastersTotal > 0 ? Math.round((mastersData.white / mastersTotal) * 100) : 0
+  const mastersDrawsPct = mastersData && mastersTotal > 0 ? Math.round((mastersData.draws / mastersTotal) * 100) : 0
+  const mastersBlackPct = mastersData && mastersTotal > 0 ? Math.round((mastersData.black / mastersTotal) * 100) : 0
+  const mastersMovesRows: MovesListRow[] = currentNode && mastersData
+    ? mastersData.moves.map(m => {
+        const resultingFen = applyUciMove(currentNode.fen, m.uci)
+        const fenEval = (resultingFen ? mastersFenEvals[truncateFen(resultingFen)] : undefined)
+          ?? lichessMissingEval.overrides[m.uci]
+        return {
+          key:       m.uci,
+          move:      m.san,
+          times:     m.white + m.draws + m.black,
+          white:     m.white,
+          draws:     m.draws,
+          black:     m.black,
+          eval:      fenEval?.cp ?? null
+        }
+      })
+    : []
+  const showAnalyzeMissing = lichessMissingEval.missingCount > 0
+  const analyzeMissingDisabled = lichessMissingEval.analyzing || analyzing || deepAnalyzing
+  const analyzeMissingLabel = lichessMissingEval.analyzing
+    ? `Analyzing ${lichessMissingEval.progress?.done ?? 0}/${lichessMissingEval.progress?.total ?? 0}...`
+    : `Analyze missing (${lichessMissingEval.missingCount})`
+  const showTopGames = !!mastersData && mastersData.topGames.length > 0
+  const filteredTopGames = mastersData
+    ? mastersData.topGames.filter(g => !selectedMastersMove || g.uci === selectedMastersMove)
+    : []
+  const showNoFilteredTopGames = filteredTopGames.length === 0
+  const showFilteredTopGames = filteredTopGames.length > 0
+  const topGamesRows: GamesListRow[] = filteredTopGames.map((g, i) => ({
+    key:            String(i),
+    move:           mastersData?.moves.find(m => m.uci === g.uci)?.san ?? g.uci,
+    white:          g.white.name,
+    whiteRating:    g.white.rating,
+    whiteIsTracked: false,
+    black:          g.black.name,
+    blackRating:    g.black.rating,
+    blackIsTracked: false,
+    date:           String(g.year),
+    result:         g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½',
+    termination:    null,
+    finalEval:      null,
+    externalHref:   `https://lichess.org/${g.id}`
+  }))
+
   return (
     <div className='space-y-3'>
       {/* Opening name — page-level, above the whole Board/Moves/Analysis grid */}
       <div className='text-xs text-gray-500'>
-        {row.mgd_opening_name || 'Unknown'}
-        {row.mgd_eco_code && <span className='text-gray-400 ml-1'>({row.mgd_eco_code})</span>}
+        {openingLabel}
+        {showEcoCode && <span className='text-gray-400 ml-1'>({row.mgd_eco_code})</span>}
         <span className='ml-1 text-gray-400'>{row.mgd_time_class}</span>
       </div>
 
@@ -820,26 +969,18 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
           {/* Top player */}
           <div className='flex items-center justify-between rounded bg-gray-600 px-3 py-1.5 text-xs text-white'>
             <span className='font-bold'>
-              {playerColor === 'white' ? row.mgd_black_username : row.mgd_white_username}
+              {topUsername}
               <span className='ml-1 font-normal text-blue-400'>
-                ({playerColor === 'white' ? row.mgd_black_rating : row.mgd_white_rating})
+                ({topRating})
               </span>
             </span>
-            <span className='text-red-400 font-bold'>{result === 'win' ? '0' : result === 'loss' ? '1' : '1/2'}</span>
+            <span className='text-red-400 font-bold'>{topScore}</span>
           </div>
 
           {/* Board */}
           <Chessboard
             key={boardKey}
-            options={{
-              position: displayGame.current.fen(),
-              boardStyle: { width: '480px', height: '480px' },
-              allowDragging: true,
-              onPieceDrop: ({ sourceSquare, targetSquare }) =>
-                targetSquare ? handlePieceDrop(sourceSquare, targetSquare) : false,
-              boardOrientation: playerColor === 'black' ? 'black' : 'white',
-              squareStyles: customSquareStyles
-            }}
+            options={boardOptions}
           />
 
           {/* Bottom player (always the tracked master — shown by real name, not handle) */}
@@ -847,20 +988,20 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
             <span className='font-bold'>
               {row.mgd_player_name} ({row.mgd_player})
               <span className='ml-1 font-normal text-blue-400'>
-                ({playerColor === 'white' ? row.mgd_white_rating : row.mgd_black_rating})
+                ({bottomRating})
               </span>
             </span>
-            <span className='text-red-600 font-bold'>{result === 'win' ? '1' : result === 'loss' ? '0' : '1/2'}</span>
+            <span className='text-red-600 font-bold'>{bottomScore}</span>
           </div>
 
           {/* Game info: game number, date, termination */}
           <div className='flex items-center gap-3 text-xxs text-gray-500 px-1'>
             <span>Game #{row.mgd_mgdid}</span>
-            <span>{formatGameDate(row.mgd_end_time)}</span>
-            {row.mgd_termination && <span>{row.mgd_termination}</span>}
+            <span>{endTimeLabel}</span>
+            {showTermination && <span>{row.mgd_termination}</span>}
           </div>
 
-          {!onMainLine && (
+          {showVariation && (
             <div className='flex items-center gap-2'>
               <span className='text-xs text-blue-600 font-bold'>Variation</span>
               <MyButton
@@ -876,7 +1017,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
           <div className='flex items-center gap-2'>
             <MyButton
               onClick={() => currentNode && goToNode(currentNode.parent?.san === '' ? null : currentNode.parent)}
-              disabled={!currentNode}
+              disabled={prevDisabled}
               overrideClass='text-xs'
             >
               ← Prev
@@ -886,7 +1027,7 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                 if (!currentNode && tree) goToNode(tree.mainLine[0] ?? null)
                 else if (currentNode?.children.length) goToNode(currentNode.children[0])
               }}
-              disabled={currentNode != null && currentNode.children.length === 0}
+              disabled={nextDisabled}
               overrideClass='text-xs'
             >
               Next →
@@ -938,9 +1079,9 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
               <p className='text-sm font-bold text-gray-700'>Position Analysis {currentMoveLabel}</p>
             </div>
             <div className='flex items-center gap-2'>
-              <span className='text-xxs font-mono text-gray-500 truncate'>{getCurrentPositionFen()}</span>
+              <span className='text-xxs font-mono text-gray-500 truncate'>{currentPositionFen}</span>
               <MyButton onClick={copyFenToClipboard} overrideClass='h-5 px-2 text-xxs whitespace-nowrap'>
-                {fenCopied ? 'Copied' : 'Copy FEN'}
+                {copyFenLabel}
               </MyButton>
             </div>
           </div>
@@ -954,28 +1095,29 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
                 <MySelect
                   label='Lines'
                   options={['1', '2', '3', '4', '5']}
-                  value={String(deepAnalysisMultiPv)}
+                  value={deepAnalysisMultiPvValue}
                   onChange={e => setDeepAnalysisMultiPv(parseInt(e.target.value, 10))}
                   overrideClass='w-20 h-6 md:h-6'
                 />
               </div>
-              {deepAnalyzing ? (
+              {deepAnalyzing && (
                 <MyButton onClick={stopDeepAnalysis} overrideClass='w-full bg-red-500 hover:bg-red-600'>
                   Stop
                 </MyButton>
-              ) : (
+              )}
+              {showStartDeepAnalysis && (
                 <MyButton onClick={startDeepAnalysis} disabled={analyzing} overrideClass='w-full bg-purple-600 hover:bg-purple-700'>
-                  {analyzing ? 'Game analysis running...' : 'Analyze Position'}
+                  {startDeepAnalysisLabel}
                 </MyButton>
               )}
               {deepAnalysisData && (
                 <div className='space-y-1'>
                   <div className='text-xxs text-gray-500'>
-                    {(deepAnalysisData.nodes / 1000000).toFixed(1)}M nodes
+                    {deepNodesLabel}M nodes
                     {' · '}
-                    {(deepAnalysisData.nps / 1000).toFixed(0)}k nps
+                    {deepNpsLabel}k nps
                     {' · '}
-                    {(deepAnalysisData.timeMs / 1000).toFixed(1)}s
+                    {deepTimeLabel}s
                   </div>
                   {saveAnalysisMessage && (
                     <div className='text-xxs text-green-600 font-bold'>{saveAnalysisMessage}</div>
@@ -984,8 +1126,8 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
               )}
 
               <AlternativeLines_shared
-                results={deepAnalysisData?.lines ?? []}
-                loading={deepAnalyzing && !deepAnalysisData}
+                results={deepAnalysisLines}
+                loading={deepAnalysisLoading}
                 positionPly={currentPly}
                 onSelectLine={handleSelectPvLine}
               />
@@ -1010,92 +1152,55 @@ export default function MasterGameView_master({ row }: MasterGameViewProps) {
           <div className='rounded-lg bg-green-50 p-2 space-y-2'>
           <p className='text-xxs font-semibold text-gray-400 uppercase tracking-wide'>Lichess</p>
           <MyBox title='Moves' collapsible>
-            {!mastersData || mastersData.moves.length === 0 ? (
+            {showNoMastersMoves && (
               <p className='text-xs text-gray-400'>No master games recorded from this position.</p>
-            ) : (
-              (() => {
-                const total = mastersData.white + mastersData.draws + mastersData.black
-                return (
-                  <div className='space-y-2'>
-                    <p className='text-xxs text-gray-500'>
-                      {total.toLocaleString()} master games
-                      {' · '}White {total > 0 ? Math.round((mastersData.white / total) * 100) : 0}%
-                      {' / '}Draw {total > 0 ? Math.round((mastersData.draws / total) * 100) : 0}%
-                      {' / '}Black {total > 0 ? Math.round((mastersData.black / total) * 100) : 0}%
-                    </p>
-                    <MovesListTable
-                      rows={mastersData.moves.map(m => {
-                        const resultingFen = applyUciMove(currentNode.fen, m.uci)
-                        const fenEval = (resultingFen ? mastersFenEvals[truncateFen(resultingFen)] : undefined)
-                          ?? lichessMissingEval.overrides[m.uci]
-                        return {
-                          key:       m.uci,
-                          move:      m.san,
-                          times:     m.white + m.draws + m.black,
-                          white:     m.white,
-                          draws:     m.draws,
-                          black:     m.black,
-                          eval:      fenEval?.cp ?? null
-                        }
-                      })}
-                      selectedMove={selectedMastersMove}
-                      onSelectMove={setSelectedMastersMove}
-                    />
-                    {lichessMissingEval.missingCount > 0 && (
-                      <MyButton
-                        onClick={lichessMissingEval.analyzeMissing}
-                        disabled={lichessMissingEval.analyzing || analyzing || deepAnalyzing}
-                        overrideClass='text-xxs'
-                      >
-                        {lichessMissingEval.analyzing
-                          ? `Analyzing ${lichessMissingEval.progress?.done ?? 0}/${lichessMissingEval.progress?.total ?? 0}...`
-                          : `Analyze missing (${lichessMissingEval.missingCount})`}
-                      </MyButton>
-                    )}
-                  </div>
-                )
-              })()
+            )}
+            {showMastersMoves && (
+              <div className='space-y-2'>
+                <p className='text-xxs text-gray-500'>
+                  {mastersTotalLabel} master games
+                  {' · '}White {mastersWhitePct}%
+                  {' / '}Draw {mastersDrawsPct}%
+                  {' / '}Black {mastersBlackPct}%
+                </p>
+                <MovesListTable
+                  rows={mastersMovesRows}
+                  selectedMove={selectedMastersMove}
+                  onSelectMove={setSelectedMastersMove}
+                />
+                {showAnalyzeMissing && (
+                  <MyButton
+                    onClick={lichessMissingEval.analyzeMissing}
+                    disabled={analyzeMissingDisabled}
+                    overrideClass='text-xxs'
+                  >
+                    {analyzeMissingLabel}
+                  </MyButton>
+                )}
+              </div>
             )}
           </MyBox>
 
           {/* Lichess games — games list scoped to the current position (and, if a row in
               the Moves table above is selected, to that specific move). Hidden entirely
               until a position has been clicked on (currentNode set). */}
-          {mastersData && mastersData.topGames.length > 0 && (() => {
-            const filteredTopGames = mastersData.topGames.filter(
-              g => !selectedMastersMove || g.uci === selectedMastersMove
-            )
-            return (
-              <MyBox title='Games' collapsible>
-                <div className='space-y-1'>
-                  <div className='flex justify-end'>
-                    <MyHelpField text="Live results from Lichess's Masters Explorer for this position — Lichess selects which games qualify as 'top', not this app; the count and selection aren't configurable here." />
-                  </div>
-                  {filteredTopGames.length === 0 ? (
-                    <p className='text-xs text-gray-400'>No games match the selected move.</p>
-                  ) : (
-                    <GamesListTable
-                      rows={filteredTopGames.map((g, i) => ({
-                        key:            String(i),
-                        move:           mastersData.moves.find(m => m.uci === g.uci)?.san ?? g.uci,
-                        white:          g.white.name,
-                        whiteRating:    g.white.rating,
-                        whiteIsTracked: false,
-                        black:          g.black.name,
-                        blackRating:    g.black.rating,
-                        blackIsTracked: false,
-                        date:           String(g.year),
-                        result:         g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½',
-                        termination:    null,
-                        finalEval:      null,
-                        externalHref:   `https://lichess.org/${g.id}`
-                      }))}
-                    />
-                  )}
+          {showTopGames && (
+            <MyBox title='Games' collapsible>
+              <div className='space-y-1'>
+                <div className='flex justify-end'>
+                  <MyHelpField text="Live results from Lichess's Masters Explorer for this position — Lichess selects which games qualify as 'top', not this app; the count and selection aren't configurable here." />
                 </div>
-              </MyBox>
-            )
-          })()}
+                {showNoFilteredTopGames && (
+                  <p className='text-xs text-gray-400'>No games match the selected move.</p>
+                )}
+                {showFilteredTopGames && (
+                  <GamesListTable
+                    rows={topGamesRows}
+                  />
+                )}
+              </div>
+            </MyBox>
+          )}
           </div>
           )}
 

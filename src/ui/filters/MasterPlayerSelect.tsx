@@ -30,7 +30,7 @@ import { getSyncedMasterPlayers } from '@/src/lib/master/masterGamesList'
 import { getMasterPlayers } from '@/src/lib/actions/masterPlayers'
 import { WIDTH_MASTER_PLAYER } from '@/src/lib/constants'
 
-interface MasterPlayerSelectProps {
+type MasterPlayerSelectProps = {
   value: string
   onChange: (value: string) => void
   scope?: 'all' | 'synced'

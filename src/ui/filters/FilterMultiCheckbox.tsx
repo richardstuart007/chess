@@ -15,12 +15,12 @@
 
 import MySelectMulti from 'nextjs-shared/MySelectMulti'
 
-interface FilterOption {
+type FilterOption = {
   value: string
   label: string
 }
 
-interface FilterMultiCheckboxProps {
+type FilterMultiCheckboxProps = {
   label?: string
   options: (string | FilterOption)[]
   selected: string[]
@@ -29,13 +29,14 @@ interface FilterMultiCheckboxProps {
 }
 
 export default function FilterMultiCheckbox({ label, options, selected, onChange, width = 'w-20' }: FilterMultiCheckboxProps) {
+  const selectClass = `${width} md:${width} h-6 md:h-6 px-1 text-xxs truncate`
   return (
     <MySelectMulti
       label={label}
       options={options}
       selected={selected}
       onChange={onChange}
-      overrideClass={`${width} md:${width} h-6 md:h-6 px-1 text-xxs truncate`}
+      overrideClass={selectClass}
     />
   )
 }

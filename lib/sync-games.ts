@@ -1,3 +1,11 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    sync-games / run — standalone command-line script (raw pg client, not nextjs-shared): fetches one
+//    player's chess.com monthly archives, oldest first, and syncs their games into the database,
+//    printing inserted / skipped counts per month. The player is argv[2], else
+//    NEXT_PUBLIC_PRIMARY_USERNAME, else 'stricade'. Exits with code 1 on failure.
+//==================================================================================================
+
 import { Client } from 'pg'
 import { config } from 'dotenv'
 
@@ -18,7 +26,9 @@ async function run() {
   console.log(`Syncing games for: ${USERNAME}\n`)
 
   try {
-    // Fetch archive list from Chess.com
+    //
+    //  Fetch archive list from Chess.com
+    //
     const archivesRes = await fetch(`https://api.chess.com/pub/player/${USERNAME}/games/archives`)
     if (!archivesRes.ok) throw new Error(`Failed to fetch archives (HTTP ${archivesRes.status})`)
     const { archives } = await archivesRes.json() as { archives: string[] }
@@ -51,7 +61,9 @@ async function run() {
         const uuid = game.uuid || game.url
         if (!uuid) continue
 
-        // ON CONFLICT DO NOTHING handles any duplicate safely
+        //
+        //  ON CONFLICT DO NOTHING handles any duplicate safely
+        //
         const result = await client.query(
           `INSERT INTO tgr_gamesraw
              (gr_player, gr_chesscom_uuid, gr_raw_data, gr_pgn, gr_end_time, gr_time_class)

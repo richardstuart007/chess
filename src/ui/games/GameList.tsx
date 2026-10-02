@@ -29,19 +29,20 @@ import TerminationMultiSelect from '@/src/ui/filters/TerminationMultiSelect'
 import ColorSwatch from '@/src/ui/ColorSwatch'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { fetchFilteredGames, getGamesPageCount, GameFilters } from '@/src/lib/actions/games'
-import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
+import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
+import { useGlobalFilters } from '@/src/lib/hooks/useGlobalFilters'
 import {
   GAME_LIST_ROWS_DEFAULT_Player, GAME_LIST_ROWS_OPTIONS_Player, DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX,
   WIDTH_DATE_FROM, WIDTH_COLOR_GAMES, WIDTH_TIME_CLASS_GAMES, WIDTH_OPPONENT, WIDTH_OPPONENT_RATING,
   WIDTH_GAME_NUMBER, WIDTH_RESULT, WIDTH_OPENING, WIDTH_ECO, PLACEHOLDER_TEXT_FILTER, GLOBAL_FILTER_BORDER_CLASS
 } from '@/src/lib/constants'
 
-interface PlayerOption {
+type PlayerOption = {
   player: string
   displayName: string | null
 }
 
-interface GameListProps {
+type GameListProps = {
   players: PlayerOption[]
   onSelectGame: (game: ChessComGame, player: string) => void
   minDate?: string
@@ -57,6 +58,28 @@ const RESULT_STYLES: Record<string, string> = {
 }
 
 export default function GameList({ players, onSelectGame, minDate }: GameListProps) {
+  //
+  //  Draft state feeds the filter inputs directly (instant, responsive typing). Applied
+  //  state is what actually gets queried — only updated when Filter is clicked, so an
+  //  expensive re-query doesn't fire on every keystroke. draftFilters/filters are persisted so
+  //  navigating away to another page and back doesn't reset them (including an unapplied draft
+  //  edit); draftDateFrom/draftOpening/draftEco mirror the global values instead, since those
+  //  are now the source of truth.
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [draftFilters, setDraftFilters] = useState<GameFilters>({})
+  const [filters, setFilters] = useState<GameFilters>({})
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Player)
+  const [hydrated, setHydrated] = useState(false)
+  const [games, setGames] = useState<any[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+
   const searchParams = useSearchParams()
 
   //
@@ -89,27 +112,9 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
   //
   const setGlobalFilters = useGlobalFilters()
 
-  //
-  //  Draft state feeds the filter inputs directly (instant, responsive typing). Applied
-  //  state is what actually gets queried — only updated when Filter is clicked, so an
-  //  expensive re-query doesn't fire on every keystroke. draftFilters/filters are persisted so
-  //  navigating away to another page and back doesn't reset them (including an unapplied draft
-  //  edit); draftDateFrom/draftOpening/draftEco mirror the global values instead, since those
-  //  are now the source of truth.
-  //
-  //  Initialized to plain defaults (matching the server render) rather than reading
-  //  sessionStorage synchronously — sessionStorage is only available client-side, so
-  //  restoring persisted state happens in the effect below, after mount, to avoid a
-  //  hydration mismatch between the server-rendered HTML and the first client render.
-  //
-  const [draftFilters, setDraftFilters] = useState<GameFilters>({})
-  const [filters, setFilters] = useState<GameFilters>({})
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
   const [draftOpening, setDraftOpening] = useState(openingFilter)
   const [draftEco, setDraftEco] = useState(ecoFilter)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Player)
-  const [hydrated, setHydrated] = useState(false)
 
   //
   //  Keeps the draft text/date boxes in sync whenever the global values change from elsewhere
@@ -165,10 +170,6 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     } catch {}
   }, [draftFilters, filters, hydrated])
 
-  const [games, setGames] = useState<any[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [loading, setLoading] = useState(false)
-
   const playersToFetch = useMemo(() => (
     players.length === 1
       ? [players[0].player]
@@ -202,49 +203,6 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     opening: openingFilter || undefined,
     eco: ecoFilter || undefined
   }), [filters, timeClassFilter, dateFromFilter, openingFilter, ecoFilter])
-
-  //----------------------------------------------------------------------------------------------
-  //  updateFilter — sets one draft filter, or clears it when the value is empty; numeric keys (opponent rating, gdid) are parsed as integers
-  //
-  //  Params:
-  //    key — the filter to change
-  //    value — the new value ('' clears it)
-  //----------------------------------------------------------------------------------------------
-  function updateFilter(key: keyof GameFilters, value: string) {
-    setDraftFilters(prev => {
-      const next = { ...prev }
-      if (value === '' || value === undefined) {
-        delete next[key]
-      } else if (key === 'opponentRatingMin' || key === 'opponentRatingMax' || key === 'gdid') {
-        (next as any)[key] = parseInt(value, 10) || undefined
-      } else {
-        (next as any)[key] = value
-      }
-      return next
-    })
-  }
-
-  //----------------------------------------------------------------------------------------------
-  //  updateTerminationFilter — sets the draft termination filter, or clears it when nothing is selected
-  //
-  //  Params:
-  //    terms — the selected termination types
-  //----------------------------------------------------------------------------------------------
-  function updateTerminationFilter(terms: string[]) {
-    setDraftFilters(prev => {
-      const next = { ...prev }
-      if (terms.length === 0) { delete next.termination } else { next.termination = terms }
-      return next
-    })
-  }
-
-  //----------------------------------------------------------------------------------------------
-  //  handleApplyFilters — applies the draft filters, and writes the draft date, opening and ECO to the global URL params
-  //----------------------------------------------------------------------------------------------
-  function handleApplyFilters() {
-    setFilters(draftFilters)
-    setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
-  }
 
   useEffect(() => {
     if (!hydrated) return
@@ -306,22 +264,69 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     //  fetchPage — fetches the current page of games for the applied filters and stores it in state (none when there are no players to fetch)
     //----------------------------------------------------------------------------------------------
     async function fetchPage() {
-      if (playersToFetch.length === 0) {
-        if (!cancelled) { setGames([]); setLoading(false) }
-        return
-      }
+      try {
+        if (playersToFetch.length === 0) {
+          if (!cancelled) { setGames([]); setLoading(false) }
+          return
+        }
 
-      const rows = await fetchFilteredGames(queryPlayers, effectiveFilters, currentPage, rowsPerPage)
+        const rows = await fetchFilteredGames(queryPlayers, effectiveFilters, currentPage, rowsPerPage)
 
-      if (!cancelled) {
-        setGames(rows)
-        setLoading(false)
+        if (!cancelled) {
+          setGames(rows)
+          setLoading(false)
+        }
+      } catch {
+        if (!cancelled) setLoading(false)
       }
     }
 
-    fetchPage().catch(() => { if (!cancelled) setLoading(false) })
+    fetchPage()
     return () => { cancelled = true }
   }, [playersToFetch, queryPlayers, effectiveFilters, currentPage, rowsPerPage, hydrated])
+
+  //----------------------------------------------------------------------------------------------
+  //  updateFilter — sets one draft filter, or clears it when the value is empty; numeric keys (opponent rating, gdid) are parsed as integers
+  //
+  //  Params:
+  //    key — the filter to change
+  //    value — the new value ('' clears it)
+  //----------------------------------------------------------------------------------------------
+  function updateFilter(key: keyof GameFilters, value: string) {
+    setDraftFilters(prev => {
+      const next = { ...prev }
+      if (value === '' || value === undefined) {
+        delete next[key]
+      } else if (key === 'opponentRatingMin' || key === 'opponentRatingMax' || key === 'gdid') {
+        (next as any)[key] = parseInt(value, 10) || undefined
+      } else {
+        (next as any)[key] = value
+      }
+      return next
+    })
+  }
+
+  //----------------------------------------------------------------------------------------------
+  //  updateTerminationFilter — sets the draft termination filter, or clears it when nothing is selected
+  //
+  //  Params:
+  //    terms — the selected termination types
+  //----------------------------------------------------------------------------------------------
+  function updateTerminationFilter(terms: string[]) {
+    setDraftFilters(prev => {
+      const next = { ...prev }
+      if (terms.length === 0) { delete next.termination } else { next.termination = terms }
+      return next
+    })
+  }
+
+  //----------------------------------------------------------------------------------------------
+  //  handleApplyFilters — applies the draft filters, and writes the draft date, opening and ECO to the global URL params
+  //----------------------------------------------------------------------------------------------
+  function handleApplyFilters() {
+    setFilters(draftFilters)
+    setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
+  }
 
   //----------------------------------------------------------------------------------------------
   //  handleSelectGame — builds a ChessComGame-shaped object from the clicked row (the opposite side's result derived from the player's own) and hands it to onSelectGame with the row's player
@@ -366,6 +371,19 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
     || draftEco !== ecoFilter
   const dRMin = draftFilters.opponentRatingMin ?? ''
   const dRMax = draftFilters.opponentRatingMax ?? ''
+  const playerOptions = players.map(p => ({ player: p.player, display_name: p.displayName }))
+  const draftGdid = draftFilters.gdid != null ? String(draftFilters.gdid) : ''
+  const draftColor = draftFilters.color ?? ''
+  const draftOpponent = draftFilters.opponent ?? ''
+  const draftRatingMin = String(dRMin)
+  const draftRatingMax = String(dRMax)
+  const draftResult = draftFilters.result ?? ''
+  const draftTermination = draftFilters.termination ?? []
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const showNoGames = !loading && games.length === 0
+  const showGames = !loading
+  const openingCellClass = `py-1.5 pr-2 ${WIDTH_OPENING} truncate`
+  const showPagination = totalPages > 1
 
   return (
     <MyBox>
@@ -392,7 +410,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
                 <FilterPlayerSelect
-                  players={players.map(p => ({ player: p.player, display_name: p.displayName }))}
+                  players={playerOptions}
                   label=''
                 />
               </th>
@@ -408,7 +426,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.gdid != null ? String(draftFilters.gdid) : ''}
+                  value={draftGdid}
                   onChange={v => updateFilter('gdid', v)}
                   width={WIDTH_GAME_NUMBER}
                 />
@@ -416,7 +434,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <ColorSelect
-                    value={draftFilters.color ?? ''}
+                    value={draftColor}
                     onChange={v => updateFilter('color', v)}
                     label=''
                     width={WIDTH_COLOR_GAMES}
@@ -433,7 +451,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.opponent ?? ''}
+                  value={draftOpponent}
                   onChange={v => updateFilter('opponent', v)}
                   placeholder={PLACEHOLDER_TEXT_FILTER}
                   width={WIDTH_OPPONENT}
@@ -441,8 +459,8 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               </th>
               <th className='pb-2 pr-2'>
                 <FilterNumberRange
-                  min={String(dRMin)}
-                  max={String(dRMax)}
+                  min={draftRatingMin}
+                  max={draftRatingMax}
                   onMinChange={v => updateFilter('opponentRatingMin', v)}
                   onMaxChange={v => updateFilter('opponentRatingMax', v)}
                   width={WIDTH_OPPONENT_RATING}
@@ -452,7 +470,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <ResultSelect
-                    value={draftFilters.result ?? ''}
+                    value={draftResult}
                     onChange={v => updateFilter('result', v)}
                     label=''
                     width={WIDTH_RESULT}
@@ -462,7 +480,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <TerminationMultiSelect
-                    selected={draftFilters.termination ?? []}
+                    selected={draftTermination}
                     onChange={updateTerminationFilter}
                     label=''
                   />
@@ -488,7 +506,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               <th className='pb-2'>
                 <FilterActionButton
                   onClick={handleApplyFilters}
-                  variant={filtersPending ? 'pending' : 'primary'}
+                  variant={refreshVariant}
                 >
                   Refresh
                 </FilterActionButton>
@@ -501,14 +519,14 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
                 <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>Loading...</td>
               </tr>
             )}
-            {!loading && games.length === 0 && (
+            {showNoGames && (
               <tr>
                 <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>
                   No games found. Try adjusting your filters or populate games first.
                 </td>
               </tr>
             )}
-            {!loading && games.map((row, index) => {
+            {showGames && games.map((row, index) => {
               const date = new Date(row.gd_end_time * 1000)
               const dd = String(date.getDate()).padStart(2, '0')
               const mm = String(date.getMonth() + 1).padStart(2, '0')
@@ -517,6 +535,14 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
               const min = String(date.getMinutes()).padStart(2, '0')
               const dateStr = `${dd}/${mm}/${yy} ${hh}:${min}`
               const gameNumber = (currentPage - 1) * rowsPerPage + index + 1
+              const playerRating = row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
+              const oppRating = row.gd_opponent_rating
+              const oppRatingColor = row.gd_player_result === 'loss' && oppRating < playerRating ? 'text-red-500'
+                                   : row.gd_player_result === 'win'  && oppRating > playerRating ? 'text-blue-500'
+                                   : ''
+              const oppRatingClass = `flex justify-center ${oppRatingColor}`
+              const resultClass = `flex justify-center ${RESULT_STYLES[row.gd_player_result]}`
+              const openingLabel = row.gd_opening_name || 'Unknown'
 
               return (
                 <tr
@@ -533,24 +559,16 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
                   </td>
                   <td className='py-1.5 pr-2'><div className='flex justify-center text-gray-500'>{row.gd_time_class}</div></td>
                   <td className='py-1.5 pr-2'>{row.gd_opponent_username}</td>
-                  <td className='py-1.5 pr-2'><div className={`flex justify-center ${
-                    (() => {
-                      const myRating  = row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
-                      const oppRating = row.gd_opponent_rating
-                      return row.gd_player_result === 'loss' && oppRating < myRating ? 'text-red-500'
-                           : row.gd_player_result === 'win'  && oppRating > myRating ? 'text-blue-500'
-                           : ''
-                    })()
-                  }`}>{row.gd_opponent_rating}</div></td>
-                  <td className='py-1.5 pr-2 text-center tabular-nums text-gray-700'>{row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating}</td>
+                  <td className='py-1.5 pr-2'><div className={oppRatingClass}>{row.gd_opponent_rating}</div></td>
+                  <td className='py-1.5 pr-2 text-center tabular-nums text-gray-700'>{playerRating}</td>
                   <td className='py-1.5 pr-2'>
-                    <div className={`flex justify-center ${RESULT_STYLES[row.gd_player_result]}`}>
+                    <div className={resultClass}>
                       {row.gd_player_result}
                     </div>
                   </td>
                   <td className='py-1.5 pr-2 text-center text-gray-500'>{row.gd_termination}</td>
-                  <td className={`py-1.5 pr-2 ${WIDTH_OPENING} truncate`} title={row.gd_opening_name}>
-                    {row.gd_opening_name || 'Unknown'}
+                  <td className={openingCellClass} title={row.gd_opening_name}>
+                    {openingLabel}
                   </td>
                   <td className='py-1.5 pr-2 text-gray-400'>{row.gd_eco_code}</td>
                   <td className='py-1.5'>
@@ -570,7 +588,7 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
 
       <div className='mt-3 flex items-center justify-between'>
         <div />
-        {totalPages > 1 && (
+        {showPagination && (
           <MyPaginationFooter
             totalPages={totalPages}
             statecurrentPage={currentPage}
@@ -598,5 +616,5 @@ export default function GameList({ players, onSelectGame, minDate }: GameListPro
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }

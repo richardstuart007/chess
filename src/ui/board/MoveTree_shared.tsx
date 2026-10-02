@@ -19,7 +19,7 @@ import { AnalysisTree, MoveNode } from '@/src/lib/analysisTree'
 import { PlyEvaluation } from '@/src/lib/stockfish'
 import { formatCp } from '@/src/lib/formatCp'
 
-interface MoveTreeProps {
+type MoveTreeProps = {
   tree: AnalysisTree
   currentNode: MoveNode | null
   onSelectNode: (node: MoveNode) => void
@@ -50,14 +50,19 @@ export default function MoveTree_shared({ tree, currentNode, onSelectNode, moveC
     const whiteNode = mainLine[i]
     const blackNode = i + 1 < mainLine.length ? mainLine[i + 1] : null
     const moveNum = Math.floor(i / 2) + 1
+    const mainKey = `main-${i}`
+    const whiteIsActive = currentNode?.id === whiteNode.id
+    const blackIsActive = blackNode != null && currentNode?.id === blackNode.id
+    const blackEvalNode = blackNode ?? undefined
+    const blackStartPly = i + 1
 
     rows.push(
-      <tr key={`main-${i}`} className='border-b border-gray-50'>
+      <tr key={mainKey} className='border-b border-gray-50'>
         <td className='py-px pr-1 text-gray-400 font-mono text-xs w-8'>{moveNum}.</td>
         <td className='py-px w-24'>
           <MoveBadge
             node={whiteNode}
-            isActive={currentNode?.id === whiteNode.id}
+            isActive={whiteIsActive}
             onClick={() => onSelectNode(whiteNode)}
             count={moveCounts?.[whiteNode.id]}
           />
@@ -67,23 +72,26 @@ export default function MoveTree_shared({ tree, currentNode, onSelectNode, moveC
           {blackNode && (
             <MoveBadge
               node={blackNode}
-              isActive={currentNode?.id === blackNode.id}
+              isActive={blackIsActive}
               onClick={() => onSelectNode(blackNode)}
               count={moveCounts?.[blackNode.id]}
             />
           )}
         </td>
-        <EvalCell node={blackNode ?? undefined} />
+        <EvalCell node={blackEvalNode} />
       </tr>
     )
 
-    // White variations
+    //
+    //  White variations
+    //
     const whiteParent = whiteNode.parent
     if (whiteParent && whiteParent.children.length > 1) {
       const branches = whiteParent.children.filter(c => c.id !== whiteNode.id)
       for (const branch of branches) {
+        const whiteVariationKey = `var-w-${branch.id}`
         rows.push(
-          <tr key={`var-w-${branch.id}`}>
+          <tr key={whiteVariationKey}>
             <td colSpan={5} className='py-0'>
               <InlineVariation
                 startNode={branch}
@@ -98,16 +106,19 @@ export default function MoveTree_shared({ tree, currentNode, onSelectNode, moveC
       }
     }
 
-    // Black variations
+    //
+    //  Black variations
+    //
     if (blackNode && whiteNode.children.length > 1) {
       const branches = whiteNode.children.filter(c => c.id !== blackNode.id)
       for (const branch of branches) {
+        const blackVariationKey = `var-b-${branch.id}`
         rows.push(
-          <tr key={`var-b-${branch.id}`}>
+          <tr key={blackVariationKey}>
             <td colSpan={5} className='py-0'>
               <InlineVariation
                 startNode={branch}
-                startPly={i + 1}
+                startPly={blackStartPly}
                 currentNode={currentNode}
                 onSelectNode={onSelectNode}
                 moveCounts={moveCounts}
@@ -169,18 +180,20 @@ function MoveBadge({
       : 'text-blue-600'
 
   const ann = annotationSymbol(ev)
+  const badgeClass = `inline-flex items-center gap-0.5 h-4 md:h-4 px-0.5 text-xs font-medium transition-all ${textColor} ${
+    isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
+  }`
+  const showCount = count !== undefined && count > 1
 
   return (
     <MyButton
       onClick={onClick}
       data-node-id={node.id}
-      overrideClass={`inline-flex items-center gap-0.5 h-4 md:h-4 px-0.5 text-xs font-medium transition-all ${textColor} ${
-        isActive ? 'bg-green-200 hover:bg-green-200 rounded' : 'bg-transparent hover:bg-transparent'
-      }`}
+      overrideClass={badgeClass}
     >
       <span>{node.san}</span>
       {ann && <span className='text-xxs text-blue-500'>{ann}</span>}
-      {count !== undefined && count > 1 && (
+      {showCount && (
         <span className='text-xxs text-gray-400 font-mono'> ({count})</span>
       )}
     </MyButton>
@@ -217,9 +230,11 @@ function EvalCell({ node }: { node?: MoveNode }) {
   if (!node?.evaluation) return <td className='py-px w-24'></td>
   const cp = node.evaluation.cp
   const depth = node.evaluation.depth
+  const cellClass = `py-px w-24 font-mono text-xxs ${evalColor(cp)}`
+  const cpLabel = formatCp(cp)
   return (
-    <td className={`py-px w-24 font-mono text-xxs ${evalColor(cp)}`}>
-      {formatCp(cp)}
+    <td className={cellClass}>
+      {cpLabel}
       <span className='text-gray-400'> ({depth})</span>
     </td>
   )
@@ -283,25 +298,30 @@ function InlineVariation({
       {moves.map(({ node: n, ply: p }) => {
         const moveNum = Math.floor(p / 2) + 1
         const isWhite = p % 2 === 0
+        const showBlackMoveNum = !isWhite && p === startPly
+        const isActive = currentNode?.id === n.id
+        const showEvaluation = !!n.evaluation
+        const evalClass = n.evaluation ? `text-xxs font-mono ${evalColor(n.evaluation.cp)}` : ''
+        const cpLabel = n.evaluation ? formatCp(n.evaluation.cp) : ''
 
         return (
           <span key={n.id} className='inline-flex items-center gap-0.5'>
             {isWhite && (
               <span className='text-xxs text-gray-400 font-mono'>{moveNum}.</span>
             )}
-            {!isWhite && p === startPly && (
+            {showBlackMoveNum && (
               <span className='text-xxs text-gray-400 font-mono'>{moveNum}...</span>
             )}
             <MoveBadge
               node={n}
-              isActive={currentNode?.id === n.id}
+              isActive={isActive}
               onClick={() => onSelectNode(n)}
               count={moveCounts?.[n.id]}
             />
-            {n.evaluation && (
-              <span className={`text-xxs font-mono ${evalColor(n.evaluation.cp)}`}>
-                {formatCp(n.evaluation.cp)}
-                <span className='text-gray-400'> ({n.evaluation.depth})</span>
+            {showEvaluation && (
+              <span className={evalClass}>
+                {cpLabel}
+                <span className='text-gray-400'> ({n.evaluation?.depth})</span>
               </span>
             )}
           </span>

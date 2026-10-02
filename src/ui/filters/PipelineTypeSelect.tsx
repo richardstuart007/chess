@@ -15,7 +15,7 @@
 import FilterSelect from './FilterSelect'
 import { OPTIONS_PIPELINE_TYPE, WIDTH_PIPELINE_TYPE } from '@/src/lib/constants'
 
-interface PipelineTypeSelectProps {
+type PipelineTypeSelectProps = {
   value: string
   onChange: (value: string) => void
   label?: string

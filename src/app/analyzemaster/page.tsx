@@ -2,7 +2,7 @@
 
 //==================================================================================================
 //  1) DESCRIPTION
-//    AnalyzeMasterPage — /analyzemaster. Loads a single master game (by ?game= mgdid) via
+//    AnalyzeMasterPage — /analyzemaster. Loads a single master game (by ?mgdid= mgdid) via
 //    getMasterGameById and renders MasterGameView_master, behind a Suspense boundary.
 //
 //    Parameters (from the URL):
@@ -25,15 +25,15 @@ export default function AnalyzeMasterPage() {
 }
 
 //----------------------------------------------------------------------------------
-//  AnalyzeMasterContent — loads the master game by ?game= mgdid, then renders MasterGameView_master
+//  AnalyzeMasterContent — loads the master game by ?mgdid= mgdid, then renders MasterGameView_master
 //----------------------------------------------------------------------------------
 function AnalyzeMasterContent() {
-  const searchParams = useSearchParams()
-  const mgdidParam = searchParams.get('game')
-
   const [row, setRow] = useState<MasterGameRow | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const searchParams = useSearchParams()
+  const mgdidParam = searchParams.get('mgdid')
 
   useEffect(() => {
     if (!mgdidParam) {
@@ -42,7 +42,7 @@ function AnalyzeMasterContent() {
     }
 
     //----------------------------------------------------------------------------------------------
-    //  loadGame — loads the master game row for the ?game= mgdid param and stores it in state (sets 'Game not found' when no row exists)
+    //  loadGame — loads the master game row for the ?mgdid= mgdid param and stores it in state (sets 'Game not found' when no row exists)
     //----------------------------------------------------------------------------------------------
     async function loadGame() {
       setLoading(true)

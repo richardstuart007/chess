@@ -1,4 +1,4 @@
-export interface PgnHeaders {
+export type PgnHeaders = {
   eco: string
   ecoUrl: string
   openingName: string
@@ -48,7 +48,9 @@ export function extractOpeningName(ecoUrl: string, _ecoCode: string): string {
 
   let name = match[1]
 
-  // Remove move notation suffixes (e.g., "-2...d6-3.d4", "-1...g6-2.g3")
+  //
+  //  Remove move notation suffixes (e.g., "-2...d6-3.d4", "-1...g6-2.g3")
+  //
   name = name.replace(/-\d+\.{1,3}[a-zA-Z0-9+#=].*$/, '')
 
   name = name.replace(/-/g, ' ')
@@ -102,7 +104,8 @@ export function parsePgnOpening(pgn: string, halfMoves: number = 999): string {
     .replace(/\d+\.{1,3}/g, '')
     .trim()
   const moves = cleaned.split(/\s+/).filter(m => m.length > 0)
-  return moves.slice(0, halfMoves).join(' ')
+  const result = moves.slice(0, halfMoves).join(' ')
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -116,7 +119,8 @@ export function parsePgnOpening(pgn: string, halfMoves: number = 999): string {
 //----------------------------------------------------------------------------------
 export function parsePlayedDate(utcDate: string): string | null {
   if (!utcDate) return null
-  return utcDate.replace(/\./g, '-')
+  const result = utcDate.replace(/\./g, '-')
+  return result
 }
 
 //----------------------------------------------------------------------------------

@@ -33,7 +33,7 @@
 
 import * as cheerio from 'cheerio'
 
-export interface ChessComSearchGame {
+export type ChessComSearchGame = {
   gameId:        number
   viewUrl:       string
   whiteUsername: string
@@ -52,7 +52,7 @@ export interface ChessComSearchGame {
 //  the former's meaning was never confirmed, the latter all behaved identically to the default
 //  (most recent) when tested.
 //
-export interface ChessComSearchFilters {
+export type ChessComSearchFilters = {
   p1:         string
   p2:         string
   mr:         number | ''
@@ -138,5 +138,6 @@ export async function searchChessComGames(fen: string | undefined, filters: Ches
 //----------------------------------------------------------------------------------
 function parseRating(text: string): number | null {
   const match = text.match(/\d+/)
-  return match ? parseInt(match[0], 10) : null
+  const result = match ? parseInt(match[0], 10) : null
+  return result
 }

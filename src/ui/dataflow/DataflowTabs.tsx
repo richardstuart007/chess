@@ -17,21 +17,26 @@ export default function DataflowTabs() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('diagram')
 
   const activeSection = SECTIONS.find(s => s.id === activeTab)
+  const diagramActive = activeTab === 'diagram'
+  const activeContent = activeSection ? activeSection.content : null
 
   return (
     <div>
       <div className='flex gap-0 border-b border-gray-200 mb-4 flex-wrap'>
-        <MyTab active={activeTab === 'diagram'} onClick={() => setActiveTab('diagram')}>
+        <MyTab active={diagramActive} onClick={() => setActiveTab('diagram')}>
           Diagram
         </MyTab>
-        {SECTIONS.map(section => (
-          <MyTab key={section.id} active={activeTab === section.id} onClick={() => setActiveTab(section.id)}>
-            {section.label}
-          </MyTab>
-        ))}
+        {SECTIONS.map(section => {
+          const isActive = activeTab === section.id
+          return (
+            <MyTab key={section.id} active={isActive} onClick={() => setActiveTab(section.id)}>
+              {section.label}
+            </MyTab>
+          )
+        })}
       </div>
-      {activeTab === 'diagram' && <PipelineDiagram />}
-      {activeSection && activeSection.content}
+      {diagramActive && <PipelineDiagram />}
+      {activeContent}
     </div>
   )
 }

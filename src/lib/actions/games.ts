@@ -310,9 +310,11 @@ export async function getGameEvals_player(gdid: number): Promise<(GameEvalRow | 
   const poseEvals = await getPositionEvaluationsBulk_shared(fens)
 
   const result: (GameEvalRow | undefined)[] = []
-  // Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
-  // only meaningful relative to the immediately preceding ply, so a gap resets this
-  // rather than letting a stale cp leak across it.
+  //
+  //  Tracks the last ply that actually resolved to a real value — cpChange/cpBefore are
+  //  only meaningful relative to the immediately preceding ply, so a gap resets this
+  //  rather than letting a stale cp leak across it.
+  //
   let cpBefore = 0
   let havePrevCp = false
 
@@ -666,12 +668,13 @@ export async function getOpeningScores(
     })
     return []
   }
-  return result.data.map((r: any) => ({
+  const openingScores = result.data.map((r: any) => ({
     eco_code: r.gd_eco_code ?? '',
     opening_name: r.gd_opening_name ?? '',
     games: Number(r.games),
     score_pct: Number(r.score_pct)
   }))
+  return openingScores
 }
 
 //----------------------------------------------------------------------------------
@@ -718,7 +721,7 @@ export async function getTerminationStats(
     table: DECON_TABLE,
     query: `
       SELECT
-        gd_termination AS termination,
+        gd_termination,
         COUNT(*) FILTER (WHERE gd_player_result = 'win')  AS win,
         COUNT(*) FILTER (WHERE gd_player_result = 'loss') AS loss,
         COUNT(*) AS total
@@ -740,12 +743,13 @@ export async function getTerminationStats(
     })
     return []
   }
-  return result.data.map((r: any) => ({
-    termination: r.termination,
+  const terminationStats = result.data.map((r: any) => ({
+    termination: r.gd_termination,
     win:   Number(r.win),
     loss:  Number(r.loss),
     total: Number(r.total)
   }))
+  return terminationStats
 }
 
 //----------------------------------------------------------------------------------
@@ -796,7 +800,9 @@ export async function backfillOpeningMoves(
     })
   }
 
-  // table_count has no IS NULL support (unlike table_fetch) — table_query needed here
+  //
+  //  table_count has no IS NULL support (unlike table_fetch) — table_query needed here
+  //
   const remainingResult = await table_query({
     caller: 'backfillOpeningMoves_count',
     table: DECON_TABLE,
@@ -850,10 +856,11 @@ export async function getEarliestGameDate(players: string[]): Promise<string | n
   }
   const minTime = result.data[0]?.min_time
   if (!minTime) return null
-  return new Date(Number(minTime) * 1000).toISOString().slice(0, 10)
+  const earliestGameDate = new Date(Number(minTime) * 1000).toISOString().slice(0, 10)
+  return earliestGameDate
 }
 
-export interface RatingDataPoint {
+export type RatingDataPoint = {
   date: string        // 'YYYY-MM' | 'YYYY-WW' | 'YYYY-MM-DD' depending on granularity
   avgRating: number
   games: number
@@ -965,9 +972,10 @@ export async function getPlayerRatingOverTime(
     return []
   }
 
-  return result.data.map((r: any) => ({
+  const ratingOverTime = result.data.map((r: any) => ({
     date: r.date,
     avgRating: r.avg_rating,
     games: r.games
   }))
+  return ratingOverTime
 }

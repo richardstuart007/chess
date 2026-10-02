@@ -22,15 +22,17 @@ export async function GET(req: NextRequest) {
   ])
 
   if (!totalResult.ok || !forPlayerResult.ok || !sampleResult.ok) {
-    return NextResponse.json({
+    const response = NextResponse.json({
       error: [totalResult, forPlayerResult, sampleResult].filter(r => !r.ok).map(r => r.error).join('; ')
     }, { status: 500 })
+    return response
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     total_rows:       totalResult.data,
     rows_for_player:  forPlayerResult.data,
     player_searched:  player,
     distinct_players: sampleResult.data.map((r: any) => r.gr_player),
   })
+  return response
 }

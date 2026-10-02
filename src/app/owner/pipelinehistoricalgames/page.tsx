@@ -527,5 +527,6 @@ export default function PipelineHistoricalGamesPage() {
 //    '—' when undefined, otherwise the number with locale separators
 //----------------------------------------------------------------------------------
 function n(val: number | undefined): string {
-  return val === undefined ? '—' : val.toLocaleString()
+  const result = val === undefined ? '—' : val.toLocaleString()
+  return result
 }

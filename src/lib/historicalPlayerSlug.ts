@@ -16,5 +16,6 @@
 //==================================================================================================
 
 export function historicalPlayerSlug(firstName: string, lastName: string): string {
-  return `${firstName} ${lastName}`.trim().toLowerCase().replace(/\s+/g, '-')
+  const result = `${firstName} ${lastName}`.trim().toLowerCase().replace(/\s+/g, '-')
+  return result
 }

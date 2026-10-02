@@ -50,8 +50,10 @@ export async function GET(req: NextRequest) {
       results.push({ player: p.player, ...acc })
     }
 
-    return NextResponse.json({ ok: true, results })
+    const response = NextResponse.json({ ok: true, results })
+    return response
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

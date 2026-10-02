@@ -16,7 +16,8 @@ import MyBox from 'nextjs-shared/MyBox'
 import HabitsTable from '@/src/ui/analysis/HabitsTable'
 import { getHabitsData_player, getHabitsCount_player, dismissHabit_player, undismissHabit_player } from '@/src/lib/analysis/chessdb_player'
 import { getPlayers } from '@/src/lib/actions/players'
-import { useGlobalFilter, useGlobalFilters } from '@/src/lib/hooks/useGlobalFilter'
+import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
+import { useGlobalFilters } from '@/src/lib/hooks/useGlobalFilters'
 import { MIN_ANALYSIS_MOVE_Player, HABITS_ITEMS_PER_PAGE_Player, HABITS_ROWS_OPTIONS_Player, SESSION_STORAGE_PREFIX, DEFAULT_DATE_FROM_Player } from '@/src/lib/constants'
 
 const STORAGE_KEY = `${SESSION_STORAGE_PREFIX}habits_filters`
@@ -45,19 +46,33 @@ export default function HabitsPage() {
 //  instant; dateFrom/opening/eco global, staged as drafts) and renders HabitsTable
 //----------------------------------------------------------------------------------
 function HabitsContent() {
-  const searchParams = useSearchParams()
   const [players,     setPlayers]     = useState<{ player: string; display_name: string | null }[]>([])
-  const playerFilter = searchParams.get('player') ?? ''
-  const playersToFetch = useMemo(
-    () => playerFilter ? [playerFilter] : players.map(p => p.player),
-    [playerFilter, players]
-  )
   const [color,       setColor]       = useState<Color>('all')
   const [quality,     setQuality]     = useState<Quality>('bad')
   const [sortBy,      setSortBy]      = useState<SortBy>('cpLoss')
   const [minMove,     setMinMove]     = useState(MIN_ANALYSIS_MOVE_Player)
   const [minReached,  setMinReached]  = useState(3)
   const [showDismissed, setShowDismissed] = useState(false)
+  const [habits,      setHabits]      = useState<any[]>([])
+  const [loading,     setLoading]     = useState(false)
+
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(HABITS_ITEMS_PER_PAGE_Player)
+  const [totalCount,  setTotalCount]  = useState(0)
+  const [hydrated,    setHydrated]    = useState(false)
+
+  const searchParams = useSearchParams()
+  const playerFilter = searchParams.get('player') ?? ''
+  const playersToFetch = useMemo(
+    () => playerFilter ? [playerFilter] : players.map(p => p.player),
+    [playerFilter, players]
+  )
   //
   //  Date From/Opening/ECO are also global (shared via URL with GameList/Graph/OpeningScoreChart/
   //  TerminationChart's own Date From/Opening/ECO filters) and applied on an explicit Refresh
@@ -78,18 +93,6 @@ function HabitsContent() {
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
   const [draftOpening, setDraftOpening] = useState(openingFilter)
   const [draftEco,     setDraftEco]     = useState(ecoFilter)
-  const [rows,        setRows]        = useState<any[]>([])
-  const [loading,     setLoading]     = useState(false)
-  //
-  //  Initialized to plain defaults (matching the server render) rather than reading
-  //  sessionStorage synchronously — sessionStorage is only available client-side, so
-  //  restoring persisted state happens in the effect below, after mount, to avoid a
-  //  hydration mismatch between the server-rendered HTML and the first client render.
-  //
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(HABITS_ITEMS_PER_PAGE_Player)
-  const [totalCount,  setTotalCount]  = useState(0)
-  const [hydrated,    setHydrated]    = useState(false)
 
   useEffect(() => {
     const saved = sessionStorage.getItem(STORAGE_KEY)
@@ -186,6 +189,9 @@ function HabitsContent() {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
 
+  //----------------------------------------------------------------------------------------------
+  //  load — fetches the current page of habits for the active filters and stores it in state (does nothing until hydrated and the players are loaded)
+  //----------------------------------------------------------------------------------------------
   const load = useCallback(async () => {
     if (!hydrated || playersToFetch.length === 0) return
     setLoading(true)
@@ -203,7 +209,7 @@ function HabitsContent() {
         eco:        ecoFilter || undefined,
         sinceDate:  dateFromFilter || undefined
       })
-      setRows(data)
+      setHabits(data)
     } finally {
       setLoading(false)
     }
@@ -211,13 +217,18 @@ function HabitsContent() {
 
   useEffect(() => { load() }, [load])
 
-  //
+  //----------------------------------------------------------------------------------------------
   //  handleToggleDismiss — dismisses or restores depending on which view is showing, then
   //  re-fetches the current page so it backfills to rowsPerPage from the next row in sort
   //  order, rather than just dropping the row locally and leaving the page short — either
   //  direction removes the row from whichever view is currently active. Uses the row's own
   //  player (not the page-level filter) since "All" can show rows from multiple players at once.
   //
+  //  Params:
+  //    posId — the habit's position id
+  //    moveSan — the habit's move, in SAN
+  //    rowPlayer — the row's own player
+  //----------------------------------------------------------------------------------------------
   const handleToggleDismiss = useCallback(async (posId: number, moveSan: string, rowPlayer: string) => {
     if (showDismissed) {
       await undismissHabit_player(rowPlayer, posId, moveSan)
@@ -228,9 +239,16 @@ function HabitsContent() {
     load()
   }, [showDismissed, load])
 
+  //----------------------------------------------------------------------------------------------
+  //  handleApplyFilters — writes the draft date / opening / ECO filters to the global URL filters in one update
+  //----------------------------------------------------------------------------------------------
   const handleApplyFilters = useCallback(() => {
     setGlobalFilters({ dateFrom: draftDateFrom, opening: draftOpening, eco: draftEco })
   }, [draftDateFrom, draftOpening, draftEco, setGlobalFilters])
+
+  const showTable = !loading
+  const filtersPending = draftDateFrom !== dateFromFilter || draftOpening !== openingFilter || draftEco !== ecoFilter
+  const showPagination = totalPages > 1
 
   return (
     <div className="space-y-4">
@@ -240,11 +258,12 @@ function HabitsContent() {
           <MyHelp title='Habits' items={HABITS_ITEMS} />
         </h3>
 
-        {loading ? (
+        {loading && (
           <MyLoadingMessage message1="Loading habits…" />
-        ) : (
+        )}
+        {showTable && (
           <HabitsTable
-            rows={rows}
+            rows={habits}
             dismissedView={showDismissed}
             onToggleDismiss={handleToggleDismiss}
             players={players}
@@ -266,13 +285,13 @@ function HabitsContent() {
             eco={draftEco}
             onEcoChange={(v: string) => setDraftEco(v.toUpperCase())}
             onApplyFilters={handleApplyFilters}
-            filtersPending={draftDateFrom !== dateFromFilter || draftOpening !== openingFilter || draftEco !== ecoFilter}
+            filtersPending={filtersPending}
           />
         )}
 
         <div className="flex items-center justify-between mt-3">
           <div />
-          {totalPages > 1 && (
+          {showPagination && (
             <MyPaginationFooter
               totalPages={totalPages}
               statecurrentPage={currentPage}
@@ -301,5 +320,5 @@ function HabitsContent() {
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }

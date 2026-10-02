@@ -18,21 +18,21 @@ import { getEarliestGameDate } from '@/src/lib/actions/games'
 import { ChessComGame } from '@/src/lib/chesscom'
 import { pushBackTarget } from '@/src/lib/backNav'
 
-interface Player {
+type Player = {
   player: string
   display_name: string | null
 }
 
-interface HomeDashboardProps {
+type HomeDashboardProps = {
   players: Player[]
 }
 
 export default function HomeDashboard({ players }: HomeDashboardProps) {
+  const [minDate, setMinDate] = useState<string | undefined>()
+
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-
-  const [minDate, setMinDate] = useState<string | undefined>()
 
   const playerList = players.map(p => p.player).join(',')
 
@@ -69,7 +69,7 @@ export default function HomeDashboard({ players }: HomeDashboardProps) {
     if (gdid) {
       const qs = searchParams.toString()
       pushBackTarget(qs ? `${pathname}?${qs}` : pathname)
-      router.push(`/analyze?game=${gdid}&player=${encodeURIComponent(player)}`)
+      router.push(`/analyze?gdid=${gdid}&player=${encodeURIComponent(player)}`)
     }
   }
 

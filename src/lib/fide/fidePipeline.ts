@@ -260,10 +260,16 @@ async function findUnlinkedRowByName(lastName: string, firstName: string): Promi
     return null
   }
   const bySurname = result.data
-  if (bySurname.length === 1) return Number(bySurname[0].mst_mstid)
+  if (bySurname.length === 1) {
+    const mstid = Number(bySurname[0].mst_mstid)
+    return mstid
+  }
   if (bySurname.length > 1) {
     const byFirstNameToo = bySurname.filter((r: any) => ((r.mst_first_name as string) ?? '').toLowerCase() === firstName.toLowerCase())
-    if (byFirstNameToo.length === 1) return Number(byFirstNameToo[0].mst_mstid)
+    if (byFirstNameToo.length === 1) {
+      const mstid = Number(byFirstNameToo[0].mst_mstid)
+      return mstid
+    }
   }
   return null
 }

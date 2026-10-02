@@ -22,7 +22,8 @@ const cache = new Map<string, { cp: number; depth: number }>()
 //    the cached { cp, depth }, or undefined
 //----------------------------------------------------------------------------------
 export function getCachedEval(fen: string): { cp: number; depth: number } | undefined {
-  return cache.get(truncateFen(fen))
+  const result = cache.get(truncateFen(fen))
+  return result
 }
 
 //----------------------------------------------------------------------------------

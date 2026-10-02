@@ -19,7 +19,7 @@ import TimeClassSelect from './TimeClassSelect'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
 import { GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
-interface FilterTimeClassSelectProps {
+type FilterTimeClassSelectProps = {
   label?: string
   width?: string
 }

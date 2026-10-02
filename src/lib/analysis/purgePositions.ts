@@ -37,24 +37,28 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
   await logStart('purgeStaleReachOnePositions', 'purgeRoute', 'checking for stale low-reach positions', level)
   const t0 = Date.now()
 
-  // Always start clean — wk_pur_workfile holds only the current run's candidates.
+  //
+  //  Always start clean — wk_pur_workfile holds only the current run's candidates.
+  //
   await table_truncate('wk_pur_workfile', 'purgeStaleReachOnePositions', true, level, 'I')
 
-  // Stage 1 — cheap, indexed reach filter. Stage 2 — confirm every occurrence (before
-  // and resulting side, checked as two separate NOT EXISTS rather than one OR'd
-  // condition so each can use its own single-column index — idx_tgam_pos_id /
-  // idx_tgam_resulting_pos_id — instead of forcing the planner to reconcile an OR
-  // across two different indexed columns) is outside the grace period. NOT EXISTS
-  // rather than a single date check so this stays correct if MIN_REACH_TO_KEEP_Player is ever
-  // raised further (multiple occurrences, all must be old).
   //
-  // pos_move_num range exemption: a position created by upgradePositionEvaluation's
-  // write-back path (createIfMissing) for a tpose_positions_eval cache outside the normal
-  // MIN_ANALYSIS_MOVE_Player..MAX_ANALYSIS_MOVE_Player build range has zero tgam_game_positions
-  // occurrences, so the grace-period NOT EXISTS checks below trivially pass and it would
-  // otherwise qualify for purge almost immediately — undoing the write-back on the very
-  // next run. Those positions were never part of the reach-tracked habit system to begin
-  // with, so this reach-based rule shouldn't apply to them at all.
+  //  Stage 1 — cheap, indexed reach filter. Stage 2 — confirm every occurrence (before
+  //  and resulting side, checked as two separate NOT EXISTS rather than one OR'd
+  //  condition so each can use its own single-column index — idx_tgam_pos_id /
+  //  idx_tgam_resulting_pos_id — instead of forcing the planner to reconcile an OR
+  //  across two different indexed columns) is outside the grace period. NOT EXISTS
+  //  rather than a single date check so this stays correct if MIN_REACH_TO_KEEP_Player is ever
+  //  raised further (multiple occurrences, all must be old).
+  //
+  //  pos_move_num range exemption: a position created by upgradePositionEvaluation's
+  //  write-back path (createIfMissing) for a tpose_positions_eval cache outside the normal
+  //  MIN_ANALYSIS_MOVE_Player..MAX_ANALYSIS_MOVE_Player build range has zero tgam_game_positions
+  //  occurrences, so the grace-period NOT EXISTS checks below trivially pass and it would
+  //  otherwise qualify for purge almost immediately — undoing the write-back on the very
+  //  next run. Those positions were never part of the reach-tracked habit system to begin
+  //  with, so this reach-based rule shouldn't apply to them at all.
+  //
   const insertRes = await table_query({
     caller: 'purgeStaleReachOnePositions_seed',
     query: `
@@ -106,7 +110,9 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     return { purged: 0 }
   }
 
-  // 1. Delete evaluations for the candidate set
+  //
+  //  1. Delete evaluations for the candidate set
+  //
   const evalsRes = await table_query({
     caller: 'purgeStaleReachOnePositions_evals',
     query: `DELETE FROM tpose_positions_eval WHERE pose_pos_id IN (SELECT pur_pos_id FROM wk_pur_workfile) RETURNING pose_pos_id`,
@@ -125,7 +131,9 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     return { purged: 0 }
   }
 
-  // 2. Full-delete tgam rows whose own before-position is a candidate.
+  //
+  //  2. Full-delete tgam rows whose own before-position is a candidate.
+  //
   const tgamDeleteRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tgam_delete',
     query: `DELETE FROM tgam_game_positions WHERE gam_pos_id IN (SELECT pur_pos_id FROM wk_pur_workfile) RETURNING gam_gamid`,
@@ -144,14 +152,16 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     return { purged: 0 }
   }
 
-  // 3. Null out the resulting-position reference on any surviving row (its own
-  // before-position wasn't a candidate, so the row stays — only the now-dangling
-  // pointer is cleared). gam_resulting_fen is nulled in the same statement — left
-  // alone, syncTposFromTgam_Player's backfill query can't tell "never linked yet" apart from
-  // "deliberately purged" and recreates the exact position just deleted, which then
-  // re-qualifies for purge immediately (same old, low-reach position) — a
-  // self-perpetuating resurrection cycle. Clearing the FEN here removes what that
-  // backfill query keys off.
+  //
+  //  3. Null out the resulting-position reference on any surviving row (its own
+  //  before-position wasn't a candidate, so the row stays — only the now-dangling
+  //  pointer is cleared). gam_resulting_fen is nulled in the same statement — left
+  //  alone, syncTposFromTgam_Player's backfill query can't tell "never linked yet" apart from
+  //  "deliberately purged" and recreates the exact position just deleted, which then
+  //  re-qualifies for purge immediately (same old, low-reach position) — a
+  //  self-perpetuating resurrection cycle. Clearing the FEN here removes what that
+  //  backfill query keys off.
+  //
   const tgamNullRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tgam_null',
     query: `
@@ -175,7 +185,9 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     return { purged: 0 }
   }
 
-  // 4. Resurrection guard — stamp any game now left with zero tgam rows
+  //
+  //  4. Resurrection guard — stamp any game now left with zero tgam rows
+  //
   const guardRes = await table_query({
     caller: 'purgeStaleReachOnePositions_guard',
     query: `
@@ -200,10 +212,12 @@ export async function purgeStaleReachOnePositions(level: number = 1, forceNewRun
     return { purged: 0 }
   }
 
-  // 5. Delete the purged tpos_positions rows themselves — safe unconditionally now:
-  // every reference to them was either removed with its row (step 2) or nulled out
-  // (step 3). wk_pur_workfile itself is intentionally left populated — an inspectable
-  // record of exactly what this run purged, until the next run truncates it.
+  //
+  //  5. Delete the purged tpos_positions rows themselves — safe unconditionally now:
+  //  every reference to them was either removed with its row (step 2) or nulled out
+  //  (step 3). wk_pur_workfile itself is intentionally left populated — an inspectable
+  //  record of exactly what this run purged, until the next run truncates it.
+  //
   const tposRes = await table_query({
     caller: 'purgeStaleReachOnePositions_tpos',
     query: `DELETE FROM tpos_positions WHERE pos_id IN (SELECT pur_pos_id FROM wk_pur_workfile) RETURNING pos_id`,

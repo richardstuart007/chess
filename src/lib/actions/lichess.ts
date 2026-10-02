@@ -22,7 +22,7 @@ import { MASTERS_EXPLORER_MOVES_LIMIT } from '../constants'
 
 const LICHESS_EXPLORER_BASE = 'https://explorer.lichess.org'
 
-export interface LichessExplorerMove {
+export type LichessExplorerMove = {
   uci: string
   san: string
   averageRating: number
@@ -32,7 +32,7 @@ export interface LichessExplorerMove {
   opening: { eco: string; name: string } | null
 }
 
-export interface LichessExplorerTopGame {
+export type LichessExplorerTopGame = {
   uci: string
   id: string
   winner: 'white' | 'black' | null
@@ -42,7 +42,7 @@ export interface LichessExplorerTopGame {
   month: string
 }
 
-export interface LichessExplorerResponse {
+export type LichessExplorerResponse = {
   white: number
   draws: number
   black: number
@@ -62,7 +62,8 @@ export async function getMastersExplorer(fen: string): Promise<LichessExplorerRe
       headers: { Authorization: `Bearer ${token}` }
     })
     if (!res.ok) return null
-    return await res.json()
+    const result = await res.json()
+    return result
   } catch {
     return null
   }

@@ -23,6 +23,12 @@ abstract class StockfishEngineBase {
   abstract quit(): void
   abstract init(): Promise<void>
 
+  //----------------------------------------------------------------------------------
+  //  onLine — receives one line of engine output: hands it to a waiting nextLine() caller, or queues it
+  //
+  //  Params:
+  //    line — the raw output line (blank lines are ignored)
+  //----------------------------------------------------------------------------------
   protected onLine(line: string): void {
     const t = line.trim()
     if (!t) return
@@ -35,11 +41,32 @@ abstract class StockfishEngineBase {
     }
   }
 
+  //----------------------------------------------------------------------------------
+  //  nextLine — the next line of engine output
+  //
+  //  Returns:
+  //    a promise for the next line — already resolved when one is queued
+  //----------------------------------------------------------------------------------
   nextLine(): Promise<string> {
-    if (this.pending.length > 0) return Promise.resolve(this.pending.shift()!)
-    return new Promise(resolve => { this.waiter = resolve })
+    if (this.pending.length > 0) {
+      const result = Promise.resolve(this.pending.shift()!)
+      return result
+    }
+    const result = new Promise<string>(resolve => { this.waiter = resolve })
+    return result
   }
 
+  //----------------------------------------------------------------------------------
+  //  evaluate — evaluates one position to a fixed depth over UCI
+  //
+  //  Params:
+  //    fen — the position to evaluate
+  //    depth — the search depth
+  //
+  //  Returns:
+  //    cp — the score in centipawns (a mate score becomes ±(10000 − moves to mate))
+  //    bestMove — the engine's best move, or null
+  //----------------------------------------------------------------------------------
   async evaluate(fen: string, depth: number): Promise<{ cp: number; bestMove: string | null }> {
     this.send('ucinewgame')
     this.send(`position fen ${fen}`)
@@ -74,6 +101,12 @@ abstract class StockfishEngineBase {
 class StockfishProcess extends StockfishEngineBase {
   private proc: ReturnType<typeof spawn>
 
+  //----------------------------------------------------------------------------------
+  //  constructor — spawns the native Stockfish binary and feeds its stdout lines to onLine
+  //
+  //  Params:
+  //    binPath — path to the Stockfish binary
+  //----------------------------------------------------------------------------------
   constructor(binPath: string) {
     super()
     this.proc = spawn(binPath)
@@ -81,10 +114,19 @@ class StockfishProcess extends StockfishEngineBase {
     rl.on('line', (line: string) => this.onLine(line))
   }
 
+  //----------------------------------------------------------------------------------
+  //  send — writes one UCI command to the process's stdin
+  //
+  //  Params:
+  //    cmd — the UCI command
+  //----------------------------------------------------------------------------------
   send(cmd: string): void {
     this.proc.stdin?.write(cmd + '\n')
   }
 
+  //----------------------------------------------------------------------------------
+  //  init — UCI handshake: waits for uciok, sets Threads to 4, then waits for readyok
+  //----------------------------------------------------------------------------------
   async init(): Promise<void> {
     this.send('uci')
     while ((await this.nextLine()) !== 'uciok') {}
@@ -93,6 +135,9 @@ class StockfishProcess extends StockfishEngineBase {
     while ((await this.nextLine()) !== 'readyok') {}
   }
 
+  //----------------------------------------------------------------------------------
+  //  quit — sends quit and kills the process (errors ignored)
+  //----------------------------------------------------------------------------------
   quit(): void {
     try { this.send('quit') } catch {}
     try { this.proc.kill() }  catch {}
@@ -107,10 +152,19 @@ class StockfishProcess extends StockfishEngineBase {
 class StockfishWasm extends StockfishEngineBase {
   private engine: any = null
 
+  //----------------------------------------------------------------------------------
+  //  send — passes one UCI command to the WASM engine
+  //
+  //  Params:
+  //    cmd — the UCI command
+  //----------------------------------------------------------------------------------
   send(cmd: string): void {
     this.engine.sendCommand(cmd)
   }
 
+  //----------------------------------------------------------------------------------
+  //  init — loads the 'stockfish' WASM package (lite-single build), wires its output to onLine, and completes the UCI handshake
+  //----------------------------------------------------------------------------------
   async init(): Promise<void> {
     const stockfishModule = await import('stockfish')
     const initEngine = (stockfishModule as any).default ?? stockfishModule
@@ -122,6 +176,9 @@ class StockfishWasm extends StockfishEngineBase {
     while ((await this.nextLine()) !== 'readyok') {}
   }
 
+  //----------------------------------------------------------------------------------
+  //  quit — sends quit (errors ignored)
+  //----------------------------------------------------------------------------------
   quit(): void {
     try { this.send('quit') } catch {}
   }
@@ -217,18 +274,20 @@ export async function enrichPositionsStockfish(opts: {
   await logStart('enrichPositionsStockfish', 'evaluatePositionsRoute', `evaluating positions at depth ${depth}`, level)
   const t0 = Date.now()
 
-  // Phase 1 FENs — positions in tpos_positions not yet evaluated
+  //
+  //  Phase 1 FENs — positions in tpos_positions not yet evaluated
+  //
   const posParams: number[] = []
   if (limit > 0) posParams.push(limit)
   const posRes = await table_query({
     caller: 'enrichPositionsStockfish_phase1',
     query: `
-      SELECT p.pos_id, p.pos_fen, p.pos_color
-      FROM tpos_positions p
-      LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-      WHERE e.pose_pos_id IS NULL
-        AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player}
-      ORDER BY p.pos_reached DESC
+      SELECT pos_id, pos_fen, pos_color
+      FROM tpos_positions
+      LEFT JOIN tpose_positions_eval ON pose_pos_id = pos_id
+      WHERE pose_pos_id IS NULL
+        AND pos_reached > ${MIN_REACH_TO_KEEP_Player}
+      ORDER BY pos_reached DESC
       ${limit > 0 ? `LIMIT $${posParams.length}` : ''}
     `,
     params: posParams,
@@ -250,8 +309,10 @@ export async function enrichPositionsStockfish(opts: {
   const positions: Array<{ posId: number; fen: string; color: string | null }> =
     posRes.data.map((r: any) => ({ posId: Number(r.pos_id), fen: r.pos_fen as string, color: (r.pos_color ?? null) as string | null }))
 
-  // Phase 2 — resulting positions not yet evaluated (real tpos_positions rows already
-  // exist for these, created eagerly by Build Position Tree)
+  //
+  //  Phase 2 — resulting positions not yet evaluated (real tpos_positions rows already
+  //  exist for these, created eagerly by Build Position Tree)
+  //
   const resultingFens = await getResultingFensToEvaluate(limit, level + 1)
 
   const allFensToEval: Array<{ fen: string; color: string | null; posId: number }> = [
@@ -278,7 +339,9 @@ export async function enrichPositionsStockfish(opts: {
   for (const item of allFensToEval) {
     try {
       const { cp: stockCp, bestMove: stockBestMove } = await sf.evaluate(item.fen, depth)
-      // Normalize to white's perspective: Stockfish reports from side-to-move perspective.
+      //
+      //  Normalize to white's perspective: Stockfish reports from side-to-move perspective.
+      //
       const fenColor = item.color ?? 'w'
       const whiteCp = fenColor === 'b' ? -stockCp : stockCp
       await saveEvaluation_shared({
@@ -465,7 +528,8 @@ export async function countRemainingPopularPositions(level: number = 1): Promise
     })
     return 0
   }
-  return parseInt(rows.data[0]?.cnt ?? '0')
+  const cnt = parseInt(rows.data[0]?.cnt ?? '0')
+  return cnt
 }
 
 //----------------------------------------------------------------------------------
@@ -515,13 +579,15 @@ export async function countRemainingPopularPositionsByTier(level: number = 1): P
       lg_msg: 'Failed to count remaining popular positions by tier: ' + rows.error,
       lg_severity: 'E'
     })
-    return POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({ depth: t.depth, remaining: 0 }))
+    const result = POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({ depth: t.depth, remaining: 0 }))
+    return result
   }
   const r = rows.data[0] ?? {}
-  return POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({
+  const result = POPULAR_POSITION_DEPTH_TIERS_Player.map(t => ({
     depth: t.depth,
     remaining: parseInt(r[`d${t.depth}`] ?? '0')
   }))
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -573,7 +639,9 @@ export async function evaluateGameEndings(opts: {
 
   let errors = 0
 
-  // Phase 1a — replay every game's PGN in memory (no DB calls) to its true final position
+  //
+  //  Phase 1a — replay every game's PGN in memory (no DB calls) to its true final position
+  //
   const finals: { gdid: number; fen: string; fenKey: string }[] = []
   for (const game of games) {
     try {
@@ -593,8 +661,10 @@ export async function evaluateGameEndings(opts: {
     }
   }
 
-  // Phase 1b — one batched exact-match lookup across every distinct final position in
-  // this run, instead of one query per game
+  //
+  //  Phase 1b — one batched exact-match lookup across every distinct final position in
+  //  this run, instead of one query per game
+  //
   const uniqueFenKeys  = [...new Set(finals.map(f => f.fenKey))]
   const existingByFen  = await findExistingEvals(uniqueFenKeys, level)
 
@@ -606,8 +676,10 @@ export async function evaluateGameEndings(opts: {
     else needsEval.push({ gdid: f.gdid, fen: f.fen })
   }
 
-  // Phase 1c — one batched, chunked multi-row UPDATE for every reuse match, instead of
-  // one UPDATE per game (mirrors insertGamePositions_Player' chunked bulk-write pattern)
+  //
+  //  Phase 1c — one batched, chunked multi-row UPDATE for every reuse match, instead of
+  //  one UPDATE per game (mirrors insertGamePositions_Player' chunked bulk-write pattern)
+  //
   let reused = 0
   for (let start = 0; start < reuseUpdates.length; start += POSITION_INSERT_CHUNK_SIZE_Player) {
     const chunk = reuseUpdates.slice(start, start + POSITION_INSERT_CHUNK_SIZE_Player)
@@ -632,8 +704,10 @@ export async function evaluateGameEndings(opts: {
     reused += chunk.length
   }
 
-  // Phase 2 — fresh Stockfish evaluation for whatever wasn't already tracked,
-  // spread across concurrent engine instances
+  //
+  //  Phase 2 — fresh Stockfish evaluation for whatever wasn't already tracked,
+  //  spread across concurrent engine instances
+  //
   let processed = reused
 
   //----------------------------------------------------------------------------------------------
@@ -724,10 +798,10 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
   const result = await table_query({
     caller: 'enrichPositionsStockfish_count',
     table: 'tpos_positions',
-    query: `SELECT COUNT(*) AS cnt FROM tpos_positions p
-      LEFT JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-      WHERE e.pose_pos_id IS NULL
-        AND p.pos_reached > ${MIN_REACH_TO_KEEP_Player}`,
+    query: `SELECT COUNT(*) AS cnt FROM tpos_positions
+      LEFT JOIN tpose_positions_eval ON pose_pos_id = pos_id
+      WHERE pose_pos_id IS NULL
+        AND pos_reached > ${MIN_REACH_TO_KEEP_Player}`,
     params: [],
     level,
     severity: 'I',
@@ -742,7 +816,8 @@ async function countRemainingPositions(level: number = 1): Promise<number> {
     })
     return 0
   }
-  return parseInt(result.data[0]?.cnt ?? '0')
+  const cnt = parseInt(result.data[0]?.cnt ?? '0')
+  return cnt
 }
 
 //----------------------------------------------------------------------------------
@@ -761,9 +836,11 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
   await logStart('getResultingFensToEvaluate', 'enrichPositionsStockfish', 'fetching resulting FENs to evaluate', level)
   const params: number[] = []
   if (limit > 0) params.push(limit)
-  // Resulting positions now have a real tpos_positions row (created eagerly by Build
-  // Position Tree), so this is a plain id-based lookup — no more FEN grouping or
-  // move-number derivation needed, pos_move_num is already set at write time.
+  //
+  //  Resulting positions now have a real tpos_positions row (created eagerly by Build
+  //  Position Tree), so this is a plain id-based lookup — no more FEN grouping or
+  //  move-number derivation needed, pos_move_num is already set at write time.
+  //
   const res = await table_query({
     caller: 'getResultingFensToEvaluate',
     table: 'tgam_game_positions',
@@ -802,6 +879,10 @@ async function getResultingFensToEvaluate(limit: number, level: number): Promise
 //  threshold from POPULAR_POSITION_DEPTH_TIERS_Player, so the backlog-count query
 //  (pipelineStatus.ts) and the actual batch (deepenPopularPositions below)
 //  can never drift out of sync with each other or with the constant.
+//
+//  Returns:
+//    caseSql — the shared CASE expression
+//    lowestMinReach — the lowest reach threshold across the tiers
 //----------------------------------------------------------------------------------
 function popularPositionTierSql(): { caseSql: string; lowestMinReach: number } {
   const caseSql = POPULAR_POSITION_DEPTH_TIERS_Player
@@ -853,7 +934,8 @@ async function getGamesNeedingFinalEval(limit: number, level: number): Promise<{
     })
     return []
   }
-  return rows.data.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
+  const result = rows.data.map((r: any) => ({ gdid: Number(r.gd_gdid), pgn: r.gd_pgn as string }))
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -877,10 +959,10 @@ async function findExistingEvals(truncatedFens: string[], level: number): Promis
   const rows = await table_query({
     caller: 'findExistingEvals',
     query: `
-      SELECT p.pos_fen, e.pose_cp
-      FROM tpos_positions p
-      JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-      WHERE p.pos_fen IN (${placeholders}) AND e.pose_cp IS NOT NULL
+      SELECT pos_fen, pose_cp
+      FROM tpos_positions
+      JOIN tpose_positions_eval ON pose_pos_id = pos_id
+      WHERE pos_fen IN (${placeholders}) AND pose_cp IS NOT NULL
     `,
     params,
     table: 'tpos_positions',

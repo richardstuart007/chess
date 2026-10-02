@@ -7,6 +7,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { buildHabits } from '@/src/lib/analysis/buildHabits'
 
 export async function GET(req: NextRequest) {
@@ -14,9 +15,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const { built } = await buildHabits(1, forceNewRun)
-    return NextResponse.json({ ok: true, built })
+    const response = NextResponse.json({ ok: true, built })
+    return response
   } catch (err: any) {
     console.error('build-habits route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/analysis/build-habits',
+      lg_caller: 'api/analysis/build-habits',
+      lg_msg: 'build-habits route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

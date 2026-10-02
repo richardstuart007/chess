@@ -13,7 +13,7 @@ import {
   STOCKFISH_DEEP_ANALYSIS_MULTIPV
 } from './constants'
 
-export interface PlyEvaluation {
+export type PlyEvaluation = {
   san: string
   fen: string
   fenBefore: string
@@ -28,7 +28,7 @@ export interface PlyEvaluation {
   depth: number
 }
 
-export interface AnalysisProgress {
+export type AnalysisProgress = {
   current: number
   total: number
   move?: string
@@ -36,7 +36,7 @@ export interface AnalysisProgress {
 
 type ProgressCallback = (progress: AnalysisProgress) => void
 
-export interface InfiniteAnalysisUpdate {
+export type InfiniteAnalysisUpdate = {
   depth: number
   lines: MultiPvResult[]
   nodes: number
@@ -100,7 +100,8 @@ function uciToSan(fen: string, uciMove: string): string {
     const to = uciMove.slice(2, 4)
     const promotion = uciMove.length > 4 ? uciMove[4] : undefined
     const result = g.move({ from, to, promotion })
-    return result ? result.san : uciMove
+    const san = result ? result.san : uciMove
+    return san
   } catch {
     return uciMove
   }
@@ -129,7 +130,9 @@ function uciLineToSans(fen: string, uciMoves: string[]): string[] {
       sans.push(result.san)
     }
   } catch {
-    // partial conversion is fine
+    //
+    //  partial conversion is fine
+    //
   }
   return sans
 }
@@ -139,10 +142,13 @@ export class StockfishEngine {
   private ready = false
   private resolveReady: (() => void) | null = null
 
+  //----------------------------------------------------------------------------------
+  //  init — starts the Stockfish web worker and resolves once the engine reports readyok (does nothing when already ready; rejects if the worker fails to load)
+  //----------------------------------------------------------------------------------
   async init(): Promise<void> {
     if (this.ready) return
 
-    return new Promise((resolve, reject) => {
+    const result = new Promise<void>((resolve, reject) => {
       try {
         this.worker = new Worker('/stockfish/stockfish-18-lite-single.js')
 
@@ -171,20 +177,34 @@ export class StockfishEngine {
         reject(err)
       }
     })
+    return result
   }
 
+  //----------------------------------------------------------------------------------
+  //  send — posts one UCI command to the worker
+  //
+  //  Params:
+  //    cmd — the UCI command
+  //----------------------------------------------------------------------------------
   private send(cmd: string): void {
     this.worker?.postMessage(cmd)
   }
 
   private infiniteHandler: ((e: MessageEvent) => void) | null = null
 
-  /**
-   * Start deep analysis on a position. Calls onUpdate with live results as
-   * the engine searches deeper. Stops automatically once maxDepth is reached,
-   * or earlier if stopAnalysis() is called. Either way, onComplete fires once
-   * the engine's bestmove arrives.
-   */
+  //----------------------------------------------------------------------------------
+  //  startInfiniteAnalysis — Start deep analysis on a position. Calls onUpdate with live results as
+  //  the engine searches deeper. Stops automatically once maxDepth is reached,
+  //  or earlier if stopAnalysis() is called. Either way, onComplete fires once
+  //  the engine's bestmove arrives.
+  //
+  //  Params:
+  //    fen — the position to analyse
+  //    numLines — how many lines (MultiPV) to search
+  //    maxDepth — the depth at which the search stops
+  //    onUpdate — called with live results as the search deepens
+  //    onComplete — called once the engine's bestmove arrives (optional)
+  //----------------------------------------------------------------------------------
   startInfiniteAnalysis(
     fen: string,
     numLines: number,
@@ -194,7 +214,9 @@ export class StockfishEngine {
   ): void {
     if (!this.worker || !this.ready) return
 
-    // Remove any previous handler
+    //
+    //  Remove any previous handler
+    //
     if (this.infiniteHandler) {
       this.worker.removeEventListener('message', this.infiniteHandler)
       this.infiniteHandler = null
@@ -238,7 +260,9 @@ export class StockfishEngine {
             stockMaxDepth = depth
           }
 
-          // Build update with all current best lines
+          //
+          //  Build update with all current best lines
+          //
           const lines: MultiPvResult[] = []
           for (const [r, data] of stockResultsByRank.entries()) {
             const uciMoves = data.pv ? data.pv.split(' ') : []
@@ -265,7 +289,9 @@ export class StockfishEngine {
       }
 
       if (line.startsWith('bestmove')) {
-        // Engine stopped, either manually or by reaching maxDepth
+        //
+        //  Engine stopped, either manually or by reaching maxDepth
+        //
         if (this.infiniteHandler) {
           this.worker!.removeEventListener('message', this.infiniteHandler)
           this.infiniteHandler = null
@@ -281,9 +307,9 @@ export class StockfishEngine {
     this.send(`go depth ${maxDepth}`)
   }
 
-  /**
-   * Stop infinite analysis
-   */
+  //----------------------------------------------------------------------------------
+  //  stopAnalysis — Stop infinite analysis
+  //----------------------------------------------------------------------------------
   stopAnalysis(): void {
     if (this.infiniteHandler) {
       this.send('stop')
@@ -302,14 +328,32 @@ export class StockfishEngine {
     this.send('stop')
   }
 
+  //----------------------------------------------------------------------------------
+  //  evaluate — evaluates one position to the given depth (throws when the engine is not initialized)
+  //
+  //  Params:
+  //    fen — the position to evaluate
+  //    depth — the search depth (default STOCKFISH_DEFAULTS.depth)
+  //
+  //  Returns:
+  //    cp — the best line's score in centipawns (a mate score becomes ±(10000 − moves to mate))
+  //    bestMove — the engine's best move
+  //    pv — the best line's principal variation
+  //----------------------------------------------------------------------------------
   async evaluate(fen: string, depth: number = STOCKFISH_DEFAULTS.depth): Promise<{ cp: number; bestMove: string; pv: string }> {
     if (!this.worker || !this.ready) throw new Error('Stockfish not initialized')
 
-    return new Promise((resolve) => {
+    const result = new Promise<{ cp: number; bestMove: string; pv: string }>((resolve) => {
       let stockBestCp = 0
       let stockBestMove = ''
       let stockBestPv = ''
 
+      //----------------------------------------------------------------------------------------------
+      //  handler — worker message listener for this evaluate() call: tracks the rank-1 line's score and PV, and resolves the promise when bestmove arrives
+      //
+      //  Params:
+      //    e — the worker message
+      //----------------------------------------------------------------------------------------------
       const handler = (e: MessageEvent) => {
         const line = typeof e.data === 'string' ? e.data : ''
 
@@ -320,11 +364,13 @@ export class StockfishEngine {
           const mateMatch = line.match(/score mate (-?\d+)/)
           const pvMatch = line.match(/ pv (.+)/)
           const currentDepth = depthMatch ? parseInt(depthMatch[1]) : 0
-          // multipv is only reported when MultiPV > 1 — absent means rank 1 by definition.
-          // A leftover MultiPV setting from a prior startInfiniteAnalysis() call on this same
-          // engine instance would otherwise let a later info line's score cp overwrite stockBestCp
-          // with a worse (non-rank-1) line's value — this filter guards against that regardless
-          // of whether the explicit reset below actually took effect.
+          //
+          //  multipv is only reported when MultiPV > 1 — absent means rank 1 by definition.
+          //  A leftover MultiPV setting from a prior startInfiniteAnalysis() call on this same
+          //  engine instance would otherwise let a later info line's score cp overwrite stockBestCp
+          //  with a worse (non-rank-1) line's value — this filter guards against that regardless
+          //  of whether the explicit reset below actually took effect.
+          //
           const rank = multipvMatch ? parseInt(multipvMatch[1]) : 1
 
           if (rank === 1 && currentDepth >= depth - 2) {
@@ -350,21 +396,40 @@ export class StockfishEngine {
       }
 
       this.worker!.addEventListener('message', handler)
-      // Explicit reset — a prior startInfiniteAnalysis() call on this same engine instance may
-      // have left MultiPV set above 1, which this single-line evaluate() must never inherit.
+      //
+      //  Explicit reset — a prior startInfiniteAnalysis() call on this same engine instance may
+      //  have left MultiPV set above 1, which this single-line evaluate() must never inherit.
+      //
       this.send('setoption name MultiPV value 1')
       this.send('ucinewgame')
       this.send(`position fen ${fen}`)
       this.send(`go depth ${depth}`)
     })
+    return result
   }
 
-  // Deliberately does NOT require the engine to already be initialized (unlike
-  // evaluate()/startInfiniteAnalysis()) — init() is only called lazily below, right
-  // before the first position that actually needs a real Stockfish call. A re-analysis
-  // range that turns out to be fully covered by poseEvals never touches init() at
-  // all, avoiding real Worker/WASM startup cost for a run that ends up needing no
-  // engine work whatsoever.
+  //----------------------------------------------------------------------------------
+  //  analyzeGame — Deliberately does NOT require the engine to already be initialized (unlike
+  //  evaluate()/startInfiniteAnalysis()) — init() is only called lazily below, right
+  //  before the first position that actually needs a real Stockfish call. A re-analysis
+  //  range that turns out to be fully covered by poseEvals never touches init() at
+  //  all, avoiding real Worker/WASM startup cost for a run that ends up needing no
+  //  engine work whatsoever.
+  //
+  //  Params:
+  //    fens — every position's FEN (N+1 positions for N moves)
+  //    sans — the moves, in SAN
+  //    onProgress — progress callback (optional)
+  //    depth — the search depth (default STOCKFISH_DEFAULTS.depth)
+  //    poseEvals — cached position evaluations, used in place of an engine call where deep enough (optional)
+  //    onPlyEvaluated — called as each ply's evaluation becomes available (optional)
+  //    shouldStop — polled between positions; return true to stop early (optional)
+  //
+  //  Returns:
+  //    plyEvals — the evaluated plies
+  //    finalPosition — fen, cp and bestMove for the last position
+  //    stopped — true when the run was stopped early
+  //----------------------------------------------------------------------------------
   async analyzeGame(
     fens: string[],
     sans: string[],
@@ -377,22 +442,26 @@ export class StockfishEngine {
     const plyEvals: PlyEvaluation[] = []
     const analysisDepth = depth ?? STOCKFISH_DEFAULTS.depth
 
-    // Evaluate every position ONCE (N+1 positions for N moves) — this eliminates
-    // oscillation from evaluating the same position twice. Each ply's PlyEvaluation is
-    // built as soon as both its surrounding position evals are known (right after the
-    // "after" position finishes), not in a separate pass once every position is done —
-    // lets onPlyEvaluated fire live, ply by ply, instead of only once at the very end.
+    //
+    //  Evaluate every position ONCE (N+1 positions for N moves) — this eliminates
+    //  oscillation from evaluating the same position twice. Each ply's PlyEvaluation is
+    //  built as soon as both its surrounding position evals are known (right after the
+    //  "after" position finishes), not in a separate pass once every position is done —
+    //  lets onPlyEvaluated fire live, ply by ply, instead of only once at the very end.
+    //
     const mergedPlyPositionEvals: { cp: number; bestMove: string; pv: string; depth: number }[] = []
     let stopped = false
 
     for (let i = 0; i <= sans.length; i++) {
       onProgress?.({ current: i, total: sans.length, move: i > 0 ? sans[i - 1] : 'starting position' })
 
-      // tpose_positions_eval already stores cp from White's perspective (same convention
-      // upgradePositionEvaluation's every caller uses) — no perspective flip needed
-      // for a pose cache hit, unlike a fresh engine result below. No pv is cached (the
-      // table only stores a single best move, not a full line), so a cached position
-      // contributes no bestLineSans for its ply.
+      //
+      //  tpose_positions_eval already stores cp from White's perspective (same convention
+      //  upgradePositionEvaluation's every caller uses) — no perspective flip needed
+      //  for a pose cache hit, unlike a fresh engine result below. No pv is cached (the
+      //  table only stores a single best move, not a full line), so a cached position
+      //  contributes no bestLineSans for its ply.
+      //
       const poseEval = poseEvals?.[truncateFen(fens[i])]
       if (poseEval && poseEval.depth >= analysisDepth) {
         console.log(`[analyzeGame] position ${i}: POSE CACHE HIT (cached depth ${poseEval.depth} >= requested ${analysisDepth})`)
@@ -409,9 +478,11 @@ export class StockfishEngine {
         const stockResult = await this.evaluate(fens[i], analysisDepth)
         console.log(`[analyzeGame] position ${i}: evaluate() took ${(performance.now() - tEvalStart).toFixed(0)}ms`)
 
-        // Normalize to white's perspective
-        // Even positions (0, 2, 4...) = white to move → engine cp is from white's view
-        // Odd positions (1, 3, 5...) = black to move → negate to get white's view
+        //
+        //  Normalize to white's perspective
+        //  Even positions (0, 2, 4...) = white to move → engine cp is from white's view
+        //  Odd positions (1, 3, 5...) = black to move → negate to get white's view
+        //
         const isWhiteToMove = i % 2 === 0
         const cpWhitePerspective = isWhiteToMove ? stockResult.cp : -stockResult.cp
 
@@ -423,12 +494,14 @@ export class StockfishEngine {
         })
       }
 
-      // shouldStop() is checked here, right after this position's own evaluation
-      // resolves (which requestStop() interrupts early if a search was in flight) —
-      // whatever this position's result was is discarded (never built into a ply, never
-      // persisted) per the "not interested in the current ply" decision: only plies
-      // that had already fully completed and been reported via onPlyEvaluated before
-      // Stop was pressed are kept.
+      //
+      //  shouldStop() is checked here, right after this position's own evaluation
+      //  resolves (which requestStop() interrupts early if a search was in flight) —
+      //  whatever this position's result was is discarded (never built into a ply, never
+      //  persisted) per the "not interested in the current ply" decision: only plies
+      //  that had already fully completed and been reported via onPlyEvaluated before
+      //  Stop was pressed are kept.
+      //
       if (shouldStop?.()) { stopped = true; break }
 
       if (i === 0) continue
@@ -441,16 +514,22 @@ export class StockfishEngine {
       const cpBefore = mergedPlyPositionEvals[idx].cp  // eval before this move (white's perspective)
       const cpAfter = mergedPlyPositionEvals[i].cp     // eval after this move (white's perspective)
 
-      // cpChange from the mover's own perspective — positive = good for the mover,
-      // negative = bad for the mover (matches tgam_game_positions.gam_cp_change's convention)
+      //
+      //  cpChange from the mover's own perspective — positive = good for the mover,
+      //  negative = bad for the mover (matches tgam_game_positions.gam_cp_change's convention)
+      //
       const cpChange = isWhiteMove
         ? cpAfter - cpBefore
         : cpBefore - cpAfter
 
-      // cpLoss is just the "how bad was this move" magnitude — never negative
+      //
+      //  cpLoss is just the "how bad was this move" magnitude — never negative
+      //
       const cpLoss = Math.max(0, -cpChange)
 
-      // Best move from the position before (engine's recommendation)
+      //
+      //  Best move from the position before (engine's recommendation)
+      //
       const beforeEval = mergedPlyPositionEvals[idx]
       const bestMoveSan = beforeEval.bestMove
         ? uciToSan(fenBefore, beforeEval.bestMove)
@@ -473,21 +552,25 @@ export class StockfishEngine {
         cpLoss,
         cpChange,
         classification: classifyMove(cpLoss),
-        // The weaker of this ply's two constituent position depths — a cached hit can be
-        // deeper than the requested depth, but never treat a ply as deeper than its
-        // shallower side actually was
+        //
+        //  The weaker of this ply's two constituent position depths — a cached hit can be
+        //  deeper than the requested depth, but never treat a ply as deeper than its
+        //  shallower side actually was
+        //
         depth: Math.min(mergedPlyPositionEvals[idx].depth, mergedPlyPositionEvals[i].depth)
       }
       plyEvals.push(plyEval)
       onPlyEvaluated?.(plyEval, idx)
     }
 
-    // The true final position reached is always the last completed ply's own resulting
-    // position — for a full, uninterrupted run this is exactly fens[fens.length - 1]
-    // anyway (the last ply's "after" position is the range's own endpoint), and it's
-    // also correct when stopped early, since plyEvals then simply ends sooner. Falls
-    // back to the anchor position's own eval (always evaluated first, before any stop
-    // check) for the edge case of stopping before a single ply completed.
+    //
+    //  The true final position reached is always the last completed ply's own resulting
+    //  position — for a full, uninterrupted run this is exactly fens[fens.length - 1]
+    //  anyway (the last ply's "after" position is the range's own endpoint), and it's
+    //  also correct when stopped early, since plyEvals then simply ends sooner. Falls
+    //  back to the anchor position's own eval (always evaluated first, before any stop
+    //  check) for the edge case of stopping before a single ply completed.
+    //
     const finalPosition = plyEvals.length > 0
       ? { fen: plyEvals[plyEvals.length - 1].fen, cp: plyEvals[plyEvals.length - 1].cp, bestMove: plyEvals[plyEvals.length - 1].bestMove }
       : { fen: fens[0], cp: mergedPlyPositionEvals[0].cp, bestMove: mergedPlyPositionEvals[0].bestMove }
@@ -495,6 +578,9 @@ export class StockfishEngine {
     return { plyEvals, finalPosition, stopped }
   }
 
+  //----------------------------------------------------------------------------------
+  //  destroy — terminates the worker and resets the engine to uninitialized
+  //----------------------------------------------------------------------------------
   destroy(): void {
     this.worker?.terminate()
     this.worker = null

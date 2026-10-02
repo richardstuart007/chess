@@ -23,7 +23,7 @@ import { RESULT_MISMATCH_CP_THRESHOLD_Player } from '../constants'
 import type { PositionRow, EvaluationRow } from './chessdb_shared'
 import { objectiveGameResult } from '../objectiveGameResult'
 
-export interface MoveRow {
+export type MoveRow = {
   move_played:        string
   move_uci:           string | null
   mov_times:          number
@@ -138,14 +138,14 @@ export async function getMovePlayCounts_player(fens: string[], player: string): 
     caller: 'getMovePlayCounts_player',
     table: 'tpos_positions',
     query: `
-      SELECT p.pos_fen, gp.gam_move_played, COUNT(*)::int AS times
-      FROM tpos_positions p
-      JOIN tgam_game_positions gp ON gp.gam_pos_id = p.pos_id
-      JOIN tgd_gamesdecon d ON d.gd_gdid = gp.gam_gdid
-      WHERE p.pos_fen IN (${fenPlaceholders})
-        AND gp.gam_move_num > 0
-        AND d.gd_player = ${playerPlaceholder}
-      GROUP BY p.pos_fen, gp.gam_move_played
+      SELECT pos_fen, gam_move_played, COUNT(*)::int AS times
+      FROM tpos_positions
+      JOIN tgam_game_positions ON gam_pos_id = pos_id
+      JOIN tgd_gamesdecon ON gd_gdid = gam_gdid
+      WHERE pos_fen IN (${fenPlaceholders})
+        AND gam_move_num > 0
+        AND gd_player = ${playerPlaceholder}
+      GROUP BY pos_fen, gam_move_played
     `,
     params
   })
@@ -233,7 +233,7 @@ export async function getMoveSummaryForPosition_player(fen: string, player: stri
   return result.data as MoveRow[]
 }
 
-export interface PositionGameHit {
+export type PositionGameHit = {
   player:         string
   move_played:    string
   move_num:       number | null
@@ -366,7 +366,8 @@ export async function fetchGamesForPosition_player(
     })
     return []
   }
-  return result.data.map(mapPositionGameRow)
+  const games = result.data.map(mapPositionGameRow)
+  return games
 }
 
 //----------------------------------------------------------------------------------
@@ -446,9 +447,9 @@ export async function gamePositionExists_player(gdid: number, posId: number): Pr
 //  bad (see quality). The position detail page separately shows all moves
 //  regardless of habit status. Reads from thab_habits (built/refreshed by
 //  buildHabits() on the Pipeline page) rather than live-aggregating
-//  tgam_game_positions on every request — pos_fen/pos_color/pos_cp still come from
+//  tgam_game_positions on every request — pos_fen/pos_color/pose_cp_before still come from
 //  tpos_positions/tpose_positions_eval via join since those aren't player-specific
-//  and don't need duplicating into thab_habits. move_cp is the resulting
+//  and don't need duplicating into thab_habits. pose_cp_after is the resulting
 //  position's pose_cp (via hab_resulting_pos_id), not the hab_move_cp delta —
 //  that delta stays internal, driving the quality filter/sort only.
 //  opening_name/eco_code come straight from thab_habits' own
@@ -560,7 +561,7 @@ export async function getHabitsData_player(opts: {
   pos_id:       number
   pos_fen:      string
   pos_color:    string | null
-  pos_cp:       number | null
+  pose_cp_before: number | null
   player:       string
   move_san:     string
   move_uci:     string | null
@@ -568,7 +569,7 @@ export async function getHabitsData_player(opts: {
   move_times:   number
   move_wins:    number
   move_losses:  number
-  move_cp:      number | null
+  pose_cp_after: number | null
   opening_name: string | null
   eco_code:     string | null
   last_occurred: number | null
@@ -585,21 +586,21 @@ export async function getHabitsData_player(opts: {
     table: 'thab_habits',
     query: `
       SELECT
-        h.hab_pos_id                                     AS pos_id,
+        h.hab_pos_id,
         p.pos_fen,
         p.pos_color,
-        e.pose_cp                                         AS pos_cp,
-        h.hab_player                                      AS player,
-        h.hab_move_san                                    AS move_san,
-        h.hab_move_uci                                    AS move_uci,
-        h.hab_move_num                                    AS move_num,
-        h.hab_move_times                                  AS move_times,
-        h.hab_move_wins                                   AS move_wins,
-        h.hab_move_losses                                 AS move_losses,
-        e2.pose_cp                                         AS move_cp,
-        h.hab_opening_name                                AS opening_name,
-        h.hab_eco_code                                    AS eco_code,
-        h.hab_last_occurred                               AS last_occurred
+        e.pose_cp                                         AS pose_cp_before,
+        h.hab_player,
+        h.hab_move_san,
+        h.hab_move_uci,
+        h.hab_move_num,
+        h.hab_move_times,
+        h.hab_move_wins,
+        h.hab_move_losses,
+        e2.pose_cp                                         AS pose_cp_after,
+        h.hab_opening_name,
+        h.hab_eco_code,
+        h.hab_last_occurred
       FROM thab_habits h
       JOIN tpos_positions p ON p.pos_id = h.hab_pos_id
       LEFT JOIN tpose_positions_eval e  ON e.pose_pos_id  = h.hab_pos_id
@@ -627,23 +628,24 @@ export async function getHabitsData_player(opts: {
     })
     return []
   }
-  return queryResult.data.map((r: any) => ({
-    pos_id:       Number(r.pos_id),
+  const result = queryResult.data.map((r: any) => ({
+    pos_id:       Number(r.hab_pos_id),
     pos_fen:      r.pos_fen,
     pos_color:    r.pos_color,
-    pos_cp:       r.pos_cp  != null ? Number(r.pos_cp)  : null,
-    player:       r.player,
-    move_san:     r.move_san,
-    move_uci:     r.move_uci ?? null,
-    move_num:     r.move_num != null ? Number(r.move_num) : null,
-    move_times:   Number(r.move_times),
-    move_wins:    Number(r.move_wins),
-    move_losses:  Number(r.move_losses),
-    move_cp:      r.move_cp != null ? Number(r.move_cp) : null,
-    opening_name: r.opening_name ?? null,
-    eco_code:     r.eco_code ?? null,
-    last_occurred: r.last_occurred != null ? Number(r.last_occurred) : null
+    pose_cp_before: r.pose_cp_before != null ? Number(r.pose_cp_before) : null,
+    player:       r.hab_player,
+    move_san:     r.hab_move_san,
+    move_uci:     r.hab_move_uci ?? null,
+    move_num:     r.hab_move_num != null ? Number(r.hab_move_num) : null,
+    move_times:   Number(r.hab_move_times),
+    move_wins:    Number(r.hab_move_wins),
+    move_losses:  Number(r.hab_move_losses),
+    pose_cp_after: r.pose_cp_after != null ? Number(r.pose_cp_after) : null,
+    opening_name: r.hab_opening_name ?? null,
+    eco_code:     r.hab_eco_code ?? null,
+    last_occurred: r.hab_last_occurred != null ? Number(r.hab_last_occurred) : null
   }))
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -702,7 +704,8 @@ export async function getHabitsCount_player(opts: {
     })
     return 0
   }
-  return result.data.length > 0 ? Number(result.data[0].total) : 0
+  const total = result.data.length > 0 ? Number(result.data[0].total) : 0
+  return total
 }
 
 //----------------------------------------------------------------------------------

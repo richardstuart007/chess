@@ -55,7 +55,8 @@ export function popBackTarget(currentSearchParams: URLSearchParams, fallback: st
     else params.delete(key)
   }
   const newQs = params.toString()
-  return newQs ? `${path}?${newQs}` : path
+  const result = newQs ? `${path}?${newQs}` : path
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -67,7 +68,8 @@ export function popBackTarget(currentSearchParams: URLSearchParams, fallback: st
 function readStack(): string[] {
   try {
     const raw = sessionStorage.getItem(BACK_STACK_KEY)
-    return raw ? JSON.parse(raw) as string[] : []
+    const result = raw ? JSON.parse(raw) as string[] : []
+    return result
   } catch {
     return []
   }
@@ -83,6 +85,8 @@ function writeStack(stack: string[]): void {
   try {
     sessionStorage.setItem(BACK_STACK_KEY, JSON.stringify(stack))
   } catch {
-    // Non-critical — worst case, back navigation falls back to the caller's default
+    //
+    //  Non-critical — worst case, back navigation falls back to the caller's default
+    //
   }
 }

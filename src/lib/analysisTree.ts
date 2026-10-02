@@ -5,7 +5,7 @@ import { PlyEvaluation } from './stockfish'
 //  Types
 // --------------------------------------------------------------------------
 
-export interface MoveNode {
+export type MoveNode = {
   id: string
   san: string
   from: string
@@ -18,12 +18,12 @@ export interface MoveNode {
   isMainLine: boolean
 }
 
-export interface AnalysisTree {
+export type AnalysisTree = {
   root: MoveNode          // sentinel – fen = starting position, san = ''
   mainLine: MoveNode[]    // flat cache of main-line nodes
 }
 
-export interface MultiPvResult {
+export type MultiPvResult = {
   rank: number
   cp: number
   bestMoveUci: string
@@ -48,7 +48,9 @@ export function buildTree(
   fens: string[],
   plyEvals: PlyEvaluation[]
 ): AnalysisTree {
-  // Sentinel root (position before move 1)
+  //
+  //  Sentinel root (position before move 1)
+  //
   const root: MoveNode = {
     id: 'root',
     san: '',
@@ -111,7 +113,9 @@ export function addBranch(
   to: string,
   fen: string
 ): MoveNode {
-  // Check if this exact move already exists as a child
+  //
+  //  Check if this exact move already exists as a child
+  //
   const existing = parent.children.find(c => c.san === san)
   if (existing) return existing
 
@@ -152,10 +156,14 @@ export function addPvBranch(
     let firstNode: MoveNode | null = null
 
     for (const san of lineSans) {
-      // Try SAN first, fall back to searching legal moves
+      //
+      //  Try SAN first, fall back to searching legal moves
+      //
       let result = g.move(san)
       if (!result) {
-        // Try finding the move in legal moves (handles minor notation differences)
+        //
+        //  Try finding the move in legal moves (handles minor notation differences)
+        //
         const legalMoves = g.moves({ verbose: true })
         const match = legalMoves.find(m => m.san === san || m.lan === san)
         if (match) {
@@ -258,7 +266,8 @@ export function isOnMainLine(node: MoveNode | null): boolean {
 //    the node's index in tree.mainLine, or -1
 //----------------------------------------------------------------------------------
 export function getMainLineIndex(node: MoveNode, tree: AnalysisTree): number {
-  return tree.mainLine.indexOf(node)
+  const result = tree.mainLine.indexOf(node)
+  return result
 }
 
 //----------------------------------------------------------------------------------

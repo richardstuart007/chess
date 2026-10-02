@@ -20,7 +20,7 @@
 
 import MyBox from 'nextjs-shared/MyBox'
 
-interface PlayerProfileProps {
+type PlayerProfileProps = {
   player: string
   displayName?: string
   avatar?: string
@@ -39,10 +39,15 @@ export default function PlayerProfile({
   selected,
   onRatingClick
 }: PlayerProfileProps) {
+  const boxClass = `bg-blue-50 ${selected ? 'outline outline-2 outline-yellow-400' : ''}`
+  const cardClass = `flex items-start gap-4 rounded ${onClick ? 'cursor-pointer hover:bg-blue-50' : ''}`
+  const showRatings = !!ratings && Object.keys(ratings).length > 0
+  const ratingEntries = ratings ? Object.entries(ratings) : []
+  const ratingClass = `rounded bg-gray-100 px-2 py-0.5 text-xs ${onRatingClick ? 'cursor-pointer hover:bg-gray-200' : ''}`
   return (
-    <MyBox className={`bg-blue-50 ${selected ? 'outline outline-2 outline-yellow-400' : ''}`}>
+    <MyBox className={boxClass}>
       <div
-        className={`flex items-start gap-4 rounded ${onClick ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+        className={cardClass}
         onClick={onClick}
       >
         {avatar && (
@@ -58,17 +63,22 @@ export default function PlayerProfile({
           )}
           <p className='text-xs text-gray-500'>{player}</p>
 
-          {ratings && Object.keys(ratings).length > 0 && (
+          {showRatings && (
             <div className='mt-2 flex flex-wrap gap-2'>
-              {Object.entries(ratings).map(([control, rating]) => (
-                <span
-                  key={control}
-                  className={`rounded bg-gray-100 px-2 py-0.5 text-xs ${onRatingClick ? 'cursor-pointer hover:bg-gray-200' : ''}`}
-                  onClick={onRatingClick ? (e) => { e.stopPropagation(); onRatingClick(control) } : undefined}
-                >
-                  {control}: <span className='text-red-600 font-semibold'>{rating}</span>
-                </span>
-              ))}
+              {ratingEntries.map(([control, rating]) => {
+                const handleRatingClick = onRatingClick
+                  ? (e: React.MouseEvent) => { e.stopPropagation(); onRatingClick(control) }
+                  : undefined
+                return (
+                  <span
+                    key={control}
+                    className={ratingClass}
+                    onClick={handleRatingClick}
+                  >
+                    {control}: <span className='text-red-600 font-semibold'>{rating}</span>
+                  </span>
+                )
+              })}
             </div>
           )}
         </div>

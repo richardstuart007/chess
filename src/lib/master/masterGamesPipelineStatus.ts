@@ -7,6 +7,10 @@ import { write_logging } from 'nextjs-shared/write_logging'
 //  refreshMasterSyncStatus — step 1's own status (Sync Master Games, bundling
 //  download + deconstruct). Mirrors pipelineStatus.ts's refreshStep1: pending raw
 //  rows not yet deconstructed, and the total deconstructed count.
+//
+//  Returns:
+//    pending — raw rows not yet deconstructed
+//    allDecon — total deconstructed games
 //----------------------------------------------------------------------------------
 export async function refreshMasterSyncStatus(): Promise<{ pending: number; allDecon: number }> {
   const result = await table_query({
@@ -33,6 +37,10 @@ export async function refreshMasterSyncStatus(): Promise<{ pending: number; allD
 //  refreshMasterTreeStatus — step 2's own status (Build Master Position Tree).
 //  Mirrors pipelineStatus.ts's refreshStep3: how many tmgd_gamesdecon rows are
 //  already represented in tmgam_game_positions vs. still outstanding.
+//
+//  Returns:
+//    allProcessed — tmgd_gamesdecon rows already represented in tmgam_game_positions
+//    allRemaining — rows still outstanding
 //----------------------------------------------------------------------------------
 export async function refreshMasterTreeStatus(): Promise<{ allProcessed: number; allRemaining: number }> {
   const result = await table_query({
@@ -61,6 +69,10 @@ export async function refreshMasterTreeStatus(): Promise<{ allProcessed: number;
 //  refreshMasterTposStatus — step 3's own status (Sync Master Position Tree).
 //  Mirrors pipelineStatus.ts's refreshTposStatus: total tmpos_positions rows, and
 //  how many tmgam_game_positions rows still have no mgam_pos_id link.
+//
+//  Returns:
+//    positions — total tmpos_positions rows
+//    unresolved — tmgam_game_positions rows with no mgam_pos_id link yet
 //----------------------------------------------------------------------------------
 export async function refreshMasterTposStatus(): Promise<{ positions: number; unresolved: number }> {
   const result = await table_query({

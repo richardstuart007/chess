@@ -27,7 +27,7 @@ import MySelectMulti from 'nextjs-shared/MySelectMulti'
 import { MyInput } from 'nextjs-shared/MyInput'
 import { getMasterPlayers, getMasterSyncYearStatus } from '@/src/lib/actions/masterPlayers'
 
-interface MasterPlayerMultiSelectProps {
+type MasterPlayerMultiSelectProps = {
   selected: string[]
   onChange: (values: string[]) => void
   year: number

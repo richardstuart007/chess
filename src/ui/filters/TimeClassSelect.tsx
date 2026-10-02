@@ -15,7 +15,7 @@
 import FilterSelect from './FilterSelect'
 import { OPTIONS_TIME_CLASS, WIDTH_TIME_CLASS } from '@/src/lib/constants'
 
-interface TimeClassSelectProps {
+type TimeClassSelectProps = {
   value: string
   onChange: (value: string) => void
   label?: string

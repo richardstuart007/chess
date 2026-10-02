@@ -36,12 +36,12 @@ import { MIN_ANALYSIS_MOVE_Master, MAX_ANALYSIS_MOVE_Master, POSITION_INSERT_CHU
 import { truncateFen } from '../fen'
 import { chunkByGame } from '../chunkByGame'
 
-interface MasterGameRecord {
+type MasterGameRecord = {
   mgdid: number
   pgn:   string
 }
 
-interface MasterPositionRecord {
+type MasterPositionRecord = {
   mgdid:        number
   posFen:       string
   movePlayed:   string
@@ -75,8 +75,8 @@ export async function buildPositionTree_Master(opts: {
     caller: 'buildPositionTree_fetch',
     query: `
       SELECT
-        d.mgd_mgdid AS mgdid,
-        d.mgd_pgn AS pgn
+        d.mgd_mgdid,
+        d.mgd_pgn
       FROM tmgd_gamesdecon d
       WHERE NOT EXISTS (
         SELECT 1 FROM tmgam_game_positions WHERE mgam_mgdid = d.mgd_mgdid
@@ -101,8 +101,8 @@ export async function buildPositionTree_Master(opts: {
   }
 
   const games: MasterGameRecord[] = gamesRes.data.map((r: any) => ({
-    mgdid: Number(r.mgdid),
-    pgn:   r.pgn ?? ''
+    mgdid: Number(r.mgd_mgdid),
+    pgn:   r.mgd_pgn ?? ''
   }))
 
   await logStart('buildPositionTree_Master', caller, `building master position tree, ${games.length} games fetched`, level)
@@ -233,7 +233,9 @@ function getPositionsFromGame_Master(
     }
   }
 
-  // Sentinel: game too short — marks it as processed so the NOT EXISTS skip fires
+  //
+  //  Sentinel: game too short — marks it as processed so the NOT EXISTS skip fires
+  //
   if (records.length === 0) {
     records.push({
       mgdid:        game.mgdid,
@@ -322,11 +324,11 @@ export async function syncTposFromTgam_Master(level: number = 1, forceNewRun?: b
     caller: 'syncTposFromTgam_ensure',
     query: `
       INSERT INTO tmpos_positions (mpos_fen, mpos_color, mpos_reached)
-      SELECT DISTINCT fen, split_part(fen, ' ', 2), 0 FROM (
-        SELECT mgam_pos_fen AS fen FROM tmgam_game_positions
+      SELECT DISTINCT mpos_fen, split_part(mpos_fen, ' ', 2), 0 FROM (
+        SELECT mgam_pos_fen AS mpos_fen FROM tmgam_game_positions
         WHERE mgam_pos_id IS NULL AND mgam_pos_fen IS NOT NULL AND mgam_pos_fen <> '__too_short__'
         UNION
-        SELECT mgam_resulting_fen AS fen FROM tmgam_game_positions
+        SELECT mgam_resulting_fen AS mpos_fen FROM tmgam_game_positions
         WHERE mgam_resulting_pos_id IS NULL AND mgam_resulting_fen IS NOT NULL
       ) t
       ON CONFLICT (mpos_fen) DO NOTHING
@@ -341,11 +343,11 @@ export async function syncTposFromTgam_Master(level: number = 1, forceNewRun?: b
   const beforeRes = await table_query({
     caller: 'syncTposFromTgam_backfillBefore',
     query: `
-      UPDATE tmgam_game_positions g
-      SET mgam_pos_id = p.mpos_id
-      FROM tmpos_positions p
-      WHERE g.mgam_pos_id IS NULL AND g.mgam_pos_fen = p.mpos_fen
-      RETURNING p.mpos_id
+      UPDATE tmgam_game_positions
+      SET mgam_pos_id = mpos_id
+      FROM tmpos_positions
+      WHERE mgam_pos_id IS NULL AND mgam_pos_fen = mpos_fen
+      RETURNING mpos_id
     `,
     params: [],
     table: 'tmgam_game_positions',
@@ -356,11 +358,11 @@ export async function syncTposFromTgam_Master(level: number = 1, forceNewRun?: b
   const resultingRes = await table_query({
     caller: 'syncTposFromTgam_backfillResulting',
     query: `
-      UPDATE tmgam_game_positions g
-      SET mgam_resulting_pos_id = p.mpos_id
-      FROM tmpos_positions p
-      WHERE g.mgam_resulting_pos_id IS NULL AND g.mgam_resulting_fen = p.mpos_fen
-      RETURNING p.mpos_id
+      UPDATE tmgam_game_positions
+      SET mgam_resulting_pos_id = mpos_id
+      FROM tmpos_positions
+      WHERE mgam_resulting_pos_id IS NULL AND mgam_resulting_fen = mpos_fen
+      RETURNING mpos_id
     `,
     params: [],
     table: 'tmgam_game_positions',

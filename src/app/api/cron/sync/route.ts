@@ -15,13 +15,15 @@ export async function GET(request: NextRequest) {
   if (secret) {
     const auth = request.headers.get('authorization')
     if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return response
     }
   }
 
   try {
     const result = await runGameSync()
-    return NextResponse.json(result)
+    const response = NextResponse.json(result)
+    return response
   } catch (err) {
     console.error('Cron sync error:', err)
     await write_logging({
@@ -30,6 +32,7 @@ export async function GET(request: NextRequest) {
       lg_msg: 'Cron sync error: ' + (err as Error).message,
       lg_severity: 'E'
     })
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    const response = NextResponse.json({ error: String(err) }, { status: 500 })
+    return response
   }
 }

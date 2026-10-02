@@ -14,7 +14,7 @@
 import FilterSelect from './FilterSelect'
 import { OPTIONS_RESULT, WIDTH_RESULT } from '@/src/lib/constants'
 
-interface ResultSelectProps {
+type ResultSelectProps = {
   value: string
   onChange: (value: string) => void
   label?: string

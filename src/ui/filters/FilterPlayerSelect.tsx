@@ -23,7 +23,7 @@ import { WIDTH_PLAYER, GLOBAL_FILTER_BORDER_CLASS } from '@/src/lib/constants'
 
 const ALL = ''
 
-interface FilterPlayerSelectProps {
+type FilterPlayerSelectProps = {
   players: { player: string; display_name: string | null }[]
   label?: string
   width?: string
@@ -34,10 +34,12 @@ export default function FilterPlayerSelect({ players, label = 'Player', width = 
 
   if (players.length <= 1) return null
 
+  const playerOptions = [{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.player, label: p.player }))]
+
   return (
     <FilterSelect
       label={label}
-      options={[{ value: ALL, label: 'All' }, ...players.map(p => ({ value: p.player, label: p.player }))]}
+      options={playerOptions}
       value={value}
       onChange={setValue}
       width={width}

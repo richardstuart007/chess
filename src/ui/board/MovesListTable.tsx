@@ -32,7 +32,7 @@ export type MovesListRow = {
   eval:  number | null
 }
 
-interface MovesListTableProps {
+type MovesListTableProps = {
   rows: MovesListRow[]
   selectedMove?: string | null
   onSelectMove?: (key: string | null) => void
@@ -55,19 +55,27 @@ export default function MovesListTable({ rows, selectedMove, onSelectMove }: Mov
         <tbody className='divide-y divide-gray-100'>
           {rows.map(r => {
             const isSelected = selectedMove === r.key
+            const rowClass = onSelectMove ? `cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}` : ''
+            const handleRowClick = onSelectMove ? () => onSelectMove(isSelected ? null : r.key) : undefined
+            const timesLabel = r.times.toLocaleString()
+            const whitePct = pct(r.white, r.times)
+            const drawsPct = pct(r.draws, r.times)
+            const blackPct = pct(r.black, r.times)
+            const evalClass = `py-1 text-right tabular-nums font-mono ${r.eval != null && r.eval < 0 ? 'text-red-600' : 'text-green-700'}`
+            const evalLabel = r.eval != null ? formatCp(r.eval) : '—'
             return (
               <tr
                 key={r.key}
-                className={onSelectMove ? `cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}` : ''}
-                onClick={onSelectMove ? () => onSelectMove(isSelected ? null : r.key) : undefined}
+                className={rowClass}
+                onClick={handleRowClick}
               >
                 <td className='py-1 pr-2 font-mono font-medium'>{r.move}</td>
-                <td className='py-1 pr-2 text-right tabular-nums'>{r.times.toLocaleString()}</td>
-                <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{pct(r.white, r.times)}%</td>
-                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>{pct(r.draws, r.times)}%</td>
-                <td className='py-1 pr-2 text-right tabular-nums text-red-600'>{pct(r.black, r.times)}%</td>
-                <td className={`py-1 text-right tabular-nums font-mono ${r.eval != null && r.eval < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                  {r.eval != null ? formatCp(r.eval) : '—'}
+                <td className='py-1 pr-2 text-right tabular-nums'>{timesLabel}</td>
+                <td className='py-1 pr-2 text-right tabular-nums text-green-700'>{whitePct}%</td>
+                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>{drawsPct}%</td>
+                <td className='py-1 pr-2 text-right tabular-nums text-red-600'>{blackPct}%</td>
+                <td className={evalClass}>
+                  {evalLabel}
                 </td>
               </tr>
             )
@@ -89,5 +97,6 @@ export default function MovesListTable({ rows, selectedMove, onSelectMove }: Mov
 //    count as a whole-number percentage of total
 //----------------------------------------------------------------------------------
 function pct(count: number, total: number): number {
-  return total > 0 ? Math.round((count / total) * 100) : 0
+  const result = total > 0 ? Math.round((count / total) * 100) : 0
+  return result
 }

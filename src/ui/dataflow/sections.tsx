@@ -21,7 +21,7 @@ function Code({ children }: { children: ReactNode }) {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TplPlayersSection
+//  TplPlayersSection — the Dataflow page's documentation section for "tpl_players"
 //----------------------------------------------------------------------------------------------
 function TplPlayersSection() {
   return (
@@ -95,7 +95,7 @@ function TplPlayersSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  ChessComApiSection
+//  ChessComApiSection — the Dataflow page's documentation section for "chess.com API"
 //----------------------------------------------------------------------------------------------
 function ChessComApiSection() {
   return (
@@ -146,7 +146,7 @@ function ChessComApiSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TgrGamesrawSection
+//  TgrGamesrawSection — the Dataflow page's documentation section for "wk_gr_gamesraw"
 //----------------------------------------------------------------------------------------------
 function TgrGamesrawSection() {
   return (
@@ -207,7 +207,7 @@ function TgrGamesrawSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TgdGamesdeconSection
+//  TgdGamesdeconSection — the Dataflow page's documentation section for "tgd_gamesdecon"
 //----------------------------------------------------------------------------------------------
 function TgdGamesdeconSection() {
   return (
@@ -230,8 +230,9 @@ function TgdGamesdeconSection() {
       </p>
       <h5 className={H5}>Details</h5>
       <ol className={OL}>
-        <li>Select - rows not yet in <Code>tgd_gamesdecon</Code> (matched on <Code>gd_chesscom_uuid</Code> + <Code>gd_player</Code>)</li>
+        <li>Select - rows not yet in <Code>tgd_gamesdecon</Code> (matched on <Code>gd_chesscom_uuid</Code> alone - unique across all players)</li>
         <li>Skip - no <Code>pgn</Code> field, or 6 or fewer half-moves (can never reach <Code>MIN_ANALYSIS_MOVE_Player</Code>)</li>
+        <li>Check - <Code>gd_chesscom_uuid</Code> looked up again, uncached, immediately before each game is written; a game already there is skipped</li>
         <li>Parse + insert - PGN headers, opening, termination, per-player color/result/opponent</li>
       </ol>
 
@@ -282,7 +283,7 @@ function TgdGamesdeconSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TgamGamePositionsSection
+//  TgamGamePositionsSection — the Dataflow page's documentation section for "tgam_game_positions"
 //----------------------------------------------------------------------------------------------
 function TgamGamePositionsSection() {
   return (
@@ -407,7 +408,7 @@ function TgamGamePositionsSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  TposPositionsSection
+//  TposPositionsSection — the Dataflow page's documentation section for "tpos_positions"
 //----------------------------------------------------------------------------------------------
 function TposPositionsSection() {
   return (
@@ -491,7 +492,7 @@ function TposPositionsSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  PurgeSection
+//  PurgeSection — the Dataflow page's documentation section for "Purge"
 //----------------------------------------------------------------------------------------------
 function PurgeSection() {
   return (
@@ -589,7 +590,7 @@ function PurgeSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  PoseEvaluationsSection
+//  PoseEvaluationsSection — the Dataflow page's documentation section for "tpose_positions_eval"
 //----------------------------------------------------------------------------------------------
 function PoseEvaluationsSection() {
   return (
@@ -664,7 +665,7 @@ function PoseEvaluationsSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  BulkUpdateCpLossSection
+//  BulkUpdateCpLossSection — the Dataflow page's documentation section for "bulkUpdateCpLoss"
 //----------------------------------------------------------------------------------------------
 function BulkUpdateCpLossSection() {
   return (
@@ -713,7 +714,7 @@ function BulkUpdateCpLossSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  ThabHabitsSection
+//  ThabHabitsSection — the Dataflow page's documentation section for "thab_habits"
 //----------------------------------------------------------------------------------------------
 function ThabHabitsSection() {
   return (
@@ -805,7 +806,7 @@ function ThabHabitsSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  EvaluateGameEndingsSection
+//  EvaluateGameEndingsSection — the Dataflow page's documentation section for "Evaluate Game Endings"
 //----------------------------------------------------------------------------------------------
 function EvaluateGameEndingsSection() {
   return (
@@ -886,7 +887,7 @@ function EvaluateGameEndingsSection() {
 }
 
 //----------------------------------------------------------------------------------------------
-//  DeepenPopularPositionsSection
+//  DeepenPopularPositionsSection — the Dataflow page's documentation section for "Deepen Popular Positions"
 //----------------------------------------------------------------------------------------------
 function DeepenPopularPositionsSection() {
   return (

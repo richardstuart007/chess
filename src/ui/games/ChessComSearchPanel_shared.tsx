@@ -82,9 +82,11 @@ export default function ChessComSearchPanel_shared() {
   //
   const [lastSearchUrl, setLastSearchUrl] = useState<string | null>(null)
 
-  // Chess.com Games search filters — param names match chess.com's own search URL. p1/p2 are
-  // "First Last" names (not chess.com handles) — that's what chess.com's own search endpoint
-  // takes, hence MasterPlayerSelect's valueField='name' below.
+  //
+  //  Chess.com Games search filters — param names match chess.com's own search URL. p1/p2 are
+  //  "First Last" names (not chess.com handles) — that's what chess.com's own search endpoint
+  //  takes, hence MasterPlayerSelect's valueField='name' below.
+  //
   const [p1, setP1] = useState('')
   const [p2, setP2] = useState('')
   const [mr, setMr] = useState<number | ''>('')
@@ -141,15 +143,21 @@ export default function ChessComSearchPanel_shared() {
     return () => { cancelled = true }
   }, [activeFilters, currentPage])
 
-  // -----------------------------------------------------------------------
-  // Commit the current filter inputs and trigger the first page's fetch (via the effect above).
-  // -----------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
+  //  searchChessCom — Commit the current filter inputs and trigger the first page's fetch (via the effect above).
+  //----------------------------------------------------------------------------------------------
   function searchChessCom() {
     const filters: ChessComSearchFilters = { p1, p2, mr, year, lsty, sort }
     setTotalPages(1)
     setCurrentPage(1)
     setActiveFilters(filters)
   }
+
+  const searchLabel = chesscomLoading ? 'Searching…' : 'Search chess.com'
+  const chesscomGameRows = chesscomGames ?? []
+  const showNoChesscomGames = !!chesscomGames && chesscomGames.length === 0
+  const showChesscomGames = !!chesscomGames && chesscomGames.length > 0
+  const showPagination = !!activeFilters && totalPages > 1
 
   return (
     <MyBox title='Chess.com Games'>
@@ -159,7 +167,7 @@ export default function ChessComSearchPanel_shared() {
           disabled={chesscomLoading}
           overrideClass='w-full bg-green-600 hover:bg-green-700'
         >
-          {chesscomLoading ? 'Searching…' : 'Search chess.com'}
+          {searchLabel}
         </MyButton>
         <div className='flex flex-wrap items-center gap-3'>
           <div className='flex items-center gap-2'>
@@ -217,34 +225,39 @@ export default function ChessComSearchPanel_shared() {
         {lastSearchUrl && (
           <p className='text-xxs text-gray-400 break-all'>Last search: {lastSearchUrl}</p>
         )}
-        {chesscomGames && (
-          chesscomGames.length === 0 ? (
-            <p className='text-xs text-gray-400'>No games found on chess.com for this search.</p>
-          ) : (
-            <div className='overflow-x-auto'>
-              <table className='w-full text-xs'>
-                <thead>
-                  <tr className='text-left text-gray-500 border-b border-gray-200'>
-                    <th className='py-1 pr-2'>White</th>
-                    <th className='py-1 pr-2'>Black</th>
-                    <th className='py-1 pr-2 text-center'>Result</th>
-                    <th className='py-1 pr-2 text-right'>Moves</th>
-                    <th className='py-1 pr-2 text-right'>Year</th>
-                    <th className='py-1 text-right'>Game</th>
-                  </tr>
-                </thead>
-                <tbody className='divide-y divide-gray-100'>
-                  {chesscomGames.map(g => (
+        {showNoChesscomGames && (
+          <p className='text-xs text-gray-400'>No games found on chess.com for this search.</p>
+        )}
+        {showChesscomGames && (
+          <div className='overflow-x-auto'>
+            <table className='w-full text-xs'>
+              <thead>
+                <tr className='text-left text-gray-500 border-b border-gray-200'>
+                  <th className='py-1 pr-2'>White</th>
+                  <th className='py-1 pr-2'>Black</th>
+                  <th className='py-1 pr-2 text-center'>Result</th>
+                  <th className='py-1 pr-2 text-right'>Moves</th>
+                  <th className='py-1 pr-2 text-right'>Year</th>
+                  <th className='py-1 text-right'>Game</th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-gray-100'>
+                {chesscomGameRows.map(g => {
+                  const showWhiteRating = g.whiteRating != null
+                  const showBlackRating = g.blackRating != null
+                  const movesLabel = g.moves ?? '—'
+                  const yearLabel = g.year ?? '—'
+                  return (
                     <tr key={g.gameId}>
                       <td className='py-1 pr-2'>
-                        {g.whiteUsername} {g.whiteRating != null && <span className='text-gray-400'>({g.whiteRating})</span>}
+                        {g.whiteUsername} {showWhiteRating && <span className='text-gray-400'>({g.whiteRating})</span>}
                       </td>
                       <td className='py-1 pr-2'>
-                        {g.blackUsername} {g.blackRating != null && <span className='text-gray-400'>({g.blackRating})</span>}
+                        {g.blackUsername} {showBlackRating && <span className='text-gray-400'>({g.blackRating})</span>}
                       </td>
                       <td className='py-1 pr-2 text-center'>{g.result}</td>
-                      <td className='py-1 pr-2 text-right tabular-nums'>{g.moves ?? '—'}</td>
-                      <td className='py-1 pr-2 text-right tabular-nums'>{g.year ?? '—'}</td>
+                      <td className='py-1 pr-2 text-right tabular-nums'>{movesLabel}</td>
+                      <td className='py-1 pr-2 text-right tabular-nums'>{yearLabel}</td>
                       <td className='py-1 text-right'>
                         <a
                           href={g.viewUrl}
@@ -256,13 +269,13 @@ export default function ChessComSearchPanel_shared() {
                         </a>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-        {activeFilters && totalPages > 1 && (
+        {showPagination && (
           <div className='flex justify-center'>
             <MyPagination
               totalPages={totalPages}
@@ -285,7 +298,8 @@ export default function ChessComSearchPanel_shared() {
 function readChesscomCache(): ChesscomCache | null {
   try {
     const raw = sessionStorage.getItem(CHESSCOM_CACHE_STORAGE_KEY)
-    return raw ? JSON.parse(raw) as ChesscomCache : null
+    const result = raw ? JSON.parse(raw) as ChesscomCache : null
+    return result
   } catch {
     return null
   }

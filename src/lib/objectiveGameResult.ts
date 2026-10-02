@@ -20,5 +20,6 @@ export function objectiveGameResult(color: string, result: string): '1-0' | '0-1
   if (result === 'draw') return '½-½'
   const won = result === 'win'
   const whiteWon = (color === 'white' && won) || (color === 'black' && !won)
-  return whiteWon ? '1-0' : '0-1'
+  const objectiveResult = whiteWon ? '1-0' : '0-1'
+  return objectiveResult
 }

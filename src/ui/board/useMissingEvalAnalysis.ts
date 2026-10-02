@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from 'react'
 import { StockfishEngine, STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 import { getCachedEval, setCachedEval } from '@/src/lib/analysis/evalSessionCache'
 
-export interface MissingEvalRow {
+export type MissingEvalRow = {
   key: string
   fen: string
 }

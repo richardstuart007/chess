@@ -16,7 +16,7 @@
 import FilterSelect from './FilterSelect'
 import { OPTIONS_COLOR, WIDTH_COLOR } from '@/src/lib/constants'
 
-interface ColorSelectProps {
+type ColorSelectProps = {
   value: string
   onChange: (value: string) => void
   label?: string

@@ -23,14 +23,14 @@ import { write_logging } from 'nextjs-shared/write_logging'
 import { truncateFen }  from '../fen'
 import { MIN_ANALYSIS_MOVE_Player } from '../constants'
 
-export interface PositionRow {
+export type PositionRow = {
   pos_id: number
   pos_fen: string
   pos_reached: number
   pos_color: string | null
 }
 
-export interface EvaluationRow {
+export type EvaluationRow = {
   pose_pos_id: number
   pose_cp: number | null
   pose_best_move: string | null
@@ -43,6 +43,9 @@ export interface EvaluationRow {
 
 //----------------------------------------------------------------------------------
 //  getPositionCount_shared — total number of positions
+//
+//  Returns:
+//    the total number of positions
 //----------------------------------------------------------------------------------
 export async function getPositionCount_shared(): Promise<number> {
   const result = await table_count({ table: 'tpos_positions', caller: 'getPositionCount_shared' })
@@ -252,11 +255,13 @@ export async function upgradePositionEvaluation_shared(data: {
   // header above for the hard constraint on when this may be passed.
   gameContext?: { gdid: number; ply: number; san: string }
 }): Promise<boolean> {
-  // tpose_positions_eval deliberately never caches opening theory (moves 1..MIN_ANALYSIS_MOVE_Player-1) —
-  // checked here, centrally, so every caller gets this exclusion automatically rather than
-  // each write-back site needing to remember it. The FEN's own fullmove-counter field (6th
-  // token) is used directly, same "derive from the FEN itself" pattern as pos_color/pos_move_num
-  // in getOrCreatePosition.
+  //
+  //  tpose_positions_eval deliberately never caches opening theory (moves 1..MIN_ANALYSIS_MOVE_Player-1) —
+  //  checked here, centrally, so every caller gets this exclusion automatically rather than
+  //  each write-back site needing to remember it. The FEN's own fullmove-counter field (6th
+  //  token) is used directly, same "derive from the FEN itself" pattern as pos_color/pos_move_num
+  //  in getOrCreatePosition.
+  //
   const moveNum = parseInt(data.fen.split(' ')[5] ?? '', 10)
   if (Number.isFinite(moveNum) && moveNum < MIN_ANALYSIS_MOVE_Player) return false
 
@@ -400,13 +405,15 @@ export async function getPositionEvaluationsBulk_shared(fens: string[]): Promise
     caller: 'getPositionEvaluationsBulk_shared',
     table: 'tpose_positions_eval',
     query: `
-      SELECT p.pos_fen, e.pose_cp, e.pose_best_move, e.pose_depth
-      FROM tpos_positions p
-      JOIN tpose_positions_eval e ON e.pose_pos_id = p.pos_id
-      WHERE p.pos_fen = ANY($1) AND e.pose_cp IS NOT NULL AND e.pose_depth IS NOT NULL
+      SELECT pos_fen, pose_cp, pose_best_move, pose_depth
+      FROM tpos_positions
+      JOIN tpose_positions_eval ON pose_pos_id = pos_id
+      WHERE pos_fen = ANY($1) AND pose_cp IS NOT NULL AND pose_depth IS NOT NULL
     `,
-    // table_query's params type doesn't declare array elements (needed for = ANY($1)),
-    // even though the underlying driver handles them fine — narrow cast, not a real risk
+    //
+    //  table_query's params type doesn't declare array elements (needed for = ANY($1)),
+    //  even though the underlying driver handles them fine — narrow cast, not a real risk
+    //
     params: [truncated] as unknown as string[]
   })
   if (!queryResult.ok) {

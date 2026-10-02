@@ -10,6 +10,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { buildPositionTree_Player } from '@/src/lib/analysis/buildPositionTree_Player'
 import { POSITION_TREE_LIMIT_Player } from '@/src/lib/constants'
 
@@ -22,9 +23,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await buildPositionTree_Player({ limit, player, skipSync, forceNewRun })
-    return NextResponse.json({ ok: true, ...result })
+    const response = NextResponse.json({ ok: true, ...result })
+    return response
   } catch (err: any) {
     console.error('build-tree route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/analysis/build-tree',
+      lg_caller: 'api/analysis/build-tree',
+      lg_msg: 'build-tree route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

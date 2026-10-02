@@ -9,6 +9,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { downloadFideZip } from '@/src/lib/fide/fideStaging'
 
 export async function GET(req: NextRequest) {
@@ -18,9 +19,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await downloadFideZip(level, forceNewRun)
-    return NextResponse.json({ ok: true, ...result })
+    const response = NextResponse.json({ ok: true, ...result })
+    return response
   } catch (err: any) {
     console.error('download-zip route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/fide/download-zip',
+      lg_caller: 'api/fide/download-zip',
+      lg_msg: 'download-zip route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

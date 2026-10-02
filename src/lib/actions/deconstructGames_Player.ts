@@ -11,8 +11,20 @@
 //
 //    Returns:
 //      processed — games successfully deconstructed
-//      skipped   — games skipped (no PGN, or too short to be trackable)
+//      skipped   — games skipped (no PGN, too short to be trackable, or gd_chesscom_uuid already
+//                  in tgd_gamesdecon)
 //      errors    — games that failed to deconstruct
+//
+//  2) NOTES
+//    gd_chesscom_uuid is the game's unique key across all players — gd_player is not part of
+//    it. Each game's uuid is looked up in tgd_gamesdecon, uncached, immediately before the game
+//    is deconstructed; a game already there is counted as skipped, and a failed lookup is
+//    counted as an error and the game is not written.
+//
+//  3) CHANGE HISTORY
+//    2026-10-02 — the batch read now bypasses the cache and matches on gd_chesscom_uuid alone
+//                 (was uuid + player, cached); added the per-game uuid lookup before each
+//                 write — a cached batch read had re-inserted 206 games on a repeated sync
 //==================================================================================================
 
 import { table_fetch } from 'nextjs-shared/table_fetch'
@@ -47,11 +59,12 @@ export async function deconstructGames_Player(
   const inPlaceholders = timeClasses.map((_, i) => `$${i + 2}`).join(', ')
   const rawGamesResult = await table_query({
     caller: 'deconstructGames_Player',
-    query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player) ORDER BY r.gr_end_time DESC ${limitClause}`,
+    query: `SELECT r.* FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid) ORDER BY r.gr_end_time DESC ${limitClause}`,
     params: [player, ...timeClasses],
     table: RAW_TABLE,
     level: 2,
-    severity: 'I'
+    severity: 'I',
+    skipCache: true
   })
   if (!rawGamesResult.ok) {
     write_logging({
@@ -75,6 +88,33 @@ export async function deconstructGames_Player(
 
       const deconstructable = await isDeconstructable_Player(rawData)
       if (!deconstructable) {
+        skipped++
+        continue
+      }
+
+      //
+      //  gd_chesscom_uuid is unique across all players — look it up, uncached, immediately
+      //  before deconstructing, so a game already in tgd_gamesdecon is never written twice
+      //
+      const existing = await table_fetch({
+        caller: 'deconstructGames_Player',
+        table: DECON_TABLE,
+        columns: ['gd_gdid'],
+        whereColumnValuePairs: [{ column: 'gd_chesscom_uuid', value: row.gr_chesscom_uuid }],
+        limit: 1,
+        skipCache: true
+      })
+      if (!existing.ok) {
+        await write_logging({
+          lg_functionname: 'deconstructGames_Player',
+          lg_caller: 'gameSyncPipeline',
+          lg_msg: `Game ${row.gr_chesscom_uuid} not deconstructed, uuid lookup failed: ` + existing.error,
+          lg_severity: 'E'
+        })
+        errors++
+        continue
+      }
+      if (existing.data.length > 0) {
         skipped++
         continue
       }
@@ -202,7 +242,9 @@ export async function upsertEcoReference(ecoCode: string, openingName: string): 
         skipCache: true
       })
     } catch {
-      // Ignore duplicate key errors (race condition)
+      //
+      //  Ignore duplicate key errors (race condition)
+      //
     }
   }
 }
@@ -225,8 +267,9 @@ export async function getUndeconstructedCount(
   const result = await table_query({
     caller: 'getUndeconstructedCount',
     table: RAW_TABLE,
-    query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player)`,
-    params: [player.toLowerCase(), ...timeClasses]
+    query: `SELECT COUNT(*) FROM ${RAW_TABLE} r WHERE r.gr_player = $1 AND r.gr_time_class IN (${inPlaceholders}) AND NOT EXISTS (SELECT 1 FROM ${DECON_TABLE} d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid)`,
+    params: [player.toLowerCase(), ...timeClasses],
+    skipCache: true
   })
   if (!result.ok) {
     write_logging({
@@ -237,7 +280,8 @@ export async function getUndeconstructedCount(
     })
     return 0
   }
-  return Number(result.data[0].count)
+  const count = Number(result.data[0].count)
+  return count
 }
 
 //----------------------------------------------------------------------------------

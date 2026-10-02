@@ -12,7 +12,8 @@ import { Chess } from 'chess.js'
 //    the first four FEN fields
 //----------------------------------------------------------------------------------
 export function truncateFen(fen: string): string {
-  return fen.split(' ').slice(0, 4).join(' ')
+  const result = fen.split(' ').slice(0, 4).join(' ')
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -49,7 +50,8 @@ export function applyUciMove(fen: string, uci: string): string | null {
     const to = uci.slice(2, 4)
     const promotion = uci.slice(4) || undefined
     const move = g.move({ from, to, promotion })
-    return move ? g.fen() : null
+    const result = move ? g.fen() : null
+    return result
   } catch {
     return null
   }

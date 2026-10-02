@@ -40,7 +40,7 @@ import { logStart, logEnd } from '../logStep'
 import { logPipelineStep } from '../actions/pipelineLog'
 import { MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player, HABITS_MOVE_CP_CLAMP_Player, POSITION_INSERT_CHUNK_SIZE_Player, PIPELINE_TYPE_GAMES } from '../constants'
 
-interface HabitAggregate {
+type HabitAggregate = {
   player:           string
   posId:            number
   moveSan:          string
@@ -93,6 +93,9 @@ export async function buildHabits(level: number = 1, forceNewRun?: boolean): Pro
 //  above already guarantees every counted row really is the player's own move (unlike
 //  chessdb_player.ts's equivalent, which lacked that check), so move_wins/move_losses stay
 //  a personal, meaningful win/loss here and are NOT converted to White/Draw/Black.
+//
+//  Returns:
+//    the aggregated habit rows (HabitAggregate[])
 //----------------------------------------------------------------------------------
 async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
   const params: number[] = [MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player]
@@ -149,7 +152,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
     return []
   }
 
-  return selectRes.data.map((r: any) => ({
+  const result = selectRes.data.map((r: any) => ({
     player:         r.player,
     posId:          Number(r.pos_id),
     moveSan:        r.move_san,
@@ -164,6 +167,7 @@ async function fetchHabitAggregates(): Promise<HabitAggregate[]> {
     ecoCode:        r.eco_code ?? null,
     lastOccurred:   r.last_occurred != null ? Number(r.last_occurred) : null
   }))
+  return result
 }
 
 //----------------------------------------------------------------------------------

@@ -6,6 +6,9 @@ import { write_logging } from 'nextjs-shared/write_logging'
 //----------------------------------------------------------------------------------
 //  refreshFideZipStatus — size of the zip currently staged in wk_fzp_fide_zip (stage
 //  1's own output), for its status row on /owner/pipelinemasters.
+//
+//  Returns:
+//    bytes — size in bytes of the zip currently staged
 //----------------------------------------------------------------------------------
 export async function refreshFideZipStatus(): Promise<{ bytes: number }> {
   const result = await table_query({
@@ -27,6 +30,10 @@ export async function refreshFideZipStatus(): Promise<{ bytes: number }> {
 //----------------------------------------------------------------------------------
 //  refreshFideXmlStatus — chunk count / total characters currently staged in
 //  wk_fxm_fide_xml (stage 2's own output).
+//
+//  Returns:
+//    chunks — number of chunks currently staged
+//    chars — total characters across those chunks
 //----------------------------------------------------------------------------------
 export async function refreshFideXmlStatus(): Promise<{ chunks: number; chars: number }> {
   const result = await table_query({
@@ -49,6 +56,9 @@ export async function refreshFideXmlStatus(): Promise<{ chunks: number; chars: n
 //----------------------------------------------------------------------------------
 //  refreshFideParsedStatus — row count currently staged in tfpl_fide_players (stage
 //  3's own output — the full unfiltered FIDE snapshot).
+//
+//  Returns:
+//    players — row count currently in tfpl_fide_players
 //----------------------------------------------------------------------------------
 export async function refreshFideParsedStatus(): Promise<{ players: number }> {
   const result = await table_query({
@@ -72,6 +82,9 @@ export async function refreshFideParsedStatus(): Promise<{ players: number }> {
 //  FIDE id. Shared status display for stages 4/5 (Populate FIDE Top Players / Refresh
 //  FIDE Ratings) — both are full recomputes with no true "remaining backlog" concept
 //  the way a queue-based step has, so this just reports the current linked count.
+//
+//  Returns:
+//    tagged — tmst_master_players rows currently linked to a FIDE id
 //----------------------------------------------------------------------------------
 export async function refreshFideTaggedCount(): Promise<{ tagged: number }> {
   const result = await table_query({

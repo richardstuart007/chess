@@ -29,30 +29,41 @@ export default function PositionPage() {
 //  PositionDetailContent — loads the position detail by route id, then renders PositionDetail
 //----------------------------------------------------------------------------------
 function PositionDetailContent() {
+  const [positionDetail, setPositionDetail] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
   const params = useParams()
   const posId = Number(params.id)
   const searchParams = useSearchParams()
   const player = searchParams.get('player') ?? undefined
 
-  const [data, setData]     = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-
   useEffect(() => {
-    getPositionDetail_player(posId, player).then(d => {
-      setData(d)
+    //----------------------------------------------------------------------------------------------
+    //  load — fetches the position detail for the route id and player and stores it in state
+    //----------------------------------------------------------------------------------------------
+    async function load() {
+      const d = await getPositionDetail_player(posId, player)
+      setPositionDetail(d)
       setLoading(false)
-    })
+    }
+    load()
   }, [posId, player])
 
   if (loading) return <MyLoadingMessage message1="Loading position…" />
 
+  const position = positionDetail?.position ?? null
+  const moves = positionDetail?.moves ?? []
+  const posEval = positionDetail?.posEval ?? null
+  const gameCount = positionDetail?.gameCount ?? 0
+  const games = positionDetail?.games ?? []
+
   return (
     <PositionDetail
-      position={data?.position ?? null}
-      moves={data?.moves ?? []}
-      posEval={data?.posEval ?? null}
-      gameCount={data?.gameCount ?? 0}
-      games={data?.games ?? []}
+      position={position}
+      moves={moves}
+      posEval={posEval}
+      gameCount={gameCount}
+      games={games}
     />
   )
 }

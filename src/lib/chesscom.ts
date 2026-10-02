@@ -1,6 +1,6 @@
 const BASE = 'https://api.chess.com/pub'
 
-export interface ChessComGame {
+export type ChessComGame = {
   url: string
   pgn: string
   time_control: string
@@ -36,27 +36,36 @@ export async function fetchRecentGames(
   player: string,
   count: number = 10
 ): Promise<ChessComGame[]> {
-  // Get list of monthly archives
+  //
+  //  Get list of monthly archives
+  //
   const archivesRes = await fetch(`${BASE}/player/${player}/games/archives`)
   if (!archivesRes.ok) throw new Error(`Could not fetch archives for "${player}"`)
   const { archives } = await archivesRes.json() as { archives: string[] }
 
   if (archives.length === 0) return []
 
-  // Fetch most recent month(s) until we have enough games
+  //
+  //  Fetch most recent month(s) until we have enough games
+  //
   const games: ChessComGame[] = []
   for (let i = archives.length - 1; i >= 0 && games.length < count; i--) {
     const monthRes = await fetch(archives[i])
     if (!monthRes.ok) continue
     const { games: monthGames } = await monthRes.json() as { games: ChessComGame[] }
 
-    // Filter to standard chess only (no variants)
+    //
+    //  Filter to standard chess only (no variants)
+    //
     const standardGames = monthGames.filter(g => g.rules === 'chess' && g.pgn)
     games.unshift(...standardGames)
   }
 
-  // Return the most recent `count` games
-  return games.slice(-count)
+  //
+  //  Return the most recent `count` games
+  //
+  const result = games.slice(-count)
+  return result
 }
 
 //----------------------------------------------------------------------------------

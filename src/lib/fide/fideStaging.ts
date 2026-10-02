@@ -140,17 +140,25 @@ export async function unzipFideZip(level: number = 1, forceNewRun?: boolean): Pr
       zipfile.openReadStream(entry, (err, readStream) => {
         if (err || !readStream) { reject(err ?? new Error('Failed to open FIDE zip entry')); return }
         readStream.on('error', reject)
-        readStream.on('data', (chunk: Buffer) => {
+        readStream.on('data', async (chunk: Buffer) => {
           readStream.pause()
           pending += decoder.write(chunk)
-          flushFullChunks().then(() => readStream.resume()).catch(reject)
+          try {
+            await flushFullChunks()
+            readStream.resume()
+          } catch (err) {
+            reject(err)
+          }
         })
-        readStream.on('end', () => {
+        readStream.on('end', async () => {
           pending += decoder.end()
-          flushFullChunks()
-            .then(() => (pending.length > 0 ? writeChunk(pending) : Promise.resolve()))
-            .then(resolve)
-            .catch(reject)
+          try {
+            await flushFullChunks()
+            if (pending.length > 0) await writeChunk(pending)
+            resolve()
+          } catch (err) {
+            reject(err)
+          }
         })
       })
     })
@@ -262,22 +270,26 @@ export async function parseFideXml(level: number = 1, forceNewRun?: boolean): Pr
     parser.on('error', reject)
     parser.on('end', resolve)
     ;(async () => {
-      for (let offset = 0; offset < totalChunks; offset += FIDE_XML_READ_BATCH_CHUNKS) {
-        const batchResult = await table_query({
-          caller: 'parseFideXml_readBatch',
-          query: `SELECT fxm_data FROM wk_fxm_fide_xml WHERE fxm_seq >= $1 AND fxm_seq < $2 ORDER BY fxm_seq`,
-          params: [offset, offset + FIDE_XML_READ_BATCH_CHUNKS],
-          table: 'wk_fxm_fide_xml',
-          level, isupdate: false, severity: 'I', skipCache: true
-        })
-        if (!batchResult.ok) throw new Error('Failed to read FIDE xml batch: ' + batchResult.error)
-        for (const row of batchResult.data) {
-          parser.write(row.fxm_data as string)
-          await flushPendingRows()
+      try {
+        for (let offset = 0; offset < totalChunks; offset += FIDE_XML_READ_BATCH_CHUNKS) {
+          const batchResult = await table_query({
+            caller: 'parseFideXml_readBatch',
+            query: `SELECT fxm_data FROM wk_fxm_fide_xml WHERE fxm_seq >= $1 AND fxm_seq < $2 ORDER BY fxm_seq`,
+            params: [offset, offset + FIDE_XML_READ_BATCH_CHUNKS],
+            table: 'wk_fxm_fide_xml',
+            level, isupdate: false, severity: 'I', skipCache: true
+          })
+          if (!batchResult.ok) throw new Error('Failed to read FIDE xml batch: ' + batchResult.error)
+          for (const row of batchResult.data) {
+            parser.write(row.fxm_data as string)
+            await flushPendingRows()
+          }
         }
+        parser.end()
+      } catch (err) {
+        reject(err)
       }
-      parser.end()
-    })().catch(reject)
+    })()
   })
   await flushPendingRows()
 

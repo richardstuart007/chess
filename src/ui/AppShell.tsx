@@ -38,7 +38,7 @@ import { getPlayerTimeClasses, AVATAR_DIR, PLAYER_AVATARS } from '@/src/lib/cons
 
 const BOTH = ''
 
-interface BackNavConfig {
+type BackNavConfig = {
   backPath?: string
   backLabel?: string
   fallback: string
@@ -107,13 +107,13 @@ function BackNavRow({ config }: { config: BackNavConfig }) {
 //  shared `?player=` query param so every page reads the same selection off the URL
 //----------------------------------------------------------------------------------------------
 function PlayerHeader() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
   const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
   const [dbPlayers, setDbPlayers] = useState<any[]>([])
   const [dbRatings, setDbRatings] = useState<Record<string, Record<string, number>>>({})
+
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
   const playerFilter = searchParams.get('player') ?? BOTH
 
@@ -175,8 +175,9 @@ function PlayerHeader() {
 
   if (players.length === 0) return <AppNav />
 
+  const cardsClass = players.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'
   const playerCards = (
-    <div className={players.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'}>
+    <div className={cardsClass}>
       {players.map((p, i) => {
         const db      = dbPlayers[i]
         const ratings = dbRatings[p.player] ?? {}
@@ -187,15 +188,21 @@ function PlayerHeader() {
         //  for any tracked player not in the map.
         //
         const avatarFile = PLAYER_AVATARS[p.player]
+        const player = db?.pl_player ?? p.player
+        const displayName = db?.pl_display_name ?? undefined
+        const avatar = avatarFile ? AVATAR_DIR + avatarFile : (db?.pl_avatar ?? undefined)
+        const profileRatings = Object.keys(ratings).length > 0 ? ratings : undefined
+        const handleCardClick = players.length > 1 ? () => handleClick(p.player) : undefined
+        const selected = players.length > 1 && (playerFilter === p.player || playerFilter === BOTH)
         return (
           <PlayerProfile
             key={p.player}
-            player={db?.pl_player ?? p.player}
-            displayName={db?.pl_display_name ?? undefined}
-            avatar={avatarFile ? AVATAR_DIR + avatarFile : (db?.pl_avatar ?? undefined)}
-            ratings={Object.keys(ratings).length > 0 ? ratings : undefined}
-            onClick={players.length > 1 ? () => handleClick(p.player) : undefined}
-            selected={players.length > 1 && (playerFilter === p.player || playerFilter === BOTH)}
+            player={player}
+            displayName={displayName}
+            avatar={avatar}
+            ratings={profileRatings}
+            onClick={handleCardClick}
+            selected={selected}
             onRatingClick={control => handleRatingClick(p.player, control)}
           />
         )

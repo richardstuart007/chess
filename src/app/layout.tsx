@@ -38,11 +38,12 @@ export default function RootLayout({
 }>) {
   const DB_LOCATION = process.env.POSTGRES_DATABASE_LOCATION ?? 'unknown'
   const IS_DEV = process.env.NEXT_PUBLIC_APPENV_ISDEV === 'true'
+  const htmlClass = `${geistSans.variable} ${geistMono.variable} h-full antialiased`
 
   return (
     <html
       lang='en'
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={htmlClass}
     >
       <body className='min-h-full flex flex-col bg-background text-foreground'>
         <NuqsAdapter>

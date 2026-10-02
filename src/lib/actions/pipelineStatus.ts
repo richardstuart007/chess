@@ -41,7 +41,7 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
         (SELECT COUNT(*) FROM wk_gr_gamesraw r
          WHERE NOT EXISTS (
            SELECT 1 FROM tgd_gamesdecon d
-           WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
+           WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid
          ))                                                                          AS pending,
         (SELECT COUNT(*) FROM tgd_gamesdecon)                                        AS gamesdecon,
         (SELECT COUNT(*) FROM tgd_gamesdecon)                                        AS tree_games_eligible,
@@ -115,7 +115,7 @@ export async function refreshStep1(): Promise<{ pending: number; allDecon: numbe
       WHERE r.gr_time_class IN (${inPlaceholders})
         AND NOT EXISTS (
           SELECT 1 FROM tgd_gamesdecon d
-          WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
+          WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid
         )`
   })
   const deconCountResult = await table_query({
@@ -287,6 +287,11 @@ export async function refreshCpChangeStatus(): Promise<{ pending: number }> {
 //  to existing habits just getting their stats routinely refreshed, which isn't
 //  "remaining work" in the backlog sense. Same aggregation shape buildHabits_select
 //  already runs, plus a LEFT JOIN to isolate never-yet-materialized combinations.
+//
+//  Returns:
+//    total — row count in thab_habits
+//    dismissed — how many of those rows are dismissed
+//    remaining — qualifying (player, position, move) combinations with no thab_habits row yet
 //----------------------------------------------------------------------------------
 export async function refreshHabitsStatus(): Promise<{ total: number; dismissed: number; remaining: number }> {
   const queryResult = await table_query({
@@ -332,6 +337,10 @@ export async function refreshHabitsStatus(): Promise<{ total: number; dismissed:
 //----------------------------------------------------------------------------------
 //  refreshGameEndingsStatus — evaluated/remaining counts for tgd_gamesdecon.gd_final_eval,
 //  independent of the position-tree pipeline entirely (reads tgd_gamesdecon directly).
+//
+//  Returns:
+//    evaluated — games that have a gd_final_eval
+//    remaining — games still without one
 //----------------------------------------------------------------------------------
 export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; remaining: number }> {
   const queryResult = await table_query({
@@ -361,6 +370,9 @@ export async function refreshGameEndingsStatus(): Promise<{ evaluated: number; r
 //  refreshDeepenPopularStatus — per-tier backlog breakdown for the Deepen Popular
 //  Positions step, delegating to the same tiered subquery the batch itself uses
 //  (single source of truth for the POPULAR_POSITION_DEPTH_TIERS_Player-based WHERE clause).
+//
+//  Returns:
+//    tiers — one entry per depth tier: its depth and how many positions remain
 //----------------------------------------------------------------------------------
 export async function refreshDeepenPopularStatus(): Promise<{ tiers: { depth: number; remaining: number }[] }> {
   const tiers = await countRemainingPopularPositionsByTier()

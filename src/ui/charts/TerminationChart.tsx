@@ -33,11 +33,26 @@ import { DEFAULT_DATE_FROM_Player, SESSION_STORAGE_PREFIX, WIDTH_DATE_FROM, GLOB
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
-interface TerminationChartProps {
+type TerminationChartProps = {
   players: { player: string; display_name: string | null }[]
 }
 
 export default function TerminationChart({ players }: TerminationChartProps) {
+  const [color, setColor] = useState('')
+
+  //
+  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh (and seeded
+  //  once on hydration so a reload shows data without a manual Refresh). refreshNonce forces a
+  //  re-fetch even when nothing else changed.
+  //
+  const [appliedPlayer,    setAppliedPlayer]    = useState('')
+  const [appliedTimeClass, setAppliedTimeClass] = useState('')
+  const [appliedColor,     setAppliedColor]     = useState('')
+  const [refreshNonce,     setRefreshNonce]     = useState(0)
+  const [terminationStats, setTerminationStats] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+
   const searchParams = useSearchParams()
 
   //
@@ -49,23 +64,9 @@ export default function TerminationChart({ players }: TerminationChartProps) {
   const timeClassFilter = searchParams.get('timeClass') ?? ''
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
   const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
-  const [color, setColor] = useState('')
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
 
-  //
-  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh (and seeded
-  //  once on hydration so a reload shows data without a manual Refresh). refreshNonce forces a
-  //  re-fetch even when nothing else changed.
-  //
-  const [appliedPlayer,    setAppliedPlayer]    = useState('')
-  const [appliedTimeClass, setAppliedTimeClass] = useState('')
-  const [appliedColor,     setAppliedColor]     = useState('')
   const [appliedDateFrom,  setAppliedDateFrom]  = useState(dateFromFilter)
-  const [refreshNonce,     setRefreshNonce]     = useState(0)
-
-  const [data, setData] = useState<{ termination: string; win: number; loss: number; total: number }[]>([])
-  const [loading, setLoading] = useState(false)
-  const [hydrated, setHydrated] = useState(false)
 
   //
   //  "All" (appliedPlayer unset) means no player filter at all, not every tracked username
@@ -108,15 +109,19 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     //  load — fetches the termination stats for the applied filters and stores them in state
     //----------------------------------------------------------------------------------------------
     async function load() {
-      const rows = await getTerminationStats(
-        appliedQueryPlayers,
-        appliedDateFrom || undefined,
-        appliedColor || undefined,
-        appliedTimeClass || undefined
-      )
-      if (!cancelled) { setData(rows); setLoading(false) }
+      try {
+        const rows = await getTerminationStats(
+          appliedQueryPlayers,
+          appliedDateFrom || undefined,
+          appliedColor || undefined,
+          appliedTimeClass || undefined
+        )
+        if (!cancelled) { setTerminationStats(rows); setLoading(false) }
+      } catch {
+        if (!cancelled) setLoading(false)
+      }
     }
-    load().catch(() => { if (!cancelled) setLoading(false) })
+    load()
     return () => { cancelled = true }
   }, [appliedQueryPlayers, appliedDateFrom, appliedColor, appliedTimeClass, refreshNonce, hydrated, players.length])
 
@@ -145,12 +150,16 @@ export default function TerminationChart({ players }: TerminationChartProps) {
     || color !== appliedColor
     || draftDateFrom !== appliedDateFrom
 
-  const chartData = data.map(r => ({
+  const chartData = terminationStats.map(r => ({
     name: r.termination,
     Win:  r.win,
     Loss: r.loss,
     total: r.total
   }))
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const refreshLabel = loading ? 'Fetching...' : 'Refresh'
+  const showNoData = !loading && chartData.length === 0
+  const showChart = !loading && chartData.length > 0
 
   return (
     <MyBox title='How Games End'>
@@ -172,19 +181,19 @@ export default function TerminationChart({ players }: TerminationChartProps) {
         <FilterActionButton
           onClick={handleRefresh}
           disabled={loading}
-          variant={filtersPending ? 'pending' : 'primary'}
+          variant={refreshVariant}
         >
-          {loading ? 'Fetching...' : 'Refresh'}
+          {refreshLabel}
         </FilterActionButton>
       </div>
 
       {loading && <p className='text-xs text-gray-400'>Loading...</p>}
 
-      {!loading && chartData.length === 0 && (
+      {showNoData && (
         <p className='text-xs text-gray-400'>No data.</p>
       )}
 
-      {!loading && chartData.length > 0 && (
+      {showChart && (
         <ResponsiveContainer width='100%' height={320}>
           <BarChart data={chartData} margin={{ top: 16, right: 16, left: 0, bottom: 40 }}>
             <CartesianGrid strokeDasharray='3 3' stroke='#f0f0f0' vertical={false} />
@@ -228,5 +237,5 @@ export default function TerminationChart({ players }: TerminationChartProps) {
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }

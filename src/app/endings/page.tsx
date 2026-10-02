@@ -36,9 +36,11 @@ function EndingsContent() {
     loadPlayers()
   }, [])
 
+  const showChart = players.length > 0
+
   return (
     <div className='space-y-4'>
-      {players.length > 0 && <TerminationChart players={players} />}
+      {showChart && <TerminationChart players={players} />}
     </div>
   )
 }

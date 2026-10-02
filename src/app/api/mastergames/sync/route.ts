@@ -12,6 +12,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { syncMasterGames } from '@/src/lib/master/masterSync'
 
 export async function GET(req: NextRequest) {
@@ -23,14 +24,23 @@ export async function GET(req: NextRequest) {
   const truncateFirst = searchParams.get('truncateFirst') === 'true'
 
   if (!player || !year) {
-    return NextResponse.json({ ok: false, error: 'player and year query params are required' }, { status: 400 })
+    const response = NextResponse.json({ ok: false, error: 'player and year query params are required' }, { status: 400 })
+    return response
   }
 
   try {
     const result = await syncMasterGames(player, year, level, forceNewRun, truncateFirst)
-    return NextResponse.json({ ok: true, ...result })
+    const response = NextResponse.json({ ok: true, ...result })
+    return response
   } catch (err: any) {
     console.error('mastergames sync route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/mastergames/sync',
+      lg_caller: 'api/mastergames/sync',
+      lg_msg: 'mastergames sync route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

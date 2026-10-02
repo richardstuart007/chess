@@ -28,7 +28,7 @@ import FilterSelect from './FilterSelect'
 import { useGlobalFilter } from '@/src/lib/hooks/useGlobalFilter'
 import { getPlayerTimeClasses, DEFAULT_GRAPH_TIME_CLASS, GLOBAL_FILTER_BORDER_CLASS, WIDTH_TIME_CLASS } from '@/src/lib/constants'
 
-interface FilterGraphTimeClassSelectProps {
+type FilterGraphTimeClassSelectProps = {
   players: { player: string; display_name: string | null }[]
   label?: string
   width?: string

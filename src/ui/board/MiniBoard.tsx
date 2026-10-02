@@ -22,7 +22,7 @@ import { useMemo } from 'react'
 import { Chessboard } from 'react-chessboard'
 import { HABITS_BOARD_SIZE_PX } from '@/src/lib/constants'
 
-interface MiniBoardProps {
+type MiniBoardProps = {
   fen: string
   color: string | null
   size?: string

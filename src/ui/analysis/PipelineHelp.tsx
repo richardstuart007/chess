@@ -176,9 +176,10 @@ export default function PipelineHelp() {
                     <tr className='align-top'>
                       <td className='font-semibold text-gray-500 w-24 px-3 py-2 border-b border-gray-100 whitespace-nowrap'>Input</td>
                       <td className='text-gray-700 px-3 py-2 border-b border-gray-100'>
-                        {step.input.map((s, i) => (
-                          <div key={i} className={i > 0 ? 'mt-0.5' : ''}>{s}</div>
-                        ))}
+                        {step.input.map((s, i) => {
+                          const lineClass = i > 0 ? 'mt-0.5' : ''
+                          return <div key={i} className={lineClass}>{s}</div>
+                        })}
                       </td>
                     </tr>
                     <tr className='align-top'>
@@ -188,9 +189,10 @@ export default function PipelineHelp() {
                     <tr className='align-top'>
                       <td className='font-semibold text-gray-500 px-3 py-2'>Output</td>
                       <td className='text-gray-700 px-3 py-2'>
-                        {step.output.map((s, i) => (
-                          <div key={i} className={i > 0 ? 'mt-0.5' : ''}>{s}</div>
-                        ))}
+                        {step.output.map((s, i) => {
+                          const lineClass = i > 0 ? 'mt-0.5' : ''
+                          return <div key={i} className={lineClass}>{s}</div>
+                        })}
                       </td>
                     </tr>
                   </tbody>

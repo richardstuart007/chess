@@ -16,7 +16,7 @@
 
 import { MyInput } from 'nextjs-shared/MyInput'
 
-interface FilterTextInputProps {
+type FilterTextInputProps = {
   label?: string
   value: string
   onChange: (value: string) => void
@@ -26,14 +26,16 @@ interface FilterTextInputProps {
 }
 
 export default function FilterTextInput({ label, value, onChange, placeholder, width = 'w-24', borderClass = '' }: FilterTextInputProps) {
+  const containerClass = label ? 'flex flex-col gap-0.5' : ''
+  const inputClass = `${width} h-6 md:h-6 text-xxs ${borderClass}`
   return (
-    <div className={label ? 'flex flex-col gap-0.5' : ''}>
+    <div className={containerClass}>
       {label && <span className='text-xxs text-gray-500'>{label}</span>}
       <MyInput
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        overrideClass={`${width} h-6 md:h-6 text-xxs ${borderClass}`}
+        overrideClass={inputClass}
       />
     </div>
   )

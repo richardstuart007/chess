@@ -9,6 +9,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { syncTposFromTgam_Master } from '@/src/lib/master/buildPositionTree_Master'
 
 export async function GET(req: NextRequest) {
@@ -19,9 +20,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await syncTposFromTgam_Master(level, forceNewRun, playerLabel)
-    return NextResponse.json({ ok: true, ...result })
+    const response = NextResponse.json({ ok: true, ...result })
+    return response
   } catch (err: any) {
     console.error('mastergames sync-tpos route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/mastergames/sync-tpos',
+      lg_caller: 'api/mastergames/sync-tpos',
+      lg_msg: 'mastergames sync-tpos route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

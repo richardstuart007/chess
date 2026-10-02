@@ -1,3 +1,11 @@
+//==================================================================================================
+//  1) DESCRIPTION
+//    deconstruct-games / run — standalone command-line script (raw pg client, not nextjs-shared):
+//    deconstructs one player's not-yet-deconstructed raw games in batches of BATCH_SIZE, printing
+//    progress and a processed / skipped / errors summary. The player is argv[2], else
+//    NEXT_PUBLIC_PRIMARY_USERNAME, else 'stricade'. Exits with code 1 on failure.
+//==================================================================================================
+
 import { Client } from 'pg'
 import { config } from 'dotenv'
 import { parsePgnHeaders, parsePgnOpening } from '../src/lib/parsePgn'
@@ -9,6 +17,15 @@ const POSTGRES_URL = process.env.POSTGRES_URL
 const BATCH_SIZE = 500
 const COLS = 19
 
+//----------------------------------------------------------------------------------
+//  normalizeTermination — maps chess.com's termination text to a short label ('Resignation', 'Time', 'Checkmate', …)
+//
+//  Params:
+//    raw — the termination text (optional)
+//
+//  Returns:
+//    the short label; the original text when unrecognised; '' when empty
+//----------------------------------------------------------------------------------
 function normalizeTermination(raw: string | undefined): string {
   if (!raw) return ''
   const t = raw.toLowerCase()
@@ -43,7 +60,7 @@ async function run() {
       WHERE r.gr_player = $1
         AND r.gr_time_class = 'blitz'
         AND NOT EXISTS (
-          SELECT 1 FROM tgd_gamesdecon d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
+          SELECT 1 FROM tgd_gamesdecon d WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid
         )
       ORDER BY r.gr_end_time ASC
     `, [USERNAME])

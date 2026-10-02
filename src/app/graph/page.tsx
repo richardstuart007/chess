@@ -44,8 +44,22 @@ export default function GraphPage() {
 //  staged as drafts) and renders RatingChart once players are loaded
 //----------------------------------------------------------------------------------
 function GraphContent() {
-  const searchParams = useSearchParams()
   const [players,   setPlayers]   = useState<{ player: string; display_name: string | null }[]>([])
+
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [limit,     setLimit]     = useState(DEFAULT_GRAPH_LIMIT)
+  const [minDate,   setMinDate]   = useState<string | undefined>()
+  const [loading,   setLoading]   = useState(false)
+  const [hydrated,  setHydrated]  = useState(false)
+  const [appliedLimit,   setAppliedLimit]   = useState(DEFAULT_GRAPH_LIMIT)
+  const [refreshNonce,   setRefreshNonce]   = useState(0)
+
+  const searchParams = useSearchParams()
   const playerFilter = searchParams.get('player') ?? ''
   //
   //  Time-class selection is shared with the PlayerProfile header (rating badge clicks) and
@@ -61,24 +75,11 @@ function GraphContent() {
   const [rawDateFromFilter, setDateFromFilter] = useGlobalFilter('dateFrom')
   const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
-  //
-  //  Initialized to plain defaults (matching the server render) rather than reading
-  //  sessionStorage synchronously — sessionStorage is only available client-side, so
-  //  restoring persisted state happens in the effect below, after mount, to avoid a
-  //  hydration mismatch between the server-rendered HTML and the first client render.
-  //
-  const [limit,     setLimit]     = useState(DEFAULT_GRAPH_LIMIT)
-  const [minDate,   setMinDate]   = useState<string | undefined>()
-  const [loading,   setLoading]   = useState(false)
-  const [hydrated,  setHydrated]  = useState(false)
 
   const playerOptions = useMemo(
     () => players.map(p => ({ player: p.player, displayName: p.display_name })),
     [players]
   )
-
-  const [appliedLimit,   setAppliedLimit]   = useState(DEFAULT_GRAPH_LIMIT)
-  const [refreshNonce,   setRefreshNonce]   = useState(0)
 
   useEffect(() => {
     //----------------------------------------------------------------------------------------------
@@ -158,6 +159,10 @@ function GraphContent() {
 
   const filtersPending = draftDateFrom !== dateFromFilter
     || limit !== appliedLimit
+  const limitValue = String(limit)
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const refreshLabel = loading ? 'Fetching...' : 'Refresh'
+  const showChart = players.length > 0
 
   return (
     <div className='space-y-4'>
@@ -181,7 +186,7 @@ function GraphContent() {
           <FilterSelect
             label='Records'
             options={GRAPH_LIMIT_OPTIONS}
-            value={String(limit)}
+            value={limitValue}
             onChange={v => setLimit(Number(v))}
             width={WIDTH_GRAPH_LIMIT}
           />
@@ -189,14 +194,14 @@ function GraphContent() {
           <FilterActionButton
             onClick={handleRefresh}
             disabled={loading}
-            variant={filtersPending ? 'pending' : 'primary'}
+            variant={refreshVariant}
           >
-            {loading ? 'Fetching...' : 'Refresh'}
+            {refreshLabel}
           </FilterActionButton>
         </div>
       </div>
 
-      {players.length > 0 && (
+      {showChart && (
         <RatingChart
           players={playerOptions}
           playerFilter={playerFilter}
@@ -221,5 +226,5 @@ function GraphContent() {
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }

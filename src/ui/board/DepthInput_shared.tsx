@@ -28,7 +28,7 @@ import { MyInputNumeric } from 'nextjs-shared/MyInputNumeric'
 import { STOCKFISH_DEFAULTS } from '@/src/lib/stockfish'
 import { STOCKFISH_DEPTH_INPUT_MAX } from '@/src/lib/constants'
 
-interface DepthInputProps {
+type DepthInputProps = {
   value: number
   onChange: (depth: number) => void
   min?: number
@@ -43,6 +43,7 @@ export default function DepthInput_shared({
   max = STOCKFISH_DEPTH_INPUT_MAX,
   overrideClass = 'w-16 h-6 md:h-6'
 }: DepthInputProps) {
+  const depthValue = Number.isNaN(value) ? '' : value
   return (
     <div className='flex items-center gap-2'>
       <span className='font-bold text-xs whitespace-nowrap'>Depth</span>
@@ -51,7 +52,7 @@ export default function DepthInput_shared({
         clampOnBlur
         min={min}
         max={max}
-        value={Number.isNaN(value) ? '' : value}
+        value={depthValue}
         onChange={v => onChange(v === null ? NaN : v)}
         onBlur={() => {
           if (Number.isNaN(value)) onChange(min)

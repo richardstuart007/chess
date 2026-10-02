@@ -17,7 +17,7 @@
 import FilterMultiCheckbox from './FilterMultiCheckbox'
 import { OPTIONS_TERMINATION, WIDTH_TERMINATION } from '@/src/lib/constants'
 
-interface TerminationMultiSelectProps {
+type TerminationMultiSelectProps = {
   selected: string[]
   onChange: (values: string[]) => void
   label?: string

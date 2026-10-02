@@ -38,12 +38,12 @@ import { MIN_ANALYSIS_MOVE_Player, MAX_ANALYSIS_MOVE_Player, POSITION_INSERT_CHU
 import { truncateFen } from '../fen'
 import { chunkByGame } from '../chunkByGame'
 
-interface GameRecord {
+type GameRecord = {
   gdid:          number
   pgn:           string
 }
 
-interface PositionRecord {
+type PositionRecord = {
   gdid:         number
   posFen:       string
   movePlayed:   string
@@ -89,8 +89,8 @@ export async function buildPositionTree_Player(opts: {
     caller: 'buildPositionTree_fetch',
     query:  `
       SELECT
-        d.gd_gdid AS gdid,
-        d.gd_pgn AS pgn
+        d.gd_gdid,
+        d.gd_pgn
       FROM tgd_gamesdecon d
       WHERE ${whereClause}
       ORDER BY d.gd_end_time DESC
@@ -113,8 +113,8 @@ export async function buildPositionTree_Player(opts: {
   }
 
   const games: GameRecord[] = gamesRes.data.map((r: any) => ({
-    gdid:          r.gdid,
-    pgn:           r.pgn ?? ''
+    gdid:          r.gd_gdid,
+    pgn:           r.gd_pgn ?? ''
   }))
 
   await logStart('buildPositionTree_Player', caller, `building position tree, ${games.length} games fetched`, level)
@@ -151,7 +151,9 @@ export async function buildPositionTree_Player(opts: {
 
   const t0    = Date.now()
 
-  // Process all games in memory — pure chess.js, no DB
+  //
+  //  Process all games in memory — pure chess.js, no DB
+  //
   let totalPositions = 0
   let errors         = 0
   const allRecords: PositionRecord[] = []
@@ -173,9 +175,13 @@ export async function buildPositionTree_Player(opts: {
     }
   }
 
-  // Phase A — write tgam_game_positions (self-contained, no tpos_positions dependency)
+  //
+  //  Phase A — write tgam_game_positions (self-contained, no tpos_positions dependency)
+  //
   await insertGamePositions_Player(allRecords, level + 1)
-  // Phase B — derive tpos_positions from what Phase A just wrote
+  //
+  //  Phase B — derive tpos_positions from what Phase A just wrote
+  //
   if (!opts.skipSync) await syncTposFromTgam_Player(level + 1)
 
   const processed      = games.length - errors
@@ -236,15 +242,17 @@ function getPositionsFromGame_Player(
     replay.move(move.san)
     const resultingFen = truncateFen(replay.fen())
 
-    // A revisited position (transposition/repetition) is real and gets its own row each
-    // time — not deduped within a game. pos_reached counts DISTINCT gam_gdid, so this
-    // doesn't affect reach counts; it does let move-frequency queries see every visit.
     //
-    // Every ply is recorded, not just the tracked player's own — the opponent's moves
-    // are real edges too. Queries that must stay scoped to the tracked player's own
-    // moves (e.g. the Habits page) filter on pos_color vs. the game's player color
-    // instead, since that's already derivable and this table is no longer implicitly
-    // "my moves only."
+    //  A revisited position (transposition/repetition) is real and gets its own row each
+    //  time — not deduped within a game. pos_reached counts DISTINCT gam_gdid, so this
+    //  doesn't affect reach counts; it does let move-frequency queries see every visit.
+    //
+    //  Every ply is recorded, not just the tracked player's own — the opponent's moves
+    //  are real edges too. Queries that must stay scoped to the tracked player's own
+    //  moves (e.g. the Habits page) filter on pos_color vs. the game's player color
+    //  instead, since that's already derivable and this table is no longer implicitly
+    //  "my moves only."
+    //
     if (i >= minHalfMove) {
       records.push({
         gdid:         game.gdid,
@@ -257,7 +265,9 @@ function getPositionsFromGame_Player(
     }
   }
 
-  // Sentinel: game too short — marks it as processed so the NOT EXISTS skip fires
+  //
+  //  Sentinel: game too short — marks it as processed so the NOT EXISTS skip fires
+  //
   if (records.length === 0) {
     records.push({
       gdid:         game.gdid,
@@ -336,13 +346,15 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
   await logStart('syncTposFromTgam_Player', 'buildPositionTree_Player', 'deriving tpos_positions from unresolved tgam_game_positions rows', level)
   const t0 = Date.now()
 
-  // Unresolved backlog size going in — logged as sub-step 3a's pip_input_recs (below)
-  // instead of touchedPosIds.length, so the Pipeline Jobs summary reports "how much was
-  // pending before this run" rather than "how much this run touched" (the latter spikes
-  // misleadingly if a large dangling-reference backlog gets resolved in one pass).
-  // gam_pos_id IS NULL only — matches refreshTposStatus()'s "unresolved" stat exactly.
-  // gam_resulting_pos_id IS NULL is deliberately excluded: once Purge nulls it, it nulls
-  // gam_resulting_fen too, so that side is permanently dead, not pending work.
+  //
+  //  Unresolved backlog size going in — logged as sub-step 3a's pip_input_recs (below)
+  //  instead of touchedPosIds.length, so the Pipeline Jobs summary reports "how much was
+  //  pending before this run" rather than "how much this run touched" (the latter spikes
+  //  misleadingly if a large dangling-reference backlog gets resolved in one pass).
+  //  gam_pos_id IS NULL only — matches refreshTposStatus()'s "unresolved" stat exactly.
+  //  gam_resulting_pos_id IS NULL is deliberately excluded: once Purge nulls it, it nulls
+  //  gam_resulting_fen too, so that side is permanently dead, not pending work.
+  //
   const backlogRes = await table_query({
     caller: 'syncTposFromTgam_backlog',
     query:  `SELECT COUNT(*) AS cnt FROM tgam_game_positions WHERE gam_pos_id IS NULL`,
@@ -362,18 +374,20 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
   }
   const backlogBefore = backlogRes.ok ? parseInt(backlogRes.data[0]?.cnt ?? '0') : 0
 
-  // Step 1 — ensure a tpos_positions row exists for every FEN still referenced by an
-  // unresolved tgam row. pos_color is the FEN's own active-color field (2nd token),
-  // derived directly rather than carried through as a separate column.
+  //
+  //  Step 1 — ensure a tpos_positions row exists for every FEN still referenced by an
+  //  unresolved tgam row. pos_color is the FEN's own active-color field (2nd token),
+  //  derived directly rather than carried through as a separate column.
+  //
   await table_query({
     caller: 'syncTposFromTgam_ensure',
     query:  `
       INSERT INTO tpos_positions (pos_fen, pos_color, pos_reached)
-      SELECT DISTINCT fen, split_part(fen, ' ', 2), 0 FROM (
-        SELECT gam_pos_fen AS fen FROM tgam_game_positions
+      SELECT DISTINCT pos_fen, split_part(pos_fen, ' ', 2), 0 FROM (
+        SELECT gam_pos_fen AS pos_fen FROM tgam_game_positions
         WHERE gam_pos_id IS NULL AND gam_pos_fen IS NOT NULL AND gam_pos_fen <> '__too_short__'
         UNION
-        SELECT gam_resulting_fen AS fen FROM tgam_game_positions
+        SELECT gam_resulting_fen AS pos_fen FROM tgam_game_positions
         WHERE gam_resulting_pos_id IS NULL AND gam_resulting_fen IS NOT NULL
       ) t
       ON CONFLICT (pos_fen) DO NOTHING
@@ -385,15 +399,17 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
     severity: 'I'
   })
 
-  // Step 2 — backfill ids wherever still NULL, capturing which positions were touched
+  //
+  //  Step 2 — backfill ids wherever still NULL, capturing which positions were touched
+  //
   const beforeRes = await table_query({
     caller: 'syncTposFromTgam_backfillBefore',
     query:  `
-      UPDATE tgam_game_positions g
-      SET gam_pos_id = p.pos_id
-      FROM tpos_positions p
-      WHERE g.gam_pos_id IS NULL AND g.gam_pos_fen = p.pos_fen
-      RETURNING p.pos_id
+      UPDATE tgam_game_positions
+      SET gam_pos_id = pos_id
+      FROM tpos_positions
+      WHERE gam_pos_id IS NULL AND gam_pos_fen = pos_fen
+      RETURNING pos_id
     `,
     params: [],
     table: 'tgam_game_positions',
@@ -404,11 +420,11 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
   const resultingRes = await table_query({
     caller: 'syncTposFromTgam_backfillResulting',
     query:  `
-      UPDATE tgam_game_positions g
-      SET gam_resulting_pos_id = p.pos_id
-      FROM tpos_positions p
-      WHERE g.gam_resulting_pos_id IS NULL AND g.gam_resulting_fen = p.pos_fen
-      RETURNING p.pos_id
+      UPDATE tgam_game_positions
+      SET gam_resulting_pos_id = pos_id
+      FROM tpos_positions
+      WHERE gam_resulting_pos_id IS NULL AND gam_resulting_fen = pos_fen
+      RETURNING pos_id
     `,
     params: [],
     table: 'tgam_game_positions',
@@ -432,7 +448,9 @@ export async function syncTposFromTgam_Player(level: number = 1, forceNewRun?: b
     ...resultingRes.data.map((r: any) => Number(r.pos_id))
   ])]
 
-  // Step 3 — recompute pos_reached only for touched positions
+  //
+  //  Step 3 — recompute pos_reached only for touched positions
+  //
   await recomputePosReachedByIds_Player(touchedPosIds, level)
 
   const tgamBackfilled = beforeRes.data.length + resultingRes.data.length
@@ -477,8 +495,10 @@ async function recomputePosReachedByIds_Player(posIds: number[], level: number):
         )
         WHERE p.pos_id = ANY($1)
       `,
-      // table_query's params type doesn't declare array elements (needed for = ANY($1)),
-      // even though the underlying driver handles them fine — narrow cast, not a real risk
+      //
+      //  table_query's params type doesn't declare array elements (needed for = ANY($1)),
+      //  even though the underlying driver handles them fine — narrow cast, not a real risk
+      //
       params: [chunk] as unknown as number[],
       table: 'tpos_positions',
       level,

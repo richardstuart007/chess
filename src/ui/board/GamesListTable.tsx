@@ -42,7 +42,7 @@ export type GamesListRow = {
   externalHref?:  string | null
 }
 
-interface GamesListTableProps {
+type GamesListTableProps = {
   rows: GamesListRow[]
   onRowClick?: (key: string) => void
   currentKey?: string | null
@@ -72,29 +72,43 @@ export default function GamesListTable({ rows, onRowClick, currentKey }: GamesLi
               : r.highlight === 'green' ? 'bg-green-100 hover:bg-green-200'
               : clickable ? 'hover:bg-gray-50' : ''
             const isCurrent = currentKey != null && currentKey === r.key
+            const rowClass = `${rowBg} ${isCurrent ? 'border-l-4 border-blue-500' : ''} ${clickable ? 'cursor-pointer' : ''}`
+            const handleRowClick = clickable ? () => onRowClick!(r.key) : undefined
+            const whiteClass = `py-1 pr-2 ${r.whiteIsTracked ? 'font-semibold text-gray-900' : ''}`
+            const showWhiteRating = r.whiteRating != null
+            const blackClass = `py-1 pr-2 ${r.blackIsTracked ? 'font-semibold text-gray-900' : ''}`
+            const showBlackRating = r.blackRating != null
+            const dateLabel = r.date ?? '—'
+            const terminationLabel = r.termination ?? '—'
+            const finalEvalClass = `py-1 pr-2 text-right tabular-nums font-mono ${r.finalEval != null && r.finalEval < 0 ? 'text-red-600' : 'text-green-700'}`
+            const finalEvalLabel = r.finalEval != null ? formatCp(r.finalEval) : '—'
+            const showExternalLink = !!r.externalHref
+            const externalHref = r.externalHref ?? undefined
+            const viewLabel = !r.externalHref && clickable ? 'View' : ''
             return (
               <tr
                 key={r.key}
-                className={`${rowBg} ${isCurrent ? 'border-l-4 border-blue-500' : ''} ${clickable ? 'cursor-pointer' : ''}`}
-                onClick={clickable ? () => onRowClick!(r.key) : undefined}
+                className={rowClass}
+                onClick={handleRowClick}
               >
                 <td className='py-1 pr-2 font-mono font-medium'>{r.move}</td>
-                <td className={`py-1 pr-2 ${r.whiteIsTracked ? 'font-semibold text-gray-900' : ''}`}>
-                  {r.white}{r.whiteRating != null && <span className='text-gray-400'> ({r.whiteRating})</span>}
+                <td className={whiteClass}>
+                  {r.white}{showWhiteRating && <span className='text-gray-400'> ({r.whiteRating})</span>}
                 </td>
-                <td className={`py-1 pr-2 ${r.blackIsTracked ? 'font-semibold text-gray-900' : ''}`}>
-                  {r.black}{r.blackRating != null && <span className='text-gray-400'> ({r.blackRating})</span>}
+                <td className={blackClass}>
+                  {r.black}{showBlackRating && <span className='text-gray-400'> ({r.blackRating})</span>}
                 </td>
-                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>{r.date ?? '—'}</td>
+                <td className='py-1 pr-2 text-right tabular-nums text-gray-500'>{dateLabel}</td>
                 <td className='py-1 pr-2 text-center tabular-nums'>{r.result}</td>
-                <td className='py-1 pr-2 text-gray-500'>{r.termination ?? '—'}</td>
-                <td className={`py-1 pr-2 text-right tabular-nums font-mono ${r.finalEval != null && r.finalEval < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                  {r.finalEval != null ? formatCp(r.finalEval) : '—'}
+                <td className='py-1 pr-2 text-gray-500'>{terminationLabel}</td>
+                <td className={finalEvalClass}>
+                  {finalEvalLabel}
                 </td>
                 <td className='py-1 text-right text-blue-600'>
-                  {r.externalHref ? (
-                    <a href={r.externalHref} target='_blank' rel='noopener noreferrer' className='hover:underline'>view</a>
-                  ) : clickable ? 'View' : ''}
+                  {showExternalLink && (
+                    <a href={externalHref} target='_blank' rel='noopener noreferrer' className='hover:underline'>view</a>
+                  )}
+                  {viewLabel}
                 </td>
               </tr>
             )

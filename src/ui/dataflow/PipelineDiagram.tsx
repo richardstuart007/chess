@@ -100,9 +100,10 @@ function DiagramNode({ data }: NodeProps & { data: DiagramNodeData }) {
   const boxClass = data.variant === 'table'
     ? 'border-blue-400 bg-blue-100 text-blue-900'
     : 'border-amber-400 bg-amber-200 text-amber-900'
+  const nodeClass = `w-44 rounded-md border px-4 py-2 text-center text-sm font-medium shadow-sm ${boxClass}`
 
   return (
-    <div className={`w-44 rounded-md border px-4 py-2 text-center text-sm font-medium shadow-sm ${boxClass}`}>
+    <div className={nodeClass}>
       <Handle type='target' position={Position.Top}    id='top-tgt'    style={HANDLE_STYLE} />
       <Handle type='source' position={Position.Top}    id='top-src'    style={HANDLE_STYLE} />
       <Handle type='target' position={Position.Bottom} id='bottom-tgt' style={HANDLE_STYLE} />

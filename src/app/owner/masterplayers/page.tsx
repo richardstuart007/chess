@@ -27,6 +27,9 @@ export default function MasterPlayersPage() {
   const [sortGradeDesc, setSortGradeDesc] = useState(false)
   const [onlyMissingHandle, setOnlyMissingHandle] = useState(false)
 
+  const [findingHandle, setFindingHandle] = useState(false)
+  const [handleResult, setHandleResult] = useState('')
+
   useEffect(() => {
     loadPlayers()
   }, [filter_name, sortGradeDesc, onlyMissingHandle])
@@ -40,9 +43,6 @@ export default function MasterPlayersPage() {
     setPlayers(rows)
     setLoadingPlayers(false)
   }
-
-  const [findingHandle, setFindingHandle] = useState(false)
-  const [handleResult, setHandleResult] = useState('')
 
   //----------------------------------------------------------------------------------------------
   //  findNextHandle — One player per click, highest grade first — a long sequential batch across all
@@ -75,9 +75,13 @@ export default function MasterPlayersPage() {
     await setMasterPlayerPriority(row.mstid, nextPriority)
   }
 
+  const boxTitle = `Known Master Players (${players.length})`
+  const findHandleLabel = findingHandle ? 'Finding…' : 'Find Next Chess.com Handle'
+  const showTable = !loadingPlayers
+
   return (
     <div className='p-6 md:p-8 space-y-4'>
-      <MyBox title={`Known Master Players (${players.length})`} collapsible>
+      <MyBox title={boxTitle} collapsible>
         <div className='flex flex-wrap items-center gap-3 mb-2'>
           <div className='flex items-center gap-2'>
             <span className='font-bold text-xs whitespace-nowrap'>Filter name</span>
@@ -92,13 +96,14 @@ export default function MasterPlayersPage() {
             <MyToggle inputName='mst-only-missing-handle' inputValue={onlyMissingHandle} onChange={e => setOnlyMissingHandle(e.target.checked)} />
           </div>
           <MyButton onClick={findNextHandle} disabled={findingHandle} overrideClass='bg-purple-600 hover:bg-purple-700'>
-            {findingHandle ? 'Finding…' : 'Find Next Chess.com Handle'}
+            {findHandleLabel}
           </MyButton>
           {handleResult && <span className='text-xxs text-gray-500'>{handleResult}</span>}
         </div>
-        {loadingPlayers ? (
+        {loadingPlayers && (
           <p className='text-xs text-gray-400'>Loading…</p>
-        ) : (
+        )}
+        {showTable && (
           <div className='overflow-x-auto'>
             <table className='w-full text-xs'>
               <thead>
@@ -111,27 +116,37 @@ export default function MasterPlayersPage() {
                 </tr>
               </thead>
               <tbody className='divide-y divide-gray-100'>
-                {players.map(row => (
-                  <tr key={row.mstid}>
-                    <td className='py-1 pr-2'>{row.firstName ? `${row.firstName} ${row.lastName}` : row.lastName}</td>
-                    <td className='py-1 pr-2'>{row.fideid ?? '—'}</td>
-                    <td className='py-1 pr-2 text-right tabular-nums'>{row.grade ?? '—'}</td>
-                    <td className='py-1 pr-2'>
-                      <MyToggle
-                        inputName={`mst-priority-${row.mstid}`}
-                        inputValue={row.priority}
-                        onChange={() => togglePriority(row)}
-                      />
-                    </td>
-                    <td className='py-1 pr-2'>
-                      {row.chesscomHandle ? (
-                        <a href={`https://www.chess.com/member/${row.chesscomHandle}`} target='_blank' rel='noopener noreferrer' className='text-blue-600 hover:underline'>
-                          {row.chesscomHandle}
-                        </a>
-                      ) : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {players.map(row => {
+                  const fullName = row.firstName ? `${row.firstName} ${row.lastName}` : row.lastName
+                  const fideidLabel = row.fideid ?? '—'
+                  const gradeLabel = row.grade ?? '—'
+                  const priorityInputName = `mst-priority-${row.mstid}`
+                  const showHandleLink = !!row.chesscomHandle
+                  const noHandleLabel = row.chesscomHandle ? '' : '—'
+                  const handleHref = `https://www.chess.com/member/${row.chesscomHandle}`
+                  return (
+                    <tr key={row.mstid}>
+                      <td className='py-1 pr-2'>{fullName}</td>
+                      <td className='py-1 pr-2'>{fideidLabel}</td>
+                      <td className='py-1 pr-2 text-right tabular-nums'>{gradeLabel}</td>
+                      <td className='py-1 pr-2'>
+                        <MyToggle
+                          inputName={priorityInputName}
+                          inputValue={row.priority}
+                          onChange={() => togglePriority(row)}
+                        />
+                      </td>
+                      <td className='py-1 pr-2'>
+                        {showHandleLink && (
+                          <a href={handleHref} target='_blank' rel='noopener noreferrer' className='text-blue-600 hover:underline'>
+                            {row.chesscomHandle}
+                          </a>
+                        )}
+                        {noHandleLabel}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

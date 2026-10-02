@@ -21,7 +21,7 @@
 
 import { MyInput } from 'nextjs-shared/MyInput'
 
-interface FilterNumberRangeProps {
+type FilterNumberRangeProps = {
   label?: string
   min: string
   max: string

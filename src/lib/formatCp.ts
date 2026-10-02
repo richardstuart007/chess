@@ -12,8 +12,10 @@
 
 export function formatCp(cp: number): string {
   if (Math.abs(cp) >= 10000) {
-    return cp > 0 ? `M${10000 - cp}` : `-M${10000 + cp}`
+    const result = cp > 0 ? `M${10000 - cp}` : `-M${10000 + cp}`
+    return result
   }
   const val = (cp / 100).toFixed(2)
-  return cp > 0 ? `+${val}` : val
+  const result = cp > 0 ? `+${val}` : val
+  return result
 }

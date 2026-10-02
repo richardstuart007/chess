@@ -35,10 +35,10 @@ import { getMasterGamesForFen } from '@/src/lib/master/masterGamesList'
 import { MASTER_GAMES_FOR_FEN_LIMIT } from '@/src/lib/constants'
 import { applyUciMove } from '@/src/lib/fen'
 import { useLazyFetch } from 'nextjs-shared/useLazyFetch'
-import MovesListTable from './MovesListTable'
+import MovesListTable, { MovesListRow } from './MovesListTable'
 import { useMissingEvalAnalysis, MissingEvalRow } from './useMissingEvalAnalysis'
 
-interface MasterMovesDbPanelProps {
+type MasterMovesDbPanelProps = {
   fen: string
   autoFetch?: boolean
   defaultOpen?: boolean
@@ -68,37 +68,48 @@ export default function MasterMovesDbPanel({ fen, autoFetch = true, defaultOpen 
     .filter((r): r is MissingEvalRow => r != null)
   const missingEval = useMissingEvalAnalysis(missingRows)
 
+  const showFetch = !loaded
+  const showNoMoves = loaded && moves.length === 0
+  const showMoves = loaded && moves.length > 0
+  const fetchLabel = loading ? 'Loading...' : 'Fetch Moves'
+  const reachedLabel = reached.toLocaleString()
+  const movesRows: MovesListRow[] = moves.map(m => ({
+    key:       m.move_played,
+    move:      m.move_played,
+    times:     m.times,
+    white:     m.white,
+    draws:     m.draws,
+    black:     m.black,
+    eval:      m.cp ?? missingEval.overrides[m.move_played]?.cp ?? null
+  }))
+  const showAnalyzeMissing = missingEval.missingCount > 0
+  const analyzeMissingLabel = missingEval.analyzing
+    ? `Analyzing ${missingEval.progress?.done ?? 0}/${missingEval.progress?.total ?? 0}...`
+    : `Analyze missing (${missingEval.missingCount})`
+
   return (
     <MyBox title='Moves' collapsible defaultOpen={defaultOpen}>
-      {!loaded ? (
+      {showFetch && (
         <MyButton onClick={load} disabled={loading} overrideClass='text-xs'>
-          {loading ? 'Loading...' : 'Fetch Moves'}
+          {fetchLabel}
         </MyButton>
-      ) : moves.length === 0 ? (
+      )}
+      {showNoMoves && (
         <p className='text-xs text-gray-400'>No synced master games recorded from this position.</p>
-      ) : (
+      )}
+      {showMoves && (
         <div className='space-y-2'>
-          <p className='text-xxs text-gray-500'>{reached.toLocaleString()} times reached</p>
+          <p className='text-xxs text-gray-500'>{reachedLabel} times reached</p>
           <MovesListTable
-            rows={moves.map(m => ({
-              key:       m.move_played,
-              move:      m.move_played,
-              times:     m.times,
-              white:     m.white,
-              draws:     m.draws,
-              black:     m.black,
-              eval:      m.cp ?? missingEval.overrides[m.move_played]?.cp ?? null
-            }))}
+            rows={movesRows}
           />
-          {missingEval.missingCount > 0 && (
+          {showAnalyzeMissing && (
             <MyButton
               onClick={missingEval.analyzeMissing}
               disabled={missingEval.analyzing}
               overrideClass='text-xxs'
             >
-              {missingEval.analyzing
-                ? `Analyzing ${missingEval.progress?.done ?? 0}/${missingEval.progress?.total ?? 0}...`
-                : `Analyze missing (${missingEval.missingCount})`}
+              {analyzeMissingLabel}
             </MyButton>
           )}
         </div>

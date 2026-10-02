@@ -27,12 +27,12 @@
 
 import MySelect from 'nextjs-shared/MySelect'
 
-interface FilterOption {
+type FilterOption = {
   value: string
   label: string
 }
 
-interface FilterSelectProps {
+type FilterSelectProps = {
   label?: string
   options: (string | FilterOption)[]
   value: string
@@ -43,16 +43,18 @@ interface FilterSelectProps {
 }
 
 export default function FilterSelect({ label, options, value, onChange, width = 'w-20', borderClass = 'border-blue-500 focus:border-blue-500 hover:border-blue-500', searchEnabled = false }: FilterSelectProps) {
+  const selectClass = `${width} h-6 md:h-6 rounded-md border ${borderClass} px-1 text-xxs text-gray-700`
+  const containerClass = label ? 'flex flex-col gap-0.5' : ''
   return (
     <MySelect
       value={value}
       onChange={e => onChange(e.target.value)}
       options={options}
       searchEnabled={searchEnabled}
-      overrideClass={`${width} h-6 md:h-6 rounded-md border ${borderClass} px-1 text-xxs text-gray-700`}
+      overrideClass={selectClass}
       labelClass='text-xxs text-gray-500'
-      containerClass={label ? 'flex flex-col gap-0.5' : ''}
-      searchClass={`${width} h-6 md:h-6 rounded-md border ${borderClass} px-1 text-xxs text-gray-700`}
+      containerClass={containerClass}
+      searchClass={selectClass}
       label={label}
     />
   )

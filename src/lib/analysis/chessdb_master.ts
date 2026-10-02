@@ -26,7 +26,7 @@ import { truncateFen }  from '../fen'
 import { getPositionEvaluationsBulk_shared } from './chessdb_shared'
 import { objectiveGameResult } from '../objectiveGameResult'
 
-export interface MasterMoveRow {
+export type MasterMoveRow = {
   move_played:        string
   move_uci:           string | null
   mov_times:          number
@@ -68,14 +68,14 @@ export async function getMovePlayCounts_master(fens: string[], masterPlayer: str
     caller: 'getMovePlayCounts_master',
     table: 'tmpos_positions',
     query: `
-      SELECT p.mpos_fen, gp.mgam_move_played, COUNT(*)::int AS times
-      FROM tmpos_positions p
-      JOIN tmgam_game_positions gp ON gp.mgam_pos_id = p.mpos_id
-      JOIN tmgd_gamesdecon d ON d.mgd_mgdid = gp.mgam_mgdid
-      WHERE p.mpos_fen IN (${fenPlaceholders})
-        AND gp.mgam_move_num > 0
-        AND d.mgd_player = ${playerPlaceholder}
-      GROUP BY p.mpos_fen, gp.mgam_move_played
+      SELECT mpos_fen, mgam_move_played, COUNT(*)::int AS times
+      FROM tmpos_positions
+      JOIN tmgam_game_positions ON mgam_pos_id = mpos_id
+      JOIN tmgd_gamesdecon ON mgd_mgdid = mgam_mgdid
+      WHERE mpos_fen IN (${fenPlaceholders})
+        AND mgam_move_num > 0
+        AND mgd_player = ${playerPlaceholder}
+      GROUP BY mpos_fen, mgam_move_played
     `,
     params
   })
@@ -125,27 +125,27 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
     table: 'tmpos_positions',
     query: `
       SELECT
-        gp.mgam_move_played                                   AS move_played,
-        gp.mgam_move_uci                                      AS move_uci,
-        COUNT(DISTINCT gp.mgam_mgdid)::int                    AS mov_times,
-        COUNT(DISTINCT gp.mgam_mgdid) FILTER (
-          WHERE (d.mgd_player_color = 'white' AND d.mgd_player_result = 'win')
-             OR (d.mgd_player_color = 'black' AND d.mgd_player_result = 'loss')
+        mgam_move_played                                   AS move_played,
+        mgam_move_uci                                      AS move_uci,
+        COUNT(DISTINCT mgam_mgdid)::int                    AS mov_times,
+        COUNT(DISTINCT mgam_mgdid) FILTER (
+          WHERE (mgd_player_color = 'white' AND mgd_player_result = 'win')
+             OR (mgd_player_color = 'black' AND mgd_player_result = 'loss')
         )::int                                                 AS white,
-        COUNT(DISTINCT gp.mgam_mgdid) FILTER (WHERE d.mgd_player_result = 'draw')::int AS draws,
-        COUNT(DISTINCT gp.mgam_mgdid) FILTER (
-          WHERE (d.mgd_player_color = 'black' AND d.mgd_player_result = 'win')
-             OR (d.mgd_player_color = 'white' AND d.mgd_player_result = 'loss')
+        COUNT(DISTINCT mgam_mgdid) FILTER (WHERE mgd_player_result = 'draw')::int AS draws,
+        COUNT(DISTINCT mgam_mgdid) FILTER (
+          WHERE (mgd_player_color = 'black' AND mgd_player_result = 'win')
+             OR (mgd_player_color = 'white' AND mgd_player_result = 'loss')
         )::int                                                 AS black,
-        ROUND(AVG(d.mgd_opponent_rating))::int                 AS avg_opponent_rating,
-        MAX(gp.mgam_resulting_fen)                            AS resulting_fen
-      FROM tmpos_positions p
-      JOIN tmgam_game_positions gp ON gp.mgam_pos_id = p.mpos_id
-      JOIN tmgd_gamesdecon d ON d.mgd_mgdid = gp.mgam_mgdid
-      WHERE p.mpos_fen = $1
-        AND gp.mgam_move_num > 0
-        AND d.mgd_player = $2
-      GROUP BY gp.mgam_move_played, gp.mgam_move_uci
+        ROUND(AVG(mgd_opponent_rating))::int                 AS avg_opponent_rating,
+        MAX(mgam_resulting_fen)                            AS resulting_fen
+      FROM tmpos_positions
+      JOIN tmgam_game_positions ON mgam_pos_id = mpos_id
+      JOIN tmgd_gamesdecon ON mgd_mgdid = mgam_mgdid
+      WHERE mpos_fen = $1
+        AND mgam_move_num > 0
+        AND mgd_player = $2
+      GROUP BY mgam_move_played, mgam_move_uci
       ORDER BY mov_times DESC
     `,
     params: [truncateFen(fen), masterPlayer.toLowerCase()]
@@ -164,7 +164,7 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
   const resultingFens = rows.map(r => r.resulting_fen).filter((f): f is string => f != null)
   const poseEvals = await getPositionEvaluationsBulk_shared(resultingFens)
 
-  return rows.map(r => {
+  const moveSummary = rows.map(r => {
     const pose = r.resulting_fen ? poseEvals[truncateFen(r.resulting_fen)] : undefined
     return {
       move_played:        r.move_played,
@@ -178,9 +178,10 @@ export async function getMoveSummaryForPosition_master(fen: string, masterPlayer
       pose_depth:         pose?.depth ?? null
     }
   })
+  return moveSummary
 }
 
-export interface MasterPositionGameHit {
+export type MasterPositionGameHit = {
   player:         string
   move_played:    string
   move_num:       number | null
@@ -298,7 +299,8 @@ export async function fetchGamesForPosition_master(
     })
     return []
   }
-  return result.data.map(mapMasterPositionGameRow)
+  const games = result.data.map(mapMasterPositionGameRow)
+  return games
 }
 
 //----------------------------------------------------------------------------------

@@ -16,7 +16,8 @@
 //    page-local filters.
 //==================================================================================================
 
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
+import { useGlobalFilters } from './useGlobalFilters'
 
 export function useGlobalFilter(key: string): [string, (next: string) => void] {
   const setMultiple = useGlobalFilters()
@@ -34,27 +35,4 @@ export function useGlobalFilter(key: string): [string, (next: string) => void] {
   }
 
   return [value, setValue]
-}
-
-//----------------------------------------------------------------------------------------------
-//  useGlobalFilters — sets multiple global filter params in a single router.push. Calling
-//  useGlobalFilter's setValue multiple times in the same handler is unsafe: each call builds its
-//  new URL from the same pre-click searchParams snapshot (the component hasn't re-rendered
-//  between the calls), so each push overwrites the previous one instead of composing — only the
-//  last call's param survives. Any handler that needs to apply more than one global filter at
-//  once (e.g. a shared "Filter" button) must use this instead.
-//----------------------------------------------------------------------------------------------
-export function useGlobalFilters(): (updates: Record<string, string>) => void {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-
-  return function setMultiple(updates: Record<string, string>) {
-    const params = new URLSearchParams(searchParams.toString())
-    for (const [key, next] of Object.entries(updates)) {
-      if (next) params.set(key, next); else params.delete(key)
-    }
-    const qs = params.toString()
-    router.push(qs ? `${pathname}?${qs}` : pathname)
-  }
 }

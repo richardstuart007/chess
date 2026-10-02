@@ -15,6 +15,7 @@
 //==================================================================================================
 
 import { useState } from 'react'
+import { MyButton } from 'nextjs-shared/MyButton'
 import { VALUE_DISPLAY_MAX_LENGTH } from '@/src/lib/constants'
 import AppTab from '@/src/ui/AppTab'
 
@@ -69,35 +70,44 @@ export default function ConstantsViewer({
     setSectionIndex(0)
   }
 
+  const constantsActive = tab === 'constants'
+  const envActive = tab === 'env'
+  const functionsActive = tab === 'functions'
+  const showSections = !functionsActive
+
   return (
     <div className='p-8'>
       <div className='flex gap-2 mb-4 border-b border-gray-200'>
-        <AppTab active={tab === 'constants'} onClick={() => handleTabChange('constants')}>
+        <AppTab active={constantsActive} onClick={() => handleTabChange('constants')}>
           Constants
         </AppTab>
-        <AppTab active={tab === 'env'} onClick={() => handleTabChange('env')}>
+        <AppTab active={envActive} onClick={() => handleTabChange('env')}>
           .env
         </AppTab>
-        <AppTab active={tab === 'functions'} onClick={() => handleTabChange('functions')}>
+        <AppTab active={functionsActive} onClick={() => handleTabChange('functions')}>
           Functions
         </AppTab>
       </div>
 
-      {tab === 'functions' ? (
+      {functionsActive && (
         <FunctionIndexTable index={functionIndex} functionDescriptions={functionDescriptions} />
-      ) : (
+      )}
+      {showSections && (
         <>
           <div className='flex gap-2 mb-6 flex-wrap'>
-            {sections.map((section, i) => (
-              <AppTab
-                key={section.heading}
-                variant='pill'
-                active={i === sectionIndex}
-                onClick={() => setSectionIndex(i)}
-              >
-                {section.heading}
-              </AppTab>
-            ))}
+            {sections.map((section, i) => {
+              const isActive = i === sectionIndex
+              return (
+                <AppTab
+                  key={section.heading}
+                  variant='pill'
+                  active={isActive}
+                  onClick={() => setSectionIndex(i)}
+                >
+                  {section.heading}
+                </AppTab>
+              )
+            })}
           </div>
 
           {activeSection && <SectionTable section={activeSection} />}
@@ -141,7 +151,8 @@ function buildFunctionIndex(constantsSections: ConstantSection[], envSections: C
             : (() => {
                 const [file, functionsPart] = consumer.split(': ')
                 if (functionsPart === undefined) return [consumer]
-                return functionsPart.split(', ').map(functionName => `${file}: ${functionName}`)
+                const functionReferences = functionsPart.split(', ').map(functionName => `${file}: ${functionName}`)
+                return functionReferences
               })()
 
           for (const reference of references) {
@@ -164,7 +175,8 @@ function buildFunctionIndex(constantsSections: ConstantSection[], envSections: C
       .sort((a, b) => a.name.localeCompare(b.name))
   }))
 
-  return index.sort((a, b) => a.usedIn.localeCompare(b.usedIn))
+  const result = index.sort((a, b) => a.usedIn.localeCompare(b.usedIn))
+  return result
 }
 
 //----------------------------------------------------------------------------------------------
@@ -190,14 +202,17 @@ function FunctionIndexTable({ index, functionDescriptions }: { index: FunctionIn
         </tr>
       </thead>
       <tbody>
-        {index.map(entry => (
-          <tr key={entry.usedIn} className='border-b border-gray-100 align-top'>
-            <td className='py-1.5 pr-10 font-mono break-words'>{entry.usedIn}</td>
-            <td className='py-1.5'>
-              <FunctionIndexPopup description={functionDescriptions[entry.usedIn] ?? ''} names={entry.names} />
-            </td>
-          </tr>
-        ))}
+        {index.map(entry => {
+          const description = functionDescriptions[entry.usedIn] ?? ''
+          return (
+            <tr key={entry.usedIn} className='border-b border-gray-100 align-top'>
+              <td className='py-1.5 pr-10 font-mono break-words'>{entry.usedIn}</td>
+              <td className='py-1.5'>
+                <FunctionIndexPopup description={description} names={entry.names} />
+              </td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )
@@ -220,9 +235,10 @@ function FunctionIndexPopup({ description, names }: { description: string; names
     <PopoverButton label='Show'>
       {description && <p className='text-gray-700 mb-2'>{description}</p>}
       <ul className='list-disc pl-4 space-y-1'>
-        {names.map(n => (
-          <li key={n.name} className={n.isEnv ? 'text-red-700' : 'text-blue-700'}>{n.name}</li>
-        ))}
+        {names.map(n => {
+          const nameClass = n.isEnv ? 'text-red-700' : 'text-blue-700'
+          return <li key={n.name} className={nameClass}>{n.name}</li>
+        })}
       </ul>
     </PopoverButton>
   )
@@ -250,22 +266,25 @@ function SectionTable({ section }: { section: ConstantSection }) {
         </tr>
       </thead>
       <tbody>
-        {section.entries.map(entry => (
-          <tr key={entry.name} className='border-b border-gray-100 align-top'>
-            <td className='py-1.5 pr-4 font-mono whitespace-nowrap'>{entry.name}</td>
-            <td className='py-1.5 pr-4 break-words'>{renderValue(entry.value)}</td>
-            <td className='py-1.5 pr-4 text-gray-600'>{entry.description}</td>
-            <td className='py-1.5'>
-              <PopoverButton label='Show'>
-                <ul className='list-disc pl-4 space-y-1 text-gray-700'>
-                  {entry.consumers.map((consumer, i) => (
-                    <li key={i}>{consumer}</li>
-                  ))}
-                </ul>
-              </PopoverButton>
-            </td>
-          </tr>
-        ))}
+        {section.entries.map(entry => {
+          const valueContent = renderValue(entry.value)
+          return (
+            <tr key={entry.name} className='border-b border-gray-100 align-top'>
+              <td className='py-1.5 pr-4 font-mono whitespace-nowrap'>{entry.name}</td>
+              <td className='py-1.5 pr-4 break-words'>{valueContent}</td>
+              <td className='py-1.5 pr-4 text-gray-600'>{entry.description}</td>
+              <td className='py-1.5'>
+                <PopoverButton label='Show'>
+                  <ul className='list-disc pl-4 space-y-1 text-gray-700'>
+                    {entry.consumers.map((consumer, i) => (
+                      <li key={i}>{consumer}</li>
+                    ))}
+                  </ul>
+                </PopoverButton>
+              </td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )
@@ -312,27 +331,28 @@ function renderValue(value: unknown) {
 //----------------------------------------------------------------------------------------------
 function PopoverButton({ label, align = 'right', children }: { label: string; align?: 'left' | 'right'; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const popoverClass = `absolute z-20 mt-1 ${align === 'left' ? 'left-0' : 'right-0'} w-[32rem] max-h-64 overflow-y-auto p-3 bg-blue-50 border border-blue-200 rounded-md shadow-xl text-xs`
 
   return (
     <span className='relative inline-block'>
-      <button
+      <MyButton
         type='button'
         onClick={() => setOpen(o => !o)}
-        className='text-xs text-blue-600 hover:text-blue-800 border border-blue-300 rounded px-1.5 py-0.5 leading-none'
+        overrideClass='h-auto md:h-auto bg-transparent hover:bg-transparent text-blue-600 hover:text-blue-800 border border-blue-300 px-1.5 py-0.5 leading-none'
       >
         {label}
-      </button>
+      </MyButton>
 
       {open && (
-        <div className={`absolute z-20 mt-1 ${align === 'left' ? 'left-0' : 'right-0'} w-[32rem] max-h-64 overflow-y-auto p-3 bg-blue-50 border border-blue-200 rounded-md shadow-xl text-xs`}>
+        <div className={popoverClass}>
           <div className='flex justify-end mb-2'>
-            <button
+            <MyButton
               onClick={() => setOpen(false)}
-              className='text-gray-400 hover:text-gray-700 text-sm leading-none font-bold'
+              overrideClass='h-auto md:h-auto px-0 md:px-0 bg-transparent hover:bg-transparent text-gray-400 hover:text-gray-700 text-sm leading-none font-bold'
               type='button'
             >
               ×
-            </button>
+            </MyButton>
           </div>
           {children}
         </div>

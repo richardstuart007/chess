@@ -110,6 +110,9 @@ async function resolvePipRunId(pipelineType: PipelineType, forceNew: boolean = f
 //  Rows with pip_output_recs = 0 are excluded (nothing to divide by). Grouped by
 //  pip_step only, not pip_sub_step — steps 1 and 3 blend heterogeneous sub-steps into
 //  one approximate rate, which is acceptable for a rough ETA estimate.
+//
+//  Returns:
+//    one field per step (step1-step6, step8, step9) — that step's average ms per item, or null
 //----------------------------------------------------------------------------------
 export async function getPipelineRates(): Promise<{
   step1: number | null
@@ -267,5 +270,6 @@ export async function getRecentRunIds(pipelineType: PipelineType, limit: number 
     })
     return []
   }
-  return result.data.map((r: any) => ({ runId: Number(r.pip_run_id), created: r.pip_created }))
+  const recentRunIds = result.data.map((r: any) => ({ runId: Number(r.pip_run_id), created: r.pip_created }))
+  return recentRunIds
 }

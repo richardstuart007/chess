@@ -149,7 +149,8 @@ export async function initSync(
 //    the last synced end_time, or null
 //----------------------------------------------------------------------------------
 async function getLatestGameEndTime(player: string): Promise<number | null> {
-  return getPlayerLastSyncedEndTime(player)
+  const result = getPlayerLastSyncedEndTime(player)
+  return result
 }
 
 //----------------------------------------------------------------------------------

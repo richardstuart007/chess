@@ -50,12 +50,39 @@ const RESULTS_OPTIONS: { value: string; label: string }[] = [
 ]
 const TODAY = new Date().toISOString().slice(0, 10)
 
-interface OpeningScoreChartProps {
+type OpeningScoreChartProps = {
   players: { player: string; display_name: string | null }[]
   onSelectOpening?: (eco: string, openingName: string, color: '' | 'white' | 'black') => void
 }
 
 export default function OpeningScoreChart({ players, onSelectOpening }: OpeningScoreChartProps) {
+  //
+  //  Initialized to plain defaults (matching the server render) rather than reading
+  //  sessionStorage synchronously — sessionStorage is only available client-side, so
+  //  restoring persisted state happens in the effect below, after mount, to avoid a
+  //  hydration mismatch between the server-rendered HTML and the first client render.
+  //
+  const [color, setColor]               = useState<'' | 'white' | 'black'>('')
+  const [from, setFrom]                 = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
+  const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES_Player)
+  const [resultsCount, setResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
+  const [openingScores, setOpeningScores] = useState<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]>([])
+  const [loading, setLoading]           = useState(false)
+
+  //
+  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh, and seeded
+  //  once on hydration (from the restored drafts + current URL) so a reload shows data without a
+  //  manual Refresh. refreshNonce forces a re-fetch even when nothing else changed.
+  //
+  const [appliedPlayer,       setAppliedPlayer]       = useState('')
+  const [appliedTimeClass,    setAppliedTimeClass]    = useState('')
+  const [appliedColor,        setAppliedColor]        = useState<'' | 'white' | 'black'>('')
+  const [appliedMinGames,     setAppliedMinGames]     = useState(DEFAULT_MIN_GAMES_Player)
+  const [appliedFrom,         setAppliedFrom]         = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
+  const [appliedResultsCount, setAppliedResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
+  const [refreshNonce,        setRefreshNonce]        = useState(0)
+  const [hydrated,            setHydrated]            = useState(false)
+
   const searchParams = useSearchParams()
 
   //
@@ -70,33 +97,7 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
   const dateFromFilter = rawDateFromFilter || DEFAULT_DATE_FROM_Player
   const [draftDateFrom, setDraftDateFrom] = useState(dateFromFilter)
 
-  //
-  //  Initialized to plain defaults (matching the server render) rather than reading
-  //  sessionStorage synchronously — sessionStorage is only available client-side, so
-  //  restoring persisted state happens in the effect below, after mount, to avoid a
-  //  hydration mismatch between the server-rendered HTML and the first client render.
-  //
-  const [color, setColor]               = useState<'' | 'white' | 'black'>('')
-  const [from, setFrom]                 = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
-  const [minGames, setMinGames]         = useState(DEFAULT_MIN_GAMES_Player)
-  const [resultsCount, setResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
-  const [data, setData]                 = useState<{ eco_code: string; opening_name: string; games: number; score_pct: number }[]>([])
-  const [loading, setLoading]           = useState(false)
-
-  //
-  //  Applied snapshot — the ONLY inputs the load effect reads. Updated on Refresh, and seeded
-  //  once on hydration (from the restored drafts + current URL) so a reload shows data without a
-  //  manual Refresh. refreshNonce forces a re-fetch even when nothing else changed.
-  //
-  const [appliedPlayer,       setAppliedPlayer]       = useState('')
-  const [appliedTimeClass,    setAppliedTimeClass]    = useState('')
-  const [appliedColor,        setAppliedColor]        = useState<'' | 'white' | 'black'>('')
-  const [appliedMinGames,     setAppliedMinGames]     = useState(DEFAULT_MIN_GAMES_Player)
-  const [appliedFrom,         setAppliedFrom]         = useState<'Best' | 'Worst'>(DEFAULT_OPENINGS_SORT_FROM)
-  const [appliedResultsCount, setAppliedResultsCount] = useState(DEFAULT_OPENINGS_SHOW)
   const [appliedDateFrom,     setAppliedDateFrom]     = useState(dateFromFilter)
-  const [refreshNonce,        setRefreshNonce]        = useState(0)
-  const [hydrated,            setHydrated]            = useState(false)
 
   //
   //  "All" (appliedPlayer unset) means no player filter at all, not every tracked username
@@ -149,17 +150,21 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
     //  load — fetches the opening scores for the applied filters and stores them in state
     //----------------------------------------------------------------------------------------------
     async function load() {
-      const limit   = appliedResultsCount === '0' ? 0 : parseInt(appliedResultsCount, 10)
-      const sortDir = appliedFrom === 'Best' ? 'DESC' : 'ASC'
-      const rows = await getOpeningScores(
-        appliedQueryPlayers, appliedColor,
-        parseInt(appliedMinGames, 10), limit, sortDir,
-        appliedDateFrom || undefined,
-        appliedTimeClass || undefined
-      )
-      if (!cancelled) { setData(rows); setLoading(false) }
+      try {
+        const limit   = appliedResultsCount === '0' ? 0 : parseInt(appliedResultsCount, 10)
+        const sortDir = appliedFrom === 'Best' ? 'DESC' : 'ASC'
+        const rows = await getOpeningScores(
+          appliedQueryPlayers, appliedColor,
+          parseInt(appliedMinGames, 10), limit, sortDir,
+          appliedDateFrom || undefined,
+          appliedTimeClass || undefined
+        )
+        if (!cancelled) { setOpeningScores(rows); setLoading(false) }
+      } catch {
+        if (!cancelled) setLoading(false)
+      }
     }
-    load().catch(() => { if (!cancelled) setLoading(false) })
+    load()
     return () => { cancelled = true }
   }, [appliedQueryPlayers, appliedColor, appliedFrom, appliedMinGames, appliedResultsCount, appliedDateFrom, appliedTimeClass, refreshNonce, hydrated, players.length])
 
@@ -209,7 +214,7 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
     || resultsCount !== appliedResultsCount
     || draftDateFrom !== appliedDateFrom
 
-  const chartData = data.map(r => ({
+  const chartData = openingScores.map(r => ({
     label:     `${r.eco_code} ${r.opening_name}`.slice(0, 100),
     fullName:  r.opening_name,
     eco:       r.eco_code,
@@ -218,6 +223,10 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
   }))
 
   const chartHeight = Math.max(200, chartData.length * 28)
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const refreshLabel = loading ? 'Fetching...' : 'Refresh'
+  const showNoData = !loading && chartData.length === 0
+  const showChart = !loading && chartData.length > 0
 
   return (
     <MyBox title='Openings'>
@@ -260,19 +269,19 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
         <FilterActionButton
           onClick={handleRefresh}
           disabled={loading}
-          variant={filtersPending ? 'pending' : 'primary'}
+          variant={refreshVariant}
         >
-          {loading ? 'Fetching...' : 'Refresh'}
+          {refreshLabel}
         </FilterActionButton>
       </div>
 
       {loading && <p className='text-xs text-gray-400'>Loading...</p>}
 
-      {!loading && chartData.length === 0 && (
+      {showNoData && (
         <p className='text-xs text-gray-400'>No openings with {minGames}+ games.</p>
       )}
 
-      {!loading && chartData.length > 0 && (
+      {showChart && (
         <>
           <p className='mb-1 text-xxs text-gray-400'>Click a bar to open its games on the Games tab</p>
           <ResponsiveContainer width='100%' height={chartHeight}>
@@ -302,9 +311,10 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
                 contentStyle={{ fontSize: 11 }}
               />
               <Bar dataKey='score_pct' radius={[0, 3, 3, 0]} onClick={handleBarClick} cursor='pointer'>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={barColor(entry.score_pct)} />
-                ))}
+                {chartData.map((entry, i) => {
+                  const barFill = barColor(entry.score_pct)
+                  return <Cell key={i} fill={barFill} />
+                })}
                 <LabelList
                   dataKey='score_pct'
                   position='right'
@@ -331,7 +341,7 @@ export default function OpeningScoreChart({ players, onSelectOpening }: OpeningS
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function sso<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }
 
 //----------------------------------------------------------------------------------------------

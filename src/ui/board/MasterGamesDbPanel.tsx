@@ -13,7 +13,7 @@
 //      autoFetch    — fetch automatically on mount/fen change (default true); when false, shows
 //                     a "Fetch" button instead
 //      defaultOpen  — MyBox's initial collapsed state (default true)
-//      gameLinkBase — URL prefix a game row click navigates to (default '/analyzemaster?game=')
+//      gameLinkBase — URL prefix a game row click navigates to (default '/analyzemaster?mgdid=')
 //
 //  2) NOTES
 //    Result is shown as objective chess notation (1-0/0-1/½-½), and the tracked master's own
@@ -42,23 +42,24 @@ import MyPaginationFooter from 'nextjs-shared/MyPaginationFooter'
 import { useLazyFetch } from 'nextjs-shared/useLazyFetch'
 import { fetchMasterGamesForFenPage, getMasterGamesForFenCount, getMasterGamesForFen, type MasterFenGameHit } from '@/src/lib/master/masterGamesList'
 import { POSITION_GAMES_ROWS_DEFAULT, POSITION_GAMES_ROWS_OPTIONS } from '@/src/lib/constants'
-import GamesListTable from './GamesListTable'
+import GamesListTable, { GamesListRow } from './GamesListTable'
 
-interface MasterGamesDbPanelProps {
+type MasterGamesDbPanelProps = {
   fen: string
   autoFetch?: boolean
   defaultOpen?: boolean
   gameLinkBase?: string
 }
 
-export default function MasterGamesDbPanel({ fen, autoFetch = true, defaultOpen = true, gameLinkBase = '/analyzemaster?game=' }: MasterGamesDbPanelProps) {
-  const router = useRouter()
-  const [moveFilter, setMoveFilter] = useState('')
+export default function MasterGamesDbPanel({ fen, autoFetch = true, defaultOpen = true, gameLinkBase = '/analyzemaster?mgdid=' }: MasterGamesDbPanelProps) {
+  const [filter_move_played, setFilter_move_played] = useState('')
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(POSITION_GAMES_ROWS_DEFAULT)
+
+  const router = useRouter()
   const { data, loaded, loading, load } = useLazyFetch(
-    () => fetchGamesPage(fen, page, rowsPerPage, moveFilter || undefined),
-    [fen, page, rowsPerPage, moveFilter],
+    () => fetchGamesPage(fen, page, rowsPerPage, filter_move_played || undefined),
+    [fen, page, rowsPerPage, filter_move_played],
     { autoFetch }
   )
   const games = data?.games ?? []
@@ -66,57 +67,68 @@ export default function MasterGamesDbPanel({ fen, autoFetch = true, defaultOpen 
   const moveOptions = data?.moveOptions ?? []
   const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage))
 
-  // Reset back to page 1 whenever the position/move filter identity changes — same guard pattern
-  // as ChessBoardView_shared's positionGamesResetKeyRef, so paging state from a previous
-  // position/filter never carries over as a stale offset.
+  //
+  //  Reset back to page 1 whenever the position/move filter identity changes — same guard pattern
+  //  as ChessBoardView_shared's positionGamesResetKeyRef, so paging state from a previous
+  //  position/filter never carries over as a stale offset.
+  //
   const resetKeyRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    const key = JSON.stringify({ fen, moveFilter })
+    const key = JSON.stringify({ fen, filter_move_played })
     if (resetKeyRef.current !== undefined && resetKeyRef.current !== key) setPage(1)
     resetKeyRef.current = key
-  }, [fen, moveFilter])
+  }, [fen, filter_move_played])
+
+  const showFetch = !loaded
+  const showNoGames = loaded && games.length === 0
+  const showGames = loaded && games.length > 0
+  const fetchLabel = loading ? 'Loading...' : 'Fetch Games'
+  const showMoveFilter = moveOptions.length > 1
+  const gamesRows: GamesListRow[] = games.map(g => ({
+    key:            String(g.mgd_mgdid),
+    move:           g.move_played,
+    white:          g.white_username,
+    whiteRating:    g.white_rating,
+    whiteIsTracked: g.white_username === g.player,
+    black:          g.black_username,
+    blackRating:    g.black_rating,
+    blackIsTracked: g.black_username === g.player,
+    date:           g.date,
+    result:         g.result,
+    termination:    g.termination,
+    finalEval:      null
+  }))
+  const showPagination = totalPages > 1
 
   return (
     <MyBox title='Games' collapsible defaultOpen={defaultOpen}>
-      {!loaded ? (
+      {showFetch && (
         <MyButton onClick={load} disabled={loading} overrideClass='text-xs'>
-          {loading ? 'Loading...' : 'Fetch Games'}
+          {fetchLabel}
         </MyButton>
-      ) : games.length === 0 ? (
+      )}
+      {showNoGames && (
         <p className='text-xs text-gray-400'>No synced master games recorded from this position.</p>
-      ) : (
+      )}
+      {showGames && (
         <div className='space-y-2'>
-          {moveOptions.length > 1 && (
-            <div className='flex items-center gap-2'>
-              <label className='text-xxs text-gray-500'>Move</label>
-              <MySelect
-                value={moveFilter}
-                onChange={e => setMoveFilter(e.target.value)}
-                overrideClass='w-24 h-6 md:h-6'
-              >
-                <option value=''>All</option>
-                {moveOptions.map(m => <option key={m} value={m}>{m}</option>)}
-              </MySelect>
-            </div>
+          {showMoveFilter && (
+            <MySelect
+              label='Move'
+              labelClass='text-xxs text-gray-500'
+              value={filter_move_played}
+              onChange={e => setFilter_move_played(e.target.value)}
+              overrideClass='w-24 h-6 md:h-6'
+            >
+              <option value=''>All</option>
+              {moveOptions.map(m => <option key={m} value={m}>{m}</option>)}
+            </MySelect>
           )}
           <GamesListTable
-            rows={games.map(g => ({
-              key:            String(g.mgd_mgdid),
-              move:           g.move_played,
-              white:          g.white_username,
-              whiteRating:    g.white_rating,
-              whiteIsTracked: g.white_username === g.player,
-              black:          g.black_username,
-              blackRating:    g.black_rating,
-              blackIsTracked: g.black_username === g.player,
-              date:           g.date,
-              result:         g.result,
-              termination:    g.termination,
-              finalEval:      null
-            }))}
+            rows={gamesRows}
             onRowClick={key => router.push(`${gameLinkBase}${key}`)}
           />
-          {totalPages > 1 && (
+          {showPagination && (
             <MyPaginationFooter
               totalPages={totalPages}
               statecurrentPage={page}

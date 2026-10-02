@@ -38,6 +38,15 @@ const RESULT_STYLES: Record<string, string> = {
 }
 
 export default function MasterGameList() {
+  const [draftFilters, setDraftFilters] = useState<MasterGameFilters>({})
+  const [filters, setFilters] = useState<MasterGameFilters>({})
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Master)
+  const [hydrated, setHydrated] = useState(false)
+  const [games, setGames] = useState<any[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+
   const router = useRouter()
   const searchParams = useSearchParams()
   //
@@ -63,12 +72,6 @@ export default function MasterGameList() {
     if (ecoParam) updates.eco = ecoParam
     return updates
   }, [masterParam, colorParam, timeClassParam, dateFromParam, openingParam, ecoParam])
-
-  const [draftFilters, setDraftFilters] = useState<MasterGameFilters>({})
-  const [filters, setFilters] = useState<MasterGameFilters>({})
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(GAME_LIST_ROWS_DEFAULT_Master)
-  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     const hydratedDraft = ss<MasterGameFilters>(`${SESSION_STORAGE_PREFIX}mgl-draftFilters`, {})
@@ -121,9 +124,61 @@ export default function MasterGameList() {
     try { sessionStorage.setItem(`${SESSION_STORAGE_PREFIX}mgl-rows`, JSON.stringify(rowsPerPage)) } catch {}
   }, [rowsPerPage, hydrated])
 
-  const [games, setGames] = useState<any[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [loading, setLoading] = useState(false)
+  //
+  //  Reset back to page 1 whenever filters genuinely change — guarded via
+  //  filtersResetKeyRef so the one-time hydration restore above (which also sets
+  //  filters) isn't mistaken for a real change and doesn't clobber the just-restored
+  //  page number.
+  //
+  const filtersResetKeyRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!hydrated) return
+    const key = JSON.stringify(filters)
+    if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
+      setCurrentPage(1)
+    }
+    filtersResetKeyRef.current = key
+  }, [filters, hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    //----------------------------------------------------------------------------------------------
+    //  fetchCount — fetches the total number of matching master games and stores it as totalCount
+    //----------------------------------------------------------------------------------------------
+    async function fetchCount() {
+      const count = await getMasterGamesPageCount(filters, 1)
+      if (!cancelled) { setTotalCount(count) }
+    }
+    fetchCount()
+    return () => { cancelled = true }
+  }, [filters, hydrated])
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
+
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    setLoading(true)
+
+    //----------------------------------------------------------------------------------------------
+    //  fetchPage — fetches the current page of master games for the applied filters and stores it in state
+    //----------------------------------------------------------------------------------------------
+    async function fetchPage() {
+      try {
+        const rows = await fetchFilteredMasterGames(filters, currentPage, rowsPerPage)
+        if (!cancelled) {
+          setGames(rows)
+          setLoading(false)
+        }
+      } catch {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchPage()
+    return () => { cancelled = true }
+  }, [filters, currentPage, rowsPerPage, hydrated])
 
   //----------------------------------------------------------------------------------------------
   //  updateFilter — sets one draft filter, or clears it when the value is empty; numeric keys (opponent rating, mgdid) are parsed as integers
@@ -178,64 +233,29 @@ export default function MasterGameList() {
   function openMasterGame(row: any) {
     const qs = searchParams.toString()
     pushBackTarget(qs ? `/mastergames?${qs}` : '/mastergames')
-    router.push(`/analyzemaster?game=${row.mgd_mgdid}&master=${encodeURIComponent(row.mgd_player)}`)
+    router.push(`/analyzemaster?mgdid=${row.mgd_mgdid}&master=${encodeURIComponent(row.mgd_player)}`)
   }
-
-  //
-  //  Reset back to page 1 whenever filters genuinely change — guarded via
-  //  filtersResetKeyRef so the one-time hydration restore above (which also sets
-  //  filters) isn't mistaken for a real change and doesn't clobber the just-restored
-  //  page number.
-  //
-  const filtersResetKeyRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (!hydrated) return
-    const key = JSON.stringify(filters)
-    if (filtersResetKeyRef.current !== undefined && filtersResetKeyRef.current !== key) {
-      setCurrentPage(1)
-    }
-    filtersResetKeyRef.current = key
-  }, [filters, hydrated])
-
-  useEffect(() => {
-    if (!hydrated) return
-    let cancelled = false
-    //----------------------------------------------------------------------------------------------
-    //  fetchCount — fetches the total number of matching master games and stores it as totalCount
-    //----------------------------------------------------------------------------------------------
-    async function fetchCount() {
-      const count = await getMasterGamesPageCount(filters, 1)
-      if (!cancelled) { setTotalCount(count) }
-    }
-    fetchCount()
-    return () => { cancelled = true }
-  }, [filters, hydrated])
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage))
-
-  useEffect(() => {
-    if (!hydrated) return
-    let cancelled = false
-    setLoading(true)
-
-    //----------------------------------------------------------------------------------------------
-    //  fetchPage — fetches the current page of master games for the applied filters and stores it in state
-    //----------------------------------------------------------------------------------------------
-    async function fetchPage() {
-      const rows = await fetchFilteredMasterGames(filters, currentPage, rowsPerPage)
-      if (!cancelled) {
-        setGames(rows)
-        setLoading(false)
-      }
-    }
-
-    fetchPage().catch(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [filters, currentPage, rowsPerPage, hydrated])
 
   const filtersPending = JSON.stringify(draftFilters) !== JSON.stringify(filters)
   const dRMin = draftFilters.opponentRatingMin ?? ''
   const dRMax = draftFilters.opponentRatingMax ?? ''
+  const draftPlayer = draftFilters.player ?? ''
+  const draftDateFrom = draftFilters.dateFrom ?? ''
+  const draftMgdid = draftFilters.mgdid != null ? String(draftFilters.mgdid) : ''
+  const draftColor = draftFilters.color ?? ''
+  const draftTimeClass = draftFilters.timeClass ?? ''
+  const draftOpponent = draftFilters.opponent ?? ''
+  const draftRatingMin = String(dRMin)
+  const draftRatingMax = String(dRMax)
+  const draftResult = draftFilters.result ?? ''
+  const draftTermination = draftFilters.termination ?? []
+  const draftOpening = draftFilters.opening ?? ''
+  const draftEco = draftFilters.eco ?? ''
+  const refreshVariant = filtersPending ? 'pending' : 'primary'
+  const showNoGames = !loading && games.length === 0
+  const showGames = !loading
+  const openingCellClass = `py-1.5 pr-2 ${WIDTH_OPENING} truncate`
+  const showPagination = totalPages > 1
 
   return (
     <MyBox>
@@ -262,7 +282,7 @@ export default function MasterGameList() {
               <th className='pb-2 pr-2'></th>
               <th className='pb-2 pr-2'>
                 <MasterPlayerSelect
-                  value={draftFilters.player ?? ''}
+                  value={draftPlayer}
                   onChange={v => updateFilter('player', v)}
                   scope='synced'
                   label=''
@@ -270,14 +290,14 @@ export default function MasterGameList() {
               </th>
               <th className='pb-2 pr-2'>
                 <FilterDateInput
-                  value={draftFilters.dateFrom ?? ''}
+                  value={draftDateFrom}
                   onChange={v => updateFilter('dateFrom', v)}
                   width={WIDTH_DATE_FROM}
                 />
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.mgdid != null ? String(draftFilters.mgdid) : ''}
+                  value={draftMgdid}
                   onChange={v => updateFilter('mgdid', v)}
                   width={WIDTH_GAME_NUMBER}
                 />
@@ -285,7 +305,7 @@ export default function MasterGameList() {
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <ColorSelect
-                    value={draftFilters.color ?? ''}
+                    value={draftColor}
                     onChange={v => updateFilter('color', v)}
                     label=''
                     width={WIDTH_COLOR_GAMES}
@@ -295,7 +315,7 @@ export default function MasterGameList() {
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <TimeClassSelect
-                    value={draftFilters.timeClass ?? ''}
+                    value={draftTimeClass}
                     onChange={v => updateFilter('timeClass', v)}
                     label=''
                     width={WIDTH_TIME_CLASS_GAMES}
@@ -304,7 +324,7 @@ export default function MasterGameList() {
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.opponent ?? ''}
+                  value={draftOpponent}
                   onChange={v => updateFilter('opponent', v)}
                   placeholder={PLACEHOLDER_TEXT_FILTER}
                   width={WIDTH_OPPONENT}
@@ -312,8 +332,8 @@ export default function MasterGameList() {
               </th>
               <th className='pb-2 pr-2'>
                 <FilterNumberRange
-                  min={String(dRMin)}
-                  max={String(dRMax)}
+                  min={draftRatingMin}
+                  max={draftRatingMax}
                   onMinChange={v => updateFilter('opponentRatingMin', v)}
                   onMaxChange={v => updateFilter('opponentRatingMax', v)}
                   width={WIDTH_OPPONENT_RATING}
@@ -324,7 +344,7 @@ export default function MasterGameList() {
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <ResultSelect
-                    value={draftFilters.result ?? ''}
+                    value={draftResult}
                     onChange={v => updateFilter('result', v)}
                     label=''
                     width={WIDTH_RESULT}
@@ -334,7 +354,7 @@ export default function MasterGameList() {
               <th className='pb-2 pr-2'>
                 <div className='flex justify-center'>
                   <TerminationMultiSelect
-                    selected={draftFilters.termination ?? []}
+                    selected={draftTermination}
                     onChange={updateTerminationFilter}
                     label=''
                   />
@@ -342,7 +362,7 @@ export default function MasterGameList() {
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.opening ?? ''}
+                  value={draftOpening}
                   onChange={v => updateFilter('opening', v)}
                   placeholder={PLACEHOLDER_TEXT_FILTER}
                   width={WIDTH_OPENING}
@@ -350,7 +370,7 @@ export default function MasterGameList() {
               </th>
               <th className='pb-2 pr-2'>
                 <FilterTextInput
-                  value={draftFilters.eco ?? ''}
+                  value={draftEco}
                   onChange={v => updateFilter('eco', v.toUpperCase())}
                   width={WIDTH_ECO}
                 />
@@ -358,7 +378,7 @@ export default function MasterGameList() {
               <th className='pb-2'>
                 <FilterActionButton
                   onClick={handleApplyFilters}
-                  variant={filtersPending ? 'pending' : 'primary'}
+                  variant={refreshVariant}
                 >
                   Refresh
                 </FilterActionButton>
@@ -371,7 +391,7 @@ export default function MasterGameList() {
                 <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>Loading...</td>
               </tr>
             )}
-            {!loading && games.length === 0 && (
+            {showNoGames && (
               <tr>
                 <td colSpan={14} className='py-4 text-center text-xs text-gray-500'>
                   No master games found. Try adjusting your filters, or run the master games
@@ -379,18 +399,23 @@ export default function MasterGameList() {
                 </td>
               </tr>
             )}
-            {!loading && games.map((row, index) => {
+            {showGames && games.map((row, index) => {
               const date = new Date(row.mgd_end_time * 1000)
               const dd = String(date.getDate()).padStart(2, '0')
               const mm = String(date.getMonth() + 1).padStart(2, '0')
               const yyyy = String(date.getFullYear())
               const hh = String(date.getHours()).padStart(2, '0')
               const min = String(date.getMinutes()).padStart(2, '0')
-              // No time recorded (e.g. a historical import that only ever had a date) defaults
-              // to midnight — showing "00:00" would look like a real time, so it's omitted.
+              //
+              //  No time recorded (e.g. a historical import that only ever had a date) defaults
+              //  to midnight — showing "00:00" would look like a real time, so it's omitted.
+              //
               const hasTime = !(hh === '00' && min === '00')
               const dateStr = hasTime ? `${dd}/${mm}/${yyyy} ${hh}:${min}` : `${dd}/${mm}/${yyyy}`
               const gameNumber = (currentPage - 1) * rowsPerPage + index + 1
+              const playerRating = row.mgd_player_color === 'white' ? row.mgd_white_rating : row.mgd_black_rating
+              const resultClass = `flex justify-center ${RESULT_STYLES[row.mgd_player_result]}`
+              const openingLabel = row.mgd_opening_name || 'Unknown'
 
               return (
                 <tr
@@ -408,15 +433,15 @@ export default function MasterGameList() {
                   <td className='py-1.5 pr-2'><div className='flex justify-center text-gray-500'>{row.mgd_time_class}</div></td>
                   <td className='py-1.5 pr-2'>{row.mgd_opponent_username}</td>
                   <td className='py-1.5 pr-2'><div className='flex justify-center'>{row.mgd_opponent_rating}</div></td>
-                  <td className='py-1.5 pr-2 text-center tabular-nums text-gray-700'>{row.mgd_player_color === 'white' ? row.mgd_white_rating : row.mgd_black_rating}</td>
+                  <td className='py-1.5 pr-2 text-center tabular-nums text-gray-700'>{playerRating}</td>
                   <td className='py-1.5 pr-2'>
-                    <div className={`flex justify-center ${RESULT_STYLES[row.mgd_player_result]}`}>
+                    <div className={resultClass}>
                       {row.mgd_player_result}
                     </div>
                   </td>
                   <td className='py-1.5 pr-2 text-center text-gray-500'>{row.mgd_termination}</td>
-                  <td className={`py-1.5 pr-2 ${WIDTH_OPENING} truncate`} title={row.mgd_opening_name}>
-                    {row.mgd_opening_name || 'Unknown'}
+                  <td className={openingCellClass} title={row.mgd_opening_name}>
+                    {openingLabel}
                   </td>
                   <td className='py-1.5 pr-2 text-gray-400'>{row.mgd_eco_code}</td>
                   <td className='py-1.5'>
@@ -436,7 +461,7 @@ export default function MasterGameList() {
 
       <div className='mt-3 flex items-center justify-between'>
         <div />
-        {totalPages > 1 && (
+        {showPagination && (
           <MyPaginationFooter
             totalPages={totalPages}
             statecurrentPage={currentPage}
@@ -464,5 +489,5 @@ export default function MasterGameList() {
 //    the parsed value, or fallback
 //----------------------------------------------------------------------------------------------
 function ss<T>(key: string, fallback: T): T {
-  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) as T : fallback } catch { return fallback }
+  try { const v = sessionStorage.getItem(key); const result = v ? JSON.parse(v) as T : fallback; return result } catch { return fallback }
 }

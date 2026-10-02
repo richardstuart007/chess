@@ -28,6 +28,9 @@ export type MasterPlayerRow = {
 //  never be SQL-joined across databases. Keyed on the real chess.com handle when a player has
 //  one; falls back to historicalPlayerSlug (importHistoricalGames.ts) for a player with no
 //  handle, matching the identifier a historical-collection import wrote as mgd_player.
+//
+//  Returns:
+//    a map of lowercased identifier (chess.com handle, or historical slug) → display name
 //----------------------------------------------------------------------------------
 export async function getMasterHandleNameMap(): Promise<Record<string, string>> {
   const players = await getMasterPlayers('')
@@ -79,7 +82,7 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
     })
     return []
   }
-  return result.data.map((r: any) => ({
+  const masterPlayers = result.data.map((r: any) => ({
     mstid: Number(r.mst_mstid),
     firstName: (r.mst_first_name as string) ?? '',
     lastName: r.mst_last_name as string,
@@ -88,6 +91,7 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
     priority: r.mst_priority as boolean,
     chesscomHandle: (r.mst_chesscom_handle as string) ?? null
   }))
+  return masterPlayers
 }
 
 //----------------------------------------------------------------------------------
@@ -103,6 +107,12 @@ export async function getMasterPlayers(filterName: string = '', sortByGradeDesc:
 //  trusting the first username-looking string on the page, since a page can mention
 //  other players too). Scoped to mst_priority = true — skips any FIDE-linked row not
 //  flagged as priority. Returns null once no eligible row remains.
+//
+//  Returns:
+//    mstid — the master player row that was picked
+//    name — that player's name
+//    handle — the chess.com handle found for them, or null
+//    (the whole result is null once no eligible row remains)
 //----------------------------------------------------------------------------------
 export async function findNextMasterPlayerHandle(): Promise<{ mstid: number; name: string; handle: string | null } | null> {
   const result = await table_fetch({
@@ -220,9 +230,11 @@ export async function getMasterSyncYearStatus(year: number): Promise<Set<string>
       lg_msg: `Failed to fetch master sync status for ${year}: ` + result.error,
       lg_severity: 'E'
     })
-    return new Set()
+    const players = new Set<string>()
+    return players
   }
-  return new Set(result.data.map((r: any) => r.mgd_player as string))
+  const players = new Set(result.data.map((r: any) => r.mgd_player as string))
+  return players
 }
 
 //----------------------------------------------------------------------------------
@@ -237,5 +249,6 @@ export async function getMasterSyncYearStatus(year: number): Promise<Set<string>
 //    "First Last", or just the last name when there is no first name
 //----------------------------------------------------------------------------------
 function combineName(firstName: string | null, lastName: string): string {
-  return firstName ? `${firstName} ${lastName}` : lastName
+  const result = firstName ? `${firstName} ${lastName}` : lastName
+  return result
 }

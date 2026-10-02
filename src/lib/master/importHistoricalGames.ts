@@ -52,23 +52,22 @@ const HISTORICAL_MIN_TRACKABLE_HALF_MOVES = (MIN_ANALYSIS_MOVE_Master - 1) * 2
 
 type ExistingMaster = { mstid: number; firstName: string; lastName: string; chesscomHandle: string | null }
 
-//==================================================================================================
-//  1) DESCRIPTION
-//    uploadHistoricalPgn — pipeline stage 1. Splits an uploaded PGN blob (one or more files'
-//    worth, already concatenated) into individual games and stages them in
-//    wk_hpg_historicalpgnraw under the given collection label. Truncates the staging table first
-//    (mirrors downloadFideZip's own single-row-workfile truncate) — a new upload always replaces
-//    whatever was staged from a previous, already-deconstructed collection.
+//----------------------------------------------------------------------------------
+//  uploadHistoricalPgn — pipeline stage 1. Splits an uploaded PGN blob (one or more files'
+//  worth, already concatenated) into individual games and stages them in
+//  wk_hpg_historicalpgnraw under the given collection label. Truncates the staging table first
+//  (mirrors downloadFideZip's own single-row-workfile truncate) — a new upload always replaces
+//  whatever was staged from a previous, already-deconstructed collection.
 //
-//    Parameters:
-//      collection   — display label for this batch (e.g. "World Chess Championship 1886-2018")
-//      pgnText      — raw PGN text, one or more games, in standard multi-game PGN format
-//      level        — logging call-hierarchy depth (default 1)
-//      forceNewRun  — allocate a new pipeline run id instead of joining the current one
+//  Params:
+//    collection   — display label for this batch (e.g. "World Chess Championship 1886-2018")
+//    pgnText      — raw PGN text, one or more games, in standard multi-game PGN format
+//    level        — logging call-hierarchy depth (default 1)
+//    forceNewRun  — allocate a new pipeline run id instead of joining the current one
 //
-//    Returns:
-//      staged — number of individual games written to wk_hpg_historicalpgnraw
-//==================================================================================================
+//  Returns:
+//    staged — number of individual games written to wk_hpg_historicalpgnraw
+//----------------------------------------------------------------------------------
 export async function uploadHistoricalPgn(
   collection: string,
   pgnText: string,
@@ -118,26 +117,25 @@ export async function uploadHistoricalPgn(
   return { staged }
 }
 
-//==================================================================================================
-//  1) DESCRIPTION
-//    deconstructHistoricalGames — pipeline stage 2. Reads every wk_hpg_historicalpgnraw row,
-//    parses each game's PGN headers directly (no chess.com JSON involved), auto-creates any
-//    missing tmst_master_players rows for White/Black names not already matched to an existing
-//    master, and inserts into tmgd_gamesdecon. Downstream, buildPositionTree_Master/
-//    syncTposFromTgam_Master (unmodified) pick these rows up exactly like any chess.com-synced
-//    game.
+//----------------------------------------------------------------------------------
+//  deconstructHistoricalGames — pipeline stage 2. Reads every wk_hpg_historicalpgnraw row,
+//  parses each game's PGN headers directly (no chess.com JSON involved), auto-creates any
+//  missing tmst_master_players rows for White/Black names not already matched to an existing
+//  master, and inserts into tmgd_gamesdecon. Downstream, buildPositionTree_Master/
+//  syncTposFromTgam_Master (unmodified) pick these rows up exactly like any chess.com-synced
+//  game.
 //
-//    Parameters:
-//      level        — logging call-hierarchy depth (default 1)
-//      forceNewRun  — allocate a new pipeline run id instead of joining the current one
+//  Params:
+//    level        — logging call-hierarchy depth (default 1)
+//    forceNewRun  — allocate a new pipeline run id instead of joining the current one
 //
-//    Returns:
-//      processed — games successfully inserted into tmgd_gamesdecon
-//      skipped   — games skipped (too short to be trackable, unparseable date, or already present
-//                  — natural-key dedup on White + Black + end_time + Round, since there's no
-//                  chess.com UUID to dedup on)
-//      errors    — games that failed to insert
-//==================================================================================================
+//  Returns:
+//    processed — games successfully inserted into tmgd_gamesdecon
+//    skipped   — games skipped (too short to be trackable, unparseable date, or already present
+//                — natural-key dedup on White + Black + end_time + Round, since there's no
+//                chess.com UUID to dedup on)
+//    errors    — games that failed to insert
+//----------------------------------------------------------------------------------
 export async function deconstructHistoricalGames(
   level: number = 1,
   forceNewRun: boolean = false
@@ -292,6 +290,10 @@ export async function deconstructHistoricalGames(
 //  refreshHistoricalStatus — step 1/2's own status for the Owner Pipeline page: games
 //  currently staged (awaiting deconstruction), and how many historical games (mgd_round IS NOT
 //  NULL — the marker no chess.com-synced row ever has) already exist in tmgd_gamesdecon.
+//
+//  Returns:
+//    staged — games currently staged, awaiting deconstruction
+//    decon — historical games already in tmgd_gamesdecon
 //----------------------------------------------------------------------------------
 export async function refreshHistoricalStatus(): Promise<{ staged: number; decon: number }> {
   const result = await table_query({
@@ -339,10 +341,11 @@ function getHeader(pgn: string, tag: string): string {
 //    the individual games' PGN text
 //----------------------------------------------------------------------------------
 function splitIntoGames(pgnText: string): string[] {
-  return pgnText
+  const result = pgnText
     .split(/\n(?=\[Event )/)
     .map(g => g.trim())
     .filter(g => g.length > 0)
+  return result
 }
 
 //----------------------------------------------------------------------------------
@@ -382,7 +385,8 @@ function parseHistoricalDate(dateHeader: string): number | null {
   const year = parseInt(match[1], 10)
   const month = match[2] === '??' ? 1 : parseInt(match[2], 10)
   const day = match[3] === '??' ? 1 : parseInt(match[3], 10)
-  return Math.floor(Date.UTC(year, month - 1, day) / 1000)
+  const result = Math.floor(Date.UTC(year, month - 1, day) / 1000)
+  return result
 }
 
 //----------------------------------------------------------------------------------

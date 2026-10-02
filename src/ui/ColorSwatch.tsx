@@ -7,15 +7,16 @@
 //      color — 'white'/'black'/'w'/'b', or null
 //==================================================================================================
 
-interface ColorSwatchProps {
+type ColorSwatchProps = {
   color: string | null
 }
 
 export default function ColorSwatch({ color }: ColorSwatchProps) {
   const isBlack = color === 'black' || color === 'b'
+  const colorLabel = isBlack ? 'black' : 'white'
   return (
     <div className='flex justify-center'>
-      <span>{isBlack ? 'black' : 'white'}</span>
+      <span>{colorLabel}</span>
     </div>
   )
 }

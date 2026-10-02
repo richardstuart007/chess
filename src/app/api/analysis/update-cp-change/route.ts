@@ -8,6 +8,7 @@
 //==================================================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { write_logging } from 'nextjs-shared/write_logging'
 import { bulkUpdateCpLoss } from '@/src/lib/analysis/enrichPositionsStockfish'
 
 export async function GET(req: NextRequest) {
@@ -17,9 +18,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const updated = await bulkUpdateCpLoss(level, forceNewRun)
-    return NextResponse.json({ ok: true, updated })
+    const response = NextResponse.json({ ok: true, updated })
+    return response
   } catch (err: any) {
     console.error('update-cp-change route error', err)
-    return NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    await write_logging({
+      lg_functionname: 'api/analysis/update-cp-change',
+      lg_caller: 'api/analysis/update-cp-change',
+      lg_msg: 'update-cp-change route error: ' + (err as Error).message,
+      lg_severity: 'E'
+    })
+    const response = NextResponse.json({ ok: false, error: err?.message ?? 'Unknown error' }, { status: 500 })
+    return response
   }
 }

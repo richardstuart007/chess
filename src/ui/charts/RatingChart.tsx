@@ -34,7 +34,7 @@ import { DEFAULT_GRAPH_GRANULARITY, WIDTH_GRAPH_GRANULARITY } from '@/src/lib/co
 
 const PLAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea']
 
-interface PlayerOption {
+type PlayerOption = {
   player: string
   displayName: string | null
 }
@@ -52,7 +52,7 @@ const POINT_DESC: Record<RatingGranularity, string> = {
   month: 'each point = monthly average',
 }
 
-interface RatingChartProps {
+type RatingChartProps = {
   players: PlayerOption[]
   playerFilter: string
   filters: GameFilters
@@ -69,6 +69,13 @@ interface RatingChartProps {
 export default function RatingChart({ players, playerFilter, filters, limit, onLoadingChange, refreshNonce }: RatingChartProps) {
   const [games, setGames] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+
+  //
+  //  Starts at Weekly rather than null — the guard below still falls back to the
+  //  span-based auto pick (defaultGran) when the fetched span is too short for
+  //  Weekly to be an offered option. Not persisted: always Weekly on a fresh load.
+  //
+  const [granularityOverride, setGranularityOverride] = useState<RatingGranularity | null>(DEFAULT_GRAPH_GRANULARITY)
 
   const playersToFetch = useMemo(() => (
     players.length === 1
@@ -121,19 +128,25 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     //  load — fetches the games for the selected players and filters and stores them in state (nothing to fetch when no players are selected)
     //----------------------------------------------------------------------------------------------
     async function load() {
-      if (playersToFetch.length === 0) {
-        if (!cancelled) { setGames([]); finish() }
-        return
+      try {
+        if (playersToFetch.length === 0) {
+          if (!cancelled) { setGames([]); finish() }
+          return
+        }
+        const rows = await fetchFilteredGames(queryPlayers, graphFilters, 1, limit)
+        if (!cancelled) { setGames(rows); finish() }
+      } catch {
+        if (!cancelled) finish()
       }
-      const rows = await fetchFilteredGames(queryPlayers, graphFilters, 1, limit)
-      if (!cancelled) { setGames(rows); finish() }
     }
 
-    load().catch(() => { if (!cancelled) finish() })
+    load()
     return () => { cancelled = true }
   }, [playersToFetch, queryPlayers, graphFilters, limit, refreshNonce])
 
-  // Derive unique (player, timeClass) series from the game data
+  //
+  //  Derive unique (player, timeClass) series from the game data
+  //
   const allSeries = useMemo(() => {
     const seen = new Set<string>()
     const pairs: { player: string; timeClass: string; key: string; label: string }[] = []
@@ -151,13 +164,6 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     }
     return pairs.sort((a, b) => a.label.localeCompare(b.label))
   }, [games])
-
-  //
-  //  Starts at Weekly rather than null — the guard below still falls back to the
-  //  span-based auto pick (defaultGran) when the fetched span is too short for
-  //  Weekly to be an offered option. Not persisted: always Weekly on a fresh load.
-  //
-  const [granularityOverride, setGranularityOverride] = useState<RatingGranularity | null>(DEFAULT_GRAPH_GRANULARITY)
 
   const activeSeries = allSeries
 
@@ -221,26 +227,32 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     return { chartData: data, xTicks, fromMs, toMs, chartSpanDays }
   }, [series])
 
+  const granularityOptions = Object.entries(GRAN_LABELS)
+    .filter(([k]) => available.includes(k as RatingGranularity))
+    .map(([, v]) => v)
+  const granularityClass = `${WIDTH_GRAPH_GRANULARITY} h-6 md:h-6`
+  const showNoData = !loading && chartData.length === 0
+  const showChart = chartData.length > 0
+  const lineDot = granularity === 'game' ? { r: 2 } : false
+
   return (
     <MyBox title='Rating Over Time'>
       <div className='mb-1 flex flex-wrap items-center gap-3'>
         <MySelect
           label='Granularity'
-          options={Object.entries(GRAN_LABELS)
-            .filter(([k]) => available.includes(k as RatingGranularity))
-            .map(([, v]) => v)}
+          options={granularityOptions}
           value={GRAN_LABELS[granularity]}
           onChange={e => setGranularityOverride(GRAN_MAP[e.target.value])}
-          overrideClass={`${WIDTH_GRAPH_GRANULARITY} h-6 md:h-6`}
+          overrideClass={granularityClass}
         />
       </div>
       <p className='mb-3 text-xxs text-gray-400'>{POINT_DESC[granularity]}</p>
 
-      {!loading && chartData.length === 0 && (
+      {showNoData && (
         <p className='text-xs text-gray-400'>No games found for the current filters.</p>
       )}
 
-      {chartData.length > 0 && (
+      {showChart && (
         <ResponsiveContainer width='100%' height={300}>
           <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray='3 3' stroke='#f0f0f0' />
@@ -262,18 +274,21 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
               contentStyle={{ fontSize: 11 }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            {series.map((s, i) => (
-              <Line
-                key={s.key}
-                type='monotone'
-                dataKey={s.key}
-                name={s.label}
-                stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]}
-                dot={granularity === 'game' ? { r: 2 } : false}
-                strokeWidth={2}
-                connectNulls
-              />
-            ))}
+            {series.map((s, i) => {
+              const stroke = PLAYER_COLORS[i % PLAYER_COLORS.length]
+              return (
+                <Line
+                  key={s.key}
+                  type='monotone'
+                  dataKey={s.key}
+                  name={s.label}
+                  stroke={stroke}
+                  dot={lineDot}
+                  strokeWidth={2}
+                  connectNulls
+                />
+              )
+            })}
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -294,7 +309,8 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
     if (chartSpanDays <= 1) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     if (chartSpanDays <= 92) return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`
     if (chartSpanDays <= 400) return d.toLocaleString('default', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(2)
-    return d.getMonth() === 0 ? String(d.getFullYear()) : ''
+    const result = d.getMonth() === 0 ? String(d.getFullYear()) : ''
+    return result
   }
 
   //----------------------------------------------------------------------------------------------
@@ -309,9 +325,10 @@ export default function RatingChart({ players, playerFilter, filters, limit, onL
   function labelFormatter(ts: unknown): string {
     if (typeof ts !== 'number') return ''
     const d = new Date(ts)
-    return chartSpanDays <= 92
+    const result = chartSpanDays <= 92
       ? d.toLocaleString('default', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : d.toLocaleString('default', { month: 'long', year: 'numeric' })
+    return result
   }
 }
 
@@ -364,12 +381,13 @@ function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date
   if (rows.length === 0) return []
 
   if (granularity === 'game') {
-    return rows
+    const result = rows
       .map(row => ({
         date: new Date(row.gd_end_time * 1000).toISOString(),
         avgRating: row.gd_player_color === 'white' ? row.gd_white_rating : row.gd_black_rating
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
+    return result
   }
 
   const groups = new Map<string, number[]>()
@@ -391,12 +409,13 @@ function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date
     groups.get(key)!.push(rating)
   }
 
-  return Array.from(groups.entries())
+  const result = Array.from(groups.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, ratings]) => ({
       date: key,
       avgRating: Math.round(ratings.reduce((s, r) => s + r, 0) / ratings.length)
     }))
+  return result
 }
 
 //----------------------------------------------------------------------------------------------
@@ -409,9 +428,13 @@ function aggregateForPlayer(rows: any[], granularity: RatingGranularity): { date
 //    the parsed Date
 //----------------------------------------------------------------------------------------------
 function parseDate(d: string): Date {
-  if (d.length > 10) return new Date(d)
+  if (d.length > 10) {
+    const result = new Date(d)
+    return result
+  }
   const [y, m, day] = d.split('-').map(Number)
-  return new Date(y, m - 1, day ?? 1)
+  const result = new Date(y, m - 1, day ?? 1)
+  return result
 }
 
 //----------------------------------------------------------------------------------------------
@@ -427,7 +450,8 @@ function parseDate(d: string): Date {
 //----------------------------------------------------------------------------------------------
 function generateDateTicks(fromMs: number, toMs: number, count: number): number[] {
   if (count <= 1) return [fromMs]
-  return Array.from({ length: count }, (_, i) =>
+  const result = Array.from({ length: count }, (_, i) =>
     Math.round(fromMs + (i / (count - 1)) * (toMs - fromMs))
   )
+  return result
 }
