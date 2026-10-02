@@ -73,17 +73,13 @@ export async function deconstructGames_Player(
         ? JSON.parse(row.gr_raw_data)
         : row.gr_raw_data
 
+      const deconstructable = await isDeconstructable_Player(rawData)
+      if (!deconstructable) {
+        skipped++
+        continue
+      }
+
       const pgn = rawData.pgn
-      if (!pgn) {
-        skipped++
-        continue
-      }
-
-      if (countMoves(pgn) <= MIN_TRACKABLE_HALF_MOVES) {
-        skipped++
-        continue
-      }
-
       const headers = parsePgnHeaders(pgn)
 
       const whiteUsername = (rawData.white?.username ?? '').toLowerCase()
@@ -144,6 +140,26 @@ export async function deconstructGames_Player(
 
   await logEnd('deconstructGames_Player', 'gameSyncPipeline', `${processed} ${DECON_TABLE} rows inserted, ${skipped} skipped, ${errors} errors`, 2)
   return { processed, skipped, errors }
+}
+
+//----------------------------------------------------------------------------------
+//  isDeconstructable_Player — whether a raw game would be written to tgd_gamesdecon
+//
+//  The single source of the deconstruct skip rules: a game with no PGN, or too short
+//  to reach MIN_ANALYSIS_MOVE_Player, is validly skipped. Shared with refreshStep1 so
+//  the pipeline status never counts a validly skipped game as pending. Async only
+//  because every export of a 'use server' file must be.
+//
+//  Params:
+//    rawData — the parsed chess.com game JSON (wk_gr_gamesraw.gr_raw_data)
+//
+//  Returns:
+//    true if the game has a PGN with more than MIN_TRACKABLE_HALF_MOVES half-moves
+//----------------------------------------------------------------------------------
+export async function isDeconstructable_Player(rawData: { pgn?: string }): Promise<boolean> {
+  const pgn = rawData?.pgn
+  const deconstructable = !!pgn && countMoves(pgn) > MIN_TRACKABLE_HALF_MOVES
+  return deconstructable
 }
 
 //----------------------------------------------------------------------------------

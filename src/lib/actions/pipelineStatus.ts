@@ -2,8 +2,9 @@
 
 import { table_query } from 'nextjs-shared/table_query'
 import { write_logging } from 'nextjs-shared/write_logging'
-import { MIN_REACH_TO_KEEP_Player, PURGE_REACH_GRACE_DAYS_Player, MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player } from '../constants'
+import { MIN_REACH_TO_KEEP_Player, PURGE_REACH_GRACE_DAYS_Player, MIN_ANALYSIS_MOVE_Player, HABITS_MIN_REACH_FLOOR_Player, INCLUDED_TIME_CLASSES_Player } from '../constants'
 import { countRemainingPopularPositionsByTier } from '../analysis/enrichPositionsStockfish'
+import { isDeconstructable_Player } from './deconstructGames_Player'
 
 //----------------------------------------------------------------------------------
 //  getPipelineStatus — single-query count of processed/remaining rows for all steps
@@ -96,32 +97,49 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 //----------------------------------------------------------------------------------
 //  refreshStep1 — re-queries step 1's (deconstruct) status counts
 //
+//  Pending applies the same rules as deconstructGames_Player — time class in
+//  INCLUDED_TIME_CLASSES_Player and isDeconstructable_Player — so a validly skipped
+//  game (no PGN, or too short) never counts as pending. The unmatched raw rows are
+//  fetched rather than counted because the move-count rule needs the PGN parsed;
+//  wk_gr_gamesraw only holds the latest sync run, so this set stays small.
+//
 //  Returns:
-//    pending — raw games not yet deconstructed
+//    pending — raw games deconstruct would still process
 //    allDecon — total deconstructed games
 //----------------------------------------------------------------------------------
 export async function refreshStep1(): Promise<{ pending: number; allDecon: number }> {
-  const queryResult = await table_query({
-    caller: 'refreshStep1', table: 'wk_gr_gamesraw', params: [], skipCache: true,
-    query: `SELECT
-      (SELECT COUNT(*) FROM wk_gr_gamesraw r
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tgd_gamesdecon d
-         WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
-       ))                                     AS pending,
-      (SELECT COUNT(*) FROM tgd_gamesdecon)    AS all_decon`
+  const inPlaceholders = INCLUDED_TIME_CLASSES_Player.map((_, i) => `$${i + 1}`).join(', ')
+  const rawGamesResult = await table_query({
+    caller: 'refreshStep1', table: 'wk_gr_gamesraw', params: [...INCLUDED_TIME_CLASSES_Player], skipCache: true,
+    query: `SELECT r.gr_raw_data FROM wk_gr_gamesraw r
+      WHERE r.gr_time_class IN (${inPlaceholders})
+        AND NOT EXISTS (
+          SELECT 1 FROM tgd_gamesdecon d
+          WHERE d.gd_chesscom_uuid = r.gr_chesscom_uuid AND d.gd_player = r.gr_player
+        )`
   })
-  if (!queryResult.ok) {
+  const deconCountResult = await table_query({
+    caller: 'refreshStep1', table: 'tgd_gamesdecon', params: [], skipCache: true,
+    query: `SELECT COUNT(*) AS all_decon FROM tgd_gamesdecon`
+  })
+  if (!rawGamesResult.ok || !deconCountResult.ok) {
+    const error = !rawGamesResult.ok ? rawGamesResult.error : !deconCountResult.ok ? deconCountResult.error : ''
     write_logging({
       lg_functionname: 'refreshStep1',
       lg_caller: 'refreshStep1',
-      lg_msg: 'Failed to fetch step 1 status: ' + queryResult.error,
+      lg_msg: 'Failed to fetch step 1 status: ' + error,
       lg_severity: 'E'
     })
     return { pending: 0, allDecon: 0 }
   }
-  const r = queryResult.data[0] ?? {}
-  const result = { pending: parseInt(r.pending ?? '0'), allDecon: parseInt(r.all_decon ?? '0') }
+  let pending = 0
+  for (const row of rawGamesResult.data) {
+    const rawData = typeof row.gr_raw_data === 'string' ? JSON.parse(row.gr_raw_data) : row.gr_raw_data
+    const deconstructable = await isDeconstructable_Player(rawData)
+    if (deconstructable) pending++
+  }
+  const r = deconCountResult.data[0] ?? {}
+  const result = { pending, allDecon: parseInt(r.all_decon ?? '0') }
   return result
 }
 

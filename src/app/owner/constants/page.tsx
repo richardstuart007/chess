@@ -117,7 +117,7 @@ const CONSTANTS_SECTIONS: ConstantSection[] = [
   {
     heading: 'Player / Filter Defaults',
     entries: [
-      { name: 'INCLUDED_TIME_CLASSES_Player', value: INCLUDED_TIME_CLASSES_Player, description: 'Global fallback list of chess.com time classes included when a player has no TIME_CLASSES_Player override.', consumers: ['sync.ts: syncArchive', 'players.ts: updatePlayerRating', 'deconstruct.ts: getUndeconstructedCount, deconstructGames_Player'] },
+      { name: 'INCLUDED_TIME_CLASSES_Player', value: INCLUDED_TIME_CLASSES_Player, description: 'Global fallback list of chess.com time classes included when a player has no TIME_CLASSES_Player override.', consumers: ['sync.ts: syncArchive', 'players.ts: updatePlayerRating', 'deconstruct.ts: getUndeconstructedCount, deconstructGames_Player', 'pipelineStatus.ts: refreshStep1'] },
       { name: 'DEFAULT_PLAYER', value: DEFAULT_PLAYER, description: 'Default selected player across the app.', consumers: ['players.ts: getPlayers'] },
       { name: 'DEFAULT_DATE_FROM_Player', value: DEFAULT_DATE_FROM_Player, description: "Default 'from' date for game-history filters.", consumers: ['graph/page.tsx: GraphContent', 'GameList.tsx: GameList', 'OpeningScoreChart.tsx: OpeningScoreChart', 'TerminationChart.tsx: TerminationChart'] },
       { name: 'DEFAULT_MIN_GAMES_Player', value: DEFAULT_MIN_GAMES_Player, description: 'Default minimum-games threshold for the Opening Score chart filter.', consumers: ['OpeningScoreChart.tsx: OpeningScoreChart'] },
